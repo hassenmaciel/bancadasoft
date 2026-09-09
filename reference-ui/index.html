@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="BancadaSoft: ferramentas e serviços para técnicos." />
+    <title>BancadaSoft | Ferramentas e serviços para técnicos</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Manrope:wght@700;800&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header class="site-header">
+      <div class="header-main container">
+        <a class="logo" href="#inicio" aria-label="BancadaSoft, início"><strong>BANCADA<span>SOFT</span></strong><small>Ferramentas e serviços para técnicos</small></a>
+        <form class="search" id="searchForm" role="search"><span aria-hidden="true">⌕</span><input id="searchInput" type="search" placeholder="O que você procura? Ex: UnlockTool, Samsung, FRP..." aria-label="Buscar produtos" /><button aria-label="Buscar">⌕</button></form>
+        <div class="account-actions"><button class="text-action">♙ <span>Entrar</span></button><button class="text-action">♙ <span>Criar conta</span></button><button class="cart-trigger" id="cartButton" aria-label="Abrir carrinho">🛒<b id="cartCount">0</b></button></div>
+      </div>
+      <nav class="nav-bar"><div class="container"><a class="active" href="#inicio">⌂ <span>Início</span></a><a href="#catalogo">⌘ <span>Ferramentas</span></a><a href="#catalogo">♧ <span>Aluguéis</span></a><a href="#catalogo">▣ <span>Licenças</span></a><a href="#catalogo">⌘ <span>Serviços</span></a><a href="#catalogo">▰ <span>Créditos</span></a><a href="#catalogo">★ <span>Mais vendidos</span></a><a href="#ajuda">❔ <span>Suporte</span></a></div></nav>
+    </header>
+
+    <main id="inicio">
+      <section class="hero"><div class="container hero-grid"><div class="hero-copy"><h1>Encontrou.<br>Pagou.<br><em>Liberou.</em></h1><p>Todas as ferramentas que o técnico precisa,<br>com liberação automática e pagamento via PIX.</p><div class="hero-points"><div><i>ϟ</i><span>Liberação<br><b>Automática</b></span></div><div><i>▣</i><span>Pagamento<br><b>100% Seguro</b></span></div><div><i>◉</i><span>Suporte<br><b>em Português</b></span></div></div></div><div class="hero-device"><div class="laptop"></div><div class="phone"><div class="notch"></div><b>Soluções<br>para quem<br>faz mais<br><em>com técnica.</em></b><small>BANCADA<span>SOFT</span></small></div></div><aside class="hero-list"><strong>+ de 1000 <small>ferramentas e serviços</small></strong><ul><li>Aluguéis por horas</li><li>Licenças originais</li><li>Serviços Remote</li><li>Créditos e ativações</li><li>Tudo em um só lugar</li></ul></aside></div></section>
+
+      <section class="quick-links container" aria-label="Categorias"><a href="#catalogo"><i class="green">ϟ</i><span><b>Aluguéis</b><small>Por horas, pague só pelo que usar</small></span></a><a href="#catalogo"><i class="blue">●</i><span><b>Licenças</b><small>Ativações e renovação</small></span></a><a href="#catalogo"><i class="purple">✹</i><span><b>Ferramentas</b><small>Boxes, dongles e softwares</small></span></a><a href="#catalogo"><i class="orange">◎</i><span><b>Serviços</b><small>Remote, IMEI, FRP e mais</small></span></a><a href="#catalogo"><i class="red">▰</i><span><b>Créditos</b><small>Para diversas plataformas</small></span></a></section>
+
+      <section id="catalogo" class="catalogue container"><div class="section-title"><div><h2>🔥 Mais procurados</h2><p>As ferramentas mais vendidas pelos técnicos brasileiros.</p></div><a href="#catalogo">Ver todos <b>→</b></a></div><div class="catalogue-toolbar"><span id="catalogStatus">Carregando catálogo disponível…</span><div><button class="filter active" data-filter="todos">Todos</button><button class="filter" data-filter="aluguel">Aluguéis</button><button class="filter" data-filter="licenca">Licenças</button><button class="filter" data-filter="servico">Serviços</button></div></div><div class="products" id="products" aria-live="polite"></div></section>
+
+      <section class="pix-strip"><div class="container"><div class="pix-word"><i>◆</i> pix</div><p>Pague com PIX<br><b>e receba seu acesso na hora!</b></p><div>◷ <span>Pagamento rápido</span></div><div>▣ <span>100% seguro</span></div><div>ϟ <span>Liberação automática</span></div></div></section>
+
+      <section class="benefits container"><article><i class="green">✓</i><div><b>Catálogo sempre atualizado</b><span>As últimas ferramentas e serviços.</span></div></article><article><i class="blue">♚</i><div><b>Suporte especializado</b><span>Atendimento em português.</span></div></article><article><i class="purple">▣</i><div><b>Compra sem burocracia</b><span>Rápido, simples e seguro.</span></div></article><article><i class="orange">★</i><div><b>Preços competitivos</b><span>Mais economia para o seu dia a dia.</span></div></article></section>
+
+      <section class="how container"><h2>Como funciona?</h2><p>Em menos de 1 minuto você já tem acesso à sua ferramenta.</p><div class="steps"><article><b>1</b><div><h3>Escolha<br>a ferramenta</h3><span>Encontre o que precisa no nosso catálogo.</span></div></article><i>›</i><article><b>2</b><div><h3>Pague com PIX</h3><span>Pagamento rápido e seguro.</span></div></article><i>›</i><article><b>3</b><div><h3>Receba seu acesso</h3><span>Liberação automática na hora.</span></div></article><i>›</i><article><b>4</b><div><h3>Comece a usar</h3><span>Siga as instruções e pronto!</span></div></article></div></section>
+
+      <section id="ajuda" class="help"><div class="container"><div class="help-brand">⌕ <span><b>BANCADA<span>SOFT</span></b><small>Mais que uma loja, um parceiro para o técnico.</small></span></div><div class="whatsapp"><i>◔</i><span><b>Precisando de ajuda?</b><small>Fale com nosso suporte no WhatsApp</small></span><a href="mailto:suporte@bancadasoft.com">Falar no WhatsApp</a></div></div></section>
+    </main>
+    <footer class="footer container"><div class="footer-brand"><a class="logo" href="#inicio"><strong>BANCADA<span>SOFT</span></strong><small>Ferramentas e serviços para técnicos.</small></a></div><div><b>Institucional</b><a href="#">Quem somos</a><a href="#">Termos de uso</a><a href="#">Política de privacidade</a></div><div><b>Ajuda</b><a href="#ajuda">Central de ajuda</a><a href="#ajuda">Suporte</a><a href="#ajuda">Fale conosco</a></div><div class="footer-payment"><b>Formas de pagamento</b><span>◆ pix &nbsp; ▰</span></div><div class="secure">▣ <span><b>Compra segura</b><small>Seus dados protegidos.</small></span></div><p>© 2026 BancadaSoft. Todos os direitos reservados.</p></footer>
+
+    <aside class="cart" id="cart" aria-hidden="true"><header><h2>Seu carrinho</h2><button id="closeCart" aria-label="Fechar">×</button></header><div id="cartItems" class="cart-items"></div><footer><div><span>Total</span><b id="cartTotal">R$ 0,00</b></div><button id="checkout" class="buy-button">GERAR PIX →</button><small>Checkout demonstrativo. O pagamento real depende da integração configurada.</small></footer></aside><div id="overlay" class="overlay"></div>
+    <script src="app.js"></script>
+  </body>
+</html>
