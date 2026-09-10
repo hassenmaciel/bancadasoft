@@ -1,10 +1,23 @@
-# BancadaSoft
+# BancadaSoft MVP
 
-Base inicial do projeto BancadaSoft.
+MVP vertical local para validar `catálogo → PIX sandbox → webhook idempotente → fulfillment mock → entrega`.
 
-## Conteúdo
+## Executar
 
-- `reference-ui/`: protótipo estático de referência visual.
-- `docs/INVENTARIO_MESTRE_BANCADASOFT.pdf`: documentação de referência do produto.
+```powershell
+npm.cmd run dev
+npm.cmd test
+```
 
-O protótipo é demonstrativo; pagamentos, catálogo publicado e integrações devem ser implementados no backend da aplicação futura.
+Abra `http://localhost:3000`. A aplicação não chama HeartUnlocks nem um provedor PIX real.
+
+## Escopo implementado
+
+- catálogo público de itens publicados (`GET /api/products`);
+- checkout validado (`POST /api/checkout`);
+- PIX sandbox, consulta de pedido e entrega demonstrativa;
+- webhook sandbox idempotente (`POST /api/webhooks/payments/sandbox`);
+- administração básica de publicação (`GET/PATCH /api/admin/products`);
+- testes das regras de catálogo, pedido e webhook.
+
+Os dados são mantidos em memória para este MVP. Antes de produção, substituir por PostgreSQL, autenticação/RBAC, fila Redis/BullMQ, cofre de segredos e adaptadores reais de pagamento e HeartUnlocks.

@@ -1,0 +1,230 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum ProductStatus {
+  DRAFT
+  REVIEWED
+  PUBLISHED
+  PAUSED
+  ARCHIVED
+}
+
+enum ProductType {
+  TOOL
+  RENTAL
+  LICENSE
+  REMOTE_SERVICE
+  CREDIT
+}
+
+enum OrderStatus {
+  PENDING_PAYMENT
+  PAID
+  PROCESSING
+  FULFILLED
+  DELIVERED
+  FAILED
+  CANCELLED
+}
+
+enum PaymentStatus {
+  PENDING
+  PAID
+  EXPIRED
+  FAILED
+  REFUNDED
+}
+
+enum FulfillmentStatus {
+  QUEUED
+  PROCESSING
+  FULFILLED
+  FAILED
+}
+
+enum ProviderIntegrationStatus {
+  NOT_CONNECTED
+  CONNECTED
+  ERROR
+}
+
+enum ProviderOrderStatus {
+  QUEUED
+  PROCESSING
+  COMPLETED
+  FAILED
+  CANCELLED
+}
+
+model User {
+  id              String   @id @default(cuid())
+  email           String   @unique
+  name            String
+  role            String   @default("CUSTOMER")
+  passwordHash    String
+  asaasCustomerId String?  @unique
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  orders          Order[]
+}
+
+model Category {
+  id       String    @id @default(cuid())
+  name     String    @unique
+  slug     String    @unique
+  products Product[]
+}
+
+model Product {
+  id               String            @id @default(cuid())
+  slug             String            @unique
+  name             String
+  description      String
+  type             ProductType
+  duration         String?
+  imageUrl         String?
+  priceCents       Int
+  status           ProductStatus     @default(DRAFT)
+  available        Boolean           @default(true)
+  categoryId       String
+  category         Category          @relation(fields: [categoryId], references: [id])
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+  orderItems       OrderItem[]
+  providerProducts ProviderProduct[]
+}
+
+model Order {
+  id             String          @id @default(cuid())
+  publicToken    String          @unique
+  status         OrderStatus     @default(PENDING_PAYMENT)
+  customerId     String
+  customer       User            @relation(fields: [customerId], references: [id])
+  totalCents     Int
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  items          OrderItem[]
+  payment        Payment?
+  fulfillment    Fulfillment?
+  events         OrderEvent[]
+  providerOrders ProviderOrder[]
+}
+
+model OrderItem {
+  id             String  @id @default(cuid())
+  orderId        String
+  order          Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  productId      String
+  product        Product @relation(fields: [productId], references: [id])
+  unitPriceCents Int
+}
+
+model Payment {
+  id                String         @id @default(cuid())
+  orderId           String         @unique
+  order             Order          @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  provider          String
+  status            PaymentStatus  @default(PENDING)
+  providerReference String         @unique
+  externalPaymentId String?        @unique
+  amountCents       Int
+  pixCode           String
+  qrCode            String?
+  expiresAt         DateTime
+  createdAt         DateTime       @default(now())
+  events            PaymentEvent[]
+}
+
+model PaymentEvent {
+  id              String   @id @default(cuid())
+  providerEventId String   @unique
+  paymentId       String
+  payment         Payment  @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+  payload         Json
+  createdAt       DateTime @default(now())
+}
+
+model Fulfillment {
+  id             String            @id @default(cuid())
+  orderId        String            @unique
+  order          Order             @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  provider       String
+  status         FulfillmentStatus @default(QUEUED)
+  delivery       Json?
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+  providerOrders ProviderOrder[]
+}
+
+model OrderEvent {
+  id        String      @id @default(cuid())
+  orderId   String
+  order     Order       @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  status    OrderStatus
+  note      String
+  createdAt DateTime    @default(now())
+}
+
+model Provider {
+  id                String                    @id @default(cuid())
+  name              String
+  code              String                    @unique
+  active            Boolean                   @default(false)
+  apiBaseUrl        String?
+  integrationStatus ProviderIntegrationStatus @default(NOT_CONNECTED)
+  createdAt         DateTime                  @default(now())
+  updatedAt         DateTime                  @updatedAt
+  products          ProviderProduct[]
+  orders            ProviderOrder[]
+}
+
+model ProviderProduct {
+  id                String          @id @default(cuid())
+  providerId        String
+  provider          Provider        @relation(fields: [providerId], references: [id], onDelete: Restrict)
+  productId         String
+  product           Product         @relation(fields: [productId], references: [id], onDelete: Restrict)
+  externalProductId String
+  label             String?
+  providerCostCents Int?
+  currency          String          @default("BRL")
+  active            Boolean         @default(true)
+  metadata          Json?
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+  orders            ProviderOrder[]
+
+  @@unique([providerId, productId, externalProductId])
+  @@index([productId, active])
+}
+
+model ProviderOrder {
+  id                String              @id @default(cuid())
+  providerId        String
+  provider          Provider            @relation(fields: [providerId], references: [id], onDelete: Restrict)
+  providerProductId String?
+  providerProduct   ProviderProduct?    @relation(fields: [providerProductId], references: [id], onDelete: Restrict)
+  orderId           String
+  order             Order               @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  fulfillmentId     String              @unique
+  fulfillment       Fulfillment         @relation(fields: [fulfillmentId], references: [id], onDelete: Cascade)
+  externalOrderId   String?
+  status            ProviderOrderStatus @default(QUEUED)
+  costCents         Int?
+  currency          String              @default("BRL")
+  attempts          Int                 @default(0)
+  lastError         String?
+  requestReference  String?
+  responseReference String?
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
+
+  @@index([orderId, status])
+  @@index([providerId, externalOrderId])
+}

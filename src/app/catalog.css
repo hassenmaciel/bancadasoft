@@ -1,0 +1,12 @@
+.quick-links {
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+}
+
+.product-art {
+  position: relative;
+}
+
+.product-art img {
+  object-fit: contain;
+  padding: 10px;
+}
