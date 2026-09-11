@@ -18,7 +18,10 @@ export type ProductDTO = Pick<
   | "slug"
   | "name"
   | "description"
+  | "longDescription"
   | "type"
+  | "deliveryType"
+  | "deliveryEstimate"
   | "duration"
   | "imageUrl"
   | "priceCents"
@@ -55,7 +58,10 @@ export const productDto = (product: ProductWithCategory): ProductDTO => ({
   slug: product.slug,
   name: product.name,
   description: product.description,
+  longDescription: product.longDescription,
   type: product.type,
+  deliveryType: product.deliveryType,
+  deliveryEstimate: product.deliveryEstimate,
   duration: product.duration,
   imageUrl: product.imageUrl,
   priceCents: product.priceCents,

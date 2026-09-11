@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import Image from "next/image";
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import type { OrderDTO, ProductDTO } from "@/lib/dto";
 import { createOrderPoller } from "@/lib/order-polling";
 
@@ -15,12 +15,24 @@ function ProductImage({ product }: { product: ProductDTO }) {
   return <Image src={product.imageUrl} alt={product.name} fill sizes="220px" unoptimized onError={() => setFailed(true)} />;
 }
 
+function ProductGrid({products,onSelect,empty}:{products:ProductDTO[];onSelect:(product:ProductDTO)=>void;empty:string}){
+  if(!products.length)return <div className="empty-state compact-empty"><b>{empty}</b><span>Novos itens aparecerão aqui quando estiverem disponíveis.</span></div>;
+  return <div className="products">{products.map((product,index)=><article className="product" key={product.id}><div className={`product-art art-${index%4}`}><ProductImage product={product}/></div><span className="product-type">{product.category?.name??product.type}</span><h3>{product.name}</h3>{product.brand&&<span className="product-brand">{product.brand.name}</span>}<p>{product.duration||product.description}</p><div className="product-delivery"><b>{product.deliveryType==="AUTOMATIC"?"Entrega automática":product.deliveryType==="IMMEDIATE"?"Entrega imediata":product.deliveryType==="MANUAL"?"Entrega manual":"Sob consulta"}</b>{product.deliveryEstimate&&<span>{product.deliveryEstimate}</span>}</div><strong>{money(product.priceCents)}</strong><small className="available">Disponível para compra</small><button onClick={()=>onSelect(product)}>Comprar agora</button></article>)}</div>
+}
+
+const commercialTypes=[{value:"RENTAL",label:"Aluguéis"},{value:"ACTIVATION",label:"Ativações"},{value:"LICENSE",label:"Licenças"},{value:"CREDIT",label:"Créditos"},{value:"IMEI_SN",label:"IMEI / SN"},{value:"FILE",label:"Arquivos"},{value:"REMOTE_SERVICE",label:"Remotos"}];
+
 export default function Home() {
   const [products, setProducts] = useState<ProductDTO[]>([]);
+  const [popularProducts, setPopularProducts] = useState<ProductDTO[]>([]);
+  const [recentProducts, setRecentProducts] = useState<ProductDTO[]>([]);
+  const [popularSource, setPopularSource] = useState<"sales" | "featured" | "empty">("empty");
+  const [categoryOptions, setCategoryOptions] = useState<Array<{id:string;name:string;slug:string}>>([]);
   const [selected, setSelected] = useState<ProductDTO | null>(null);
   const [order, setOrder] = useState<OrderDTO | null>(null);
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState("ALL");
+  const [commercialType, setCommercialType] = useState("ALL");
   const [notice, setNotice] = useState("");
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -28,16 +40,29 @@ export default function Home() {
   const [maintenance, setMaintenance] = useState("");
 
   useEffect(() => {
-    fetch("/api/products", { cache: "no-store" })
+    const controller = new AbortController();
+    const timer = window.setTimeout(() => {
+    setLoading(true);
+    const params = new URLSearchParams();
+    if (query.trim()) params.set("q", query.trim());
+    if (category !== "ALL") params.set("category", category);
+    if (commercialType !== "ALL") params.set("type", commercialType);
+    fetch(`/api/products?${params}`, { cache: "no-store", signal: controller.signal })
       .then(async (response) => {
         const payload = await response.json();
         if (response.status === 503 && payload.maintenance) { setMaintenance(payload.message); return; }
         if (!response.ok) throw new Error(payload.error || "Falha ao carregar o catálogo.");
         setProducts(payload.data ?? []);
+        setPopularProducts(payload.popular?.data ?? []);
+        setRecentProducts(payload.recent ?? []);
+        setPopularSource(payload.popular?.source ?? "empty");
+        setCategoryOptions(payload.facets?.categories ?? []);
       })
-      .catch((error: Error) => setNotice(error.message))
-      .finally(() => setLoading(false));
-  }, []);
+      .catch((error: Error) => { if (error.name !== "AbortError") setNotice(error.message); })
+      .finally(() => { if (!controller.signal.aborted) setLoading(false); });
+    }, 250);
+    return () => { window.clearTimeout(timer); controller.abort(); };
+  }, [category, commercialType, query]);
 
 
   useEffect(() => {
@@ -56,19 +81,9 @@ export default function Home() {
     return poller.stop;
   }, [order]);
 
-  const availableCategories = useMemo(
-    () => Array.from(new Map(products.filter((product) => product.category).map((product) => [product.category!.id, product.category!])).values()),
-    [products],
-  );
+  const availableCategories = categoryOptions;
 
-  const visibleProducts = useMemo(() => {
-    const term = query.trim().toLocaleLowerCase("pt-BR");
-    return products.filter((product) => {
-      const matchesCategory = category === "ALL" || product.category?.id === category;
-      const searchable = `${product.name} ${product.description ?? ""} ${product.category?.name ?? ""} ${product.brand?.name ?? ""}`.toLocaleLowerCase("pt-BR");
-      return matchesCategory && (!term || searchable.includes(term));
-    });
-  }, [category, products, query]);
+  const visibleProducts = products;
 
   function selectCategory(type: string) {
     setCategory(type);
@@ -77,7 +92,7 @@ export default function Home() {
 
   function selectCategoryByName(name: string) {
     const match = availableCategories.find((item) => item.name.toLocaleLowerCase("pt-BR").includes(name));
-    selectCategory(match?.id ?? "ALL");
+    selectCategory(match?.slug ?? "ALL");
   }
 
   function submitSearch(event: FormEvent<HTMLFormElement>) {
@@ -226,22 +241,36 @@ export default function Home() {
 
       <section className="wrap quick-links" aria-label="Categorias">
         {availableCategories.map((item, index) => (
-          <button key={item.id} onClick={() => selectCategory(item.id)} className={category === item.id ? "selected" : ""}>
+          <button key={item.id} onClick={() => selectCategory(item.slug)} className={category === item.slug ? "selected" : ""}>
             <span className="category-icon">{["⚙", "↯", "◆", "◎", "▰"][index % 5]}</span>
             <span><b>{item.name}</b><small>Ver produtos desta categoria</small></span>
           </button>
         ))}
       </section>
 
-      <section className="wrap catalogue" id="catalogo">
+      <section className="wrap catalogue discovery-section" id="catalogo">
+        <div className="section-title"><div><h2><span>♦</span> Mais procurados</h2><p>{popularSource==="sales"?"Produtos mais comprados em pedidos confirmados.":popularSource==="featured"?"Seleção editorial em destaque.":"Ainda não há histórico de vendas suficiente."}</p></div></div>
+        <ProductGrid products={popularProducts} onSelect={setSelected} empty="Ainda não há produtos mais procurados."/>
+      </section>
+
+      <section className="wrap catalogue discovery-section">
+        <div className="section-title"><div><h2>Adicionados recentemente</h2><p>Novidades publicadas no catálogo.</p></div></div>
+        <ProductGrid products={recentProducts} onSelect={setSelected} empty="Nenhum produto recente disponível."/>
+      </section>
+
+      <section className="wrap catalogue">
         <div className="section-title">
-          <div><h2><span>♦</span> Mais procurados</h2><p>Ferramentas e serviços disponíveis no catálogo BancadaSoft.</p></div>
+          <div><h2>Catálogo completo</h2><p>Filtre por modalidade ou pesquise por ferramenta, marca e serviço.</p></div>
           <span>{visibleProducts.length} {visibleProducts.length === 1 ? "resultado" : "resultados"}</span>
+        </div>
+        <div className="catalogue-toolbar commercial-toolbar" aria-label="Filtrar por tipo comercial">
+          <button className={commercialType === "ALL" ? "active" : ""} onClick={() => setCommercialType("ALL")}>Todas as modalidades</button>
+          {commercialTypes.map((item) => <button key={item.value} className={commercialType === item.value ? "active" : ""} onClick={() => setCommercialType(item.value)}>{item.label}</button>)}
         </div>
         <div className="catalogue-toolbar">
           <button className={category === "ALL" ? "active" : ""} onClick={() => setCategory("ALL")}>Todos</button>
           {availableCategories.map((item) => (
-            <button key={item.id} className={category === item.id ? "active" : ""} onClick={() => setCategory(item.id)}>
+            <button key={item.id} className={category === item.slug ? "active" : ""} onClick={() => setCategory(item.slug)}>
               {item.name}
             </button>
           ))}
@@ -252,21 +281,7 @@ export default function Home() {
             {[1, 2, 3].map((item) => <div className="product skeleton" key={item} />)}
           </div>
         ) : visibleProducts.length ? (
-          <div className="products">
-            {visibleProducts.map((product, index) => (
-              <article className="product" key={product.id}>
-                <div className={`product-art art-${index % 4}`}>
-                  <ProductImage product={product} />
-                </div>
-                <span className="product-type">{product.category?.name ?? "Sem categoria"}</span>
-                <h3>{product.name}</h3>
-                <p>{product.duration || product.description || "Disponível para ativação"}</p>
-                <strong>{money(product.priceCents)}</strong>
-                <small className={product.available ? "available" : "unavailable"}>{product.available ? "↯ Disponível para compra" : "Indisponível no momento"}</small>
-                <button disabled={!product.available} onClick={() => setSelected(product)}>Comprar agora</button>
-              </article>
-            ))}
-          </div>
+          <ProductGrid products={visibleProducts} onSelect={setSelected} empty="Nenhum produto encontrado." />
         ) : (
           <div className="empty-state"><b>Nenhum produto encontrado.</b><span>Tente outro termo ou selecione “Todos”.</span></div>
         )}

@@ -1,4 +1,4 @@
-import { ProductStatus, ProductType, type Brand, type Category, type Product } from "@prisma/client";
+import { DeliveryType, ProductStatus, ProductType, type Brand, type Category, type Product } from "@prisma/client";
 import { z } from "zod";
 
 const optionalUrl = z.union([z.string().url("Informe uma URL válida."), z.literal("")]).transform((value) => value || null);
@@ -7,7 +7,11 @@ export const productInputSchema = z.object({
   name: z.string().trim().min(1, "Nome é obrigatório.").max(120),
   slug: z.string().trim().min(1, "Slug é obrigatório.").max(140).regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, "Use letras minúsculas, números e hífens."),
   description: z.string().trim().min(1, "Descrição é obrigatória.").max(500),
+  longDescription: z.string().trim().max(5000).nullable().optional(),
   type: z.nativeEnum(ProductType),
+  deliveryType: z.nativeEnum(DeliveryType).default(DeliveryType.AUTOMATIC),
+  deliveryEstimate: z.string().trim().max(100).nullable().optional(),
+  searchTerms: z.string().trim().max(500).default(""),
   duration: z.string().trim().max(80).nullable().optional(),
   priceCents: z.number().int().min(0, "O preço não pode ser negativo."),
   costCents: z.number().int().min(0).nullable().optional(),
@@ -25,7 +29,7 @@ export const categoryInputSchema = z.object({
   slug: z.string().trim().min(1, "Slug é obrigatório.").max(100).regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, "Use letras minúsculas, números e hífens."),
 });
 
-export type AdminProductDTO = Pick<Product, "id" | "slug" | "name" | "description" | "type" | "duration" | "priceCents" | "costCents" | "featured" | "sortOrder" | "status" | "available" | "imageUrl"> & {
+export type AdminProductDTO = Pick<Product, "id" | "slug" | "name" | "description" | "longDescription" | "type" | "deliveryType" | "deliveryEstimate" | "searchTerms" | "duration" | "priceCents" | "costCents" | "featured" | "sortOrder" | "status" | "available" | "imageUrl"> & {
   category: Pick<Category, "id" | "name" | "slug">;
   brand: Pick<Brand, "id" | "name" | "slug"> | null;
   updatedAt: string;
@@ -33,6 +37,8 @@ export type AdminProductDTO = Pick<Product, "id" | "slug" | "name" | "descriptio
 
 export const adminProductDto = (product: Product & { category: Category; brand: Brand | null }): AdminProductDTO => ({
   id: product.id, slug: product.slug, name: product.name, description: product.description,
+  longDescription: product.longDescription, deliveryType: product.deliveryType,
+  deliveryEstimate: product.deliveryEstimate, searchTerms: product.searchTerms,
   type: product.type, duration: product.duration, priceCents: product.priceCents,
   costCents: product.costCents, featured: product.featured, sortOrder: product.sortOrder,
   status: product.status, available: product.available, imageUrl: product.imageUrl,
@@ -43,3 +49,4 @@ export const adminProductDto = (product: Product & { category: Category; brand: 
 
 export const productStatuses = Object.values(ProductStatus);
 export const productTypes = Object.values(ProductType);
+export const deliveryTypes = Object.values(DeliveryType);

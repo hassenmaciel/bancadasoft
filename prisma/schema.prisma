@@ -18,9 +18,19 @@ enum ProductStatus {
 enum ProductType {
   TOOL
   RENTAL
+  ACTIVATION
   LICENSE
   REMOTE_SERVICE
   CREDIT
+  IMEI_SN
+  FILE
+}
+
+enum DeliveryType {
+  IMMEDIATE
+  AUTOMATIC
+  MANUAL
+  ON_REQUEST
 }
 
 enum OrderStatus {
@@ -101,7 +111,11 @@ model Product {
   slug             String            @unique
   name             String
   description      String
+  longDescription  String?
   type             ProductType
+  deliveryType     DeliveryType      @default(AUTOMATIC)
+  deliveryEstimate String?
+  searchTerms      String            @default("")
   duration         String?
   imageUrl         String?
   priceCents       Int
@@ -118,6 +132,10 @@ model Product {
   updatedAt        DateTime          @updatedAt
   orderItems       OrderItem[]
   providerProducts ProviderProduct[]
+
+  @@index([status, available, sortOrder])
+  @@index([categoryId, status])
+  @@index([brandId, status])
 }
 
 model SiteSettings {
