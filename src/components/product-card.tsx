@@ -1,0 +1,7 @@
+"use client";
+import Image from "next/image";
+import Link from "next/link";
+import { useState } from "react";
+import type { ProductDTO } from "@/lib/dto";
+const money=(value:number)=>new Intl.NumberFormat("pt-BR",{style:"currency",currency:"BRL"}).format(value/100);
+export default function ProductCard({product,index=0}:{product:ProductDTO;index?:number}){const[failed,setFailed]=useState(false);return <article className="product"><Link className={`product-art art-${index%4}`} href={`/produto/${product.slug}`}>{!product.imageUrl||failed?<span>{product.name.slice(0,3).toUpperCase()}</span>:<Image src={product.imageUrl} alt={product.name} fill sizes="220px" unoptimized onError={()=>setFailed(true)}/>}</Link><span className="product-type">{product.category?.name??product.type}</span><h3><Link href={`/produto/${product.slug}`}>{product.name}</Link></h3>{product.brand&&<span className="product-brand">{product.brand.name}</span>}<p>{product.duration||product.description}</p><div className="product-delivery"><b>{product.deliveryType==="AUTOMATIC"?"Entrega automática":product.deliveryType==="IMMEDIATE"?"Entrega imediata":product.deliveryType==="MANUAL"?"Entrega manual":"Sob consulta"}</b>{product.deliveryEstimate&&<span>{product.deliveryEstimate}</span>}</div><strong>{money(product.priceCents)}</strong><small className={product.available?"available":"unavailable"}>{product.available?"Disponível para compra":"Indisponível"}</small><Link className="product-cta" href={`/produto/${product.slug}`}>Ver produto</Link></article>}
