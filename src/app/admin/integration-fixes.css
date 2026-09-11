@@ -1,1 +1,12 @@
 .provider-row code { overflow-wrap: anywhere; }
+.provider-operational-row { display:flex; align-items:center; justify-content:space-between; gap:14px; margin-top:18px; padding:12px 14px; border:1px solid #e3eaf1; border-radius:8px; background:#f8fafc; }
+.provider-operation-control { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+.provider-operation-control button { border:0; border-radius:7px; padding:8px 12px; color:#fff; font-size:9px; font-weight:800; text-transform:uppercase; cursor:pointer; }
+.provider-operation-control button:disabled { cursor:wait; opacity:.65; }
+.provider-operation-control small { width:100%; color:#a92c2c; font-size:9px; }
+.operation-state,.gateway-state { padding:6px 9px; border-radius:14px; font-size:8px; font-weight:900; }
+.operation-active,.gateway-online { background:#e2f8eb; color:#087e3f; }
+.operation-inactive,.gateway-offline { background:#ffeaea; color:#a92c2c; }
+.operation-enable { background:#078240; }
+.operation-disable { background:#b13232; }
+@media(max-width:760px) { .provider-operational-row { align-items:flex-start; flex-direction:column; } }

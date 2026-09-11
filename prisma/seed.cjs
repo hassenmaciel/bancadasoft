@@ -114,7 +114,7 @@ async function main() {
   });
   const heartUnlocks = await prisma.provider.upsert({
     where: { code: "heartunlocks" },
-    update: { name: "HeartUnlocks", apiBaseUrl: "https://api.heartunlocks.com", active: false, integrationStatus: ProviderIntegrationStatus.NOT_CONNECTED },
+    update: { name: "HeartUnlocks", apiBaseUrl: "https://api.heartunlocks.com" },
     create: { name: "HeartUnlocks", code: "heartunlocks", apiBaseUrl: "https://api.heartunlocks.com", active: false, integrationStatus: ProviderIntegrationStatus.NOT_CONNECTED },
   });
   const sandbox = await prisma.provider.upsert({

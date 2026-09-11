@@ -1,12 +1,18 @@
+import { ProviderIntegrationStatus } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { configuredHeartUnlocksAdapter, HeartUnlocksProviderAdapter } from "@/lib/providers/heartunlocks";
 
 export async function heartUnlocksGatewayStatus() {
   const adapter = configuredHeartUnlocksAdapter();
   const configured = adapter instanceof HeartUnlocksProviderAdapter;
-  if (!configured) return { configured:false, online:false, checkedAt:null as string|null };
+  if (!configured) {
+    await prisma.provider.updateMany({ where: { code: "heartunlocks", integrationStatus: { not: ProviderIntegrationStatus.NOT_CONNECTED } }, data: { integrationStatus: ProviderIntegrationStatus.NOT_CONNECTED } });
+    return { configured:false, online:false, integrationStatus:ProviderIntegrationStatus.NOT_CONNECTED, checkedAt:null as string|null };
+  }
   const health = await adapter.checkConnection();
-  return { configured:true, online:health.connected, checkedAt:new Date().toISOString() };
+  const integrationStatus = health.connected ? ProviderIntegrationStatus.CONNECTED : ProviderIntegrationStatus.ERROR;
+  await prisma.provider.updateMany({ where: { code: "heartunlocks", integrationStatus: { not: integrationStatus } }, data: { integrationStatus } });
+  return { configured:true, online:health.connected, integrationStatus, checkedAt:new Date().toISOString() };
 }
 
 export async function listAdminIntegrations() {
