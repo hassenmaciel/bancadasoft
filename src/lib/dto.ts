@@ -30,14 +30,14 @@ export type ProductDTO = Pick<
 > & { category: CategoryDTO | null; brand: BrandDTO | null };
 
 export type OrderItemDTO = { id: string; product: ProductDTO; unitPriceCents: number };
-export type PaymentDTO = Pick<Payment, "status" | "provider" | "amountCents"> & {
+export type PaymentDTO = Pick<Payment, "status" | "amountCents"> & {
   externalPaymentId: string | null;
   pixPayload: string;
   qrCodeImage: string | null;
   expirationDate: Date;
 };
 export type DeliveryDTO = { credential?: string; instructions?: string };
-export type FulfillmentDTO = Pick<Fulfillment, "status" | "provider"> & { delivery?: DeliveryDTO };
+export type FulfillmentDTO = Pick<Fulfillment, "status"> & { delivery?: DeliveryDTO };
 export type OrderDTO = Pick<Order, "id" | "publicToken" | "status" | "totalCents" | "createdAt"> & {
   items: OrderItemDTO[];
   payment: PaymentDTO | null;
@@ -87,7 +87,6 @@ export const orderDto = (order: any): OrderDTO => ({
   payment: order.payment
     ? {
         status: order.payment.status,
-        provider: order.payment.provider,
         amountCents: order.payment.amountCents,
         externalPaymentId: order.payment.externalPaymentId,
         pixPayload: order.payment.pixCode,
@@ -98,7 +97,6 @@ export const orderDto = (order: any): OrderDTO => ({
   fulfillment: order.fulfillment
     ? {
         status: order.fulfillment.status,
-        provider: order.fulfillment.provider,
         delivery: (order.fulfillment.delivery as DeliveryDTO | null) ?? undefined,
       }
     : null,

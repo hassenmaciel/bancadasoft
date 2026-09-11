@@ -1,4 +1,13 @@
 import { prisma } from "@/lib/prisma";
+import { configuredHeartUnlocksAdapter, HeartUnlocksProviderAdapter } from "@/lib/providers/heartunlocks";
+
+export async function heartUnlocksGatewayStatus() {
+  const adapter = configuredHeartUnlocksAdapter();
+  const configured = adapter instanceof HeartUnlocksProviderAdapter;
+  if (!configured) return { configured:false, online:false, checkedAt:null as string|null };
+  const health = await adapter.checkConnection();
+  return { configured:true, online:health.connected, checkedAt:new Date().toISOString() };
+}
 
 export async function listAdminIntegrations() {
   const providers = await prisma.provider.findMany({

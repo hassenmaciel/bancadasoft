@@ -270,26 +270,40 @@ model ProviderProduct {
 }
 
 model ProviderOrder {
-  id                String              @id @default(cuid())
+  id                String                  @id @default(cuid())
   providerId        String
-  provider          Provider            @relation(fields: [providerId], references: [id], onDelete: Restrict)
+  provider          Provider                @relation(fields: [providerId], references: [id], onDelete: Restrict)
   providerProductId String?
-  providerProduct   ProviderProduct?    @relation(fields: [providerProductId], references: [id], onDelete: Restrict)
+  providerProduct   ProviderProduct?        @relation(fields: [providerProductId], references: [id], onDelete: Restrict)
   orderId           String
-  order             Order               @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  fulfillmentId     String              @unique
-  fulfillment       Fulfillment         @relation(fields: [fulfillmentId], references: [id], onDelete: Cascade)
+  order             Order                   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  fulfillmentId     String                  @unique
+  fulfillment       Fulfillment             @relation(fields: [fulfillmentId], references: [id], onDelete: Cascade)
   externalOrderId   String?
-  status            ProviderOrderStatus @default(QUEUED)
+  status            ProviderOrderStatus     @default(QUEUED)
   costCents         Int?
-  currency          String              @default("BRL")
-  attempts          Int                 @default(0)
+  currency          String                  @default("BRL")
+  attempts          Int                     @default(0)
   lastError         String?
   requestReference  String?
   responseReference String?
-  createdAt         DateTime            @default(now())
-  updatedAt         DateTime            @updatedAt
+  createdAt         DateTime                @default(now())
+  updatedAt         DateTime                @updatedAt
+  callbackEvents    ProviderCallbackEvent[]
 
   @@index([orderId, status])
   @@index([providerId, externalOrderId])
+}
+
+model ProviderCallbackEvent {
+  id              String        @id @default(cuid())
+  providerOrderId String
+  providerOrder   ProviderOrder @relation(fields: [providerOrderId], references: [id], onDelete: Cascade)
+  eventKey        String        @unique
+  status          String
+  payload         Json
+  processedAt     DateTime?
+  createdAt       DateTime      @default(now())
+
+  @@index([providerOrderId, createdAt])
 }

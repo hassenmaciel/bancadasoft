@@ -31,8 +31,10 @@ describe("DTO mappers", () => {
       events: [{ status: OrderStatus.DELIVERED, note: "Entregue", createdAt: new Date("2026-09-10T10:01:00Z") }],
     });
     expect(dto.items[0].product.category).toEqual(categoryDto);
-    expect(dto.payment).toMatchObject({ status: PaymentStatus.PAID, provider: "asaas", externalPaymentId: "pay-real", pixPayload: "PIX-REAL", qrCodeImage: "data:image/png;base64,encoded-image" });
+    expect(dto.payment).toMatchObject({ status: PaymentStatus.PAID, externalPaymentId: "pay-real", pixPayload: "PIX-REAL", qrCodeImage: "data:image/png;base64,encoded-image" });
+    expect(dto.payment).not.toHaveProperty("provider");
     expect(dto.fulfillment).toMatchObject({ status: FulfillmentStatus.FULFILLED, delivery: { credential: "MOCK-123" } });
+    expect(dto.fulfillment).not.toHaveProperty("provider");
     expect(dto).not.toHaveProperty("product");
     expect(dto).not.toHaveProperty("pixCode");
     expect(dto).not.toHaveProperty("delivery");

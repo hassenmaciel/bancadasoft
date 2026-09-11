@@ -112,7 +112,7 @@ async function main() {
     update: {},
     create: { id: "default", businessName: "BANCADASOFT", slogan: "Encontrou. Pagou. Liberou.", domain: "bancadasoft.com.br" },
   });
-  await prisma.provider.upsert({
+  const heartUnlocks = await prisma.provider.upsert({
     where: { code: "heartunlocks" },
     update: { name: "HeartUnlocks", apiBaseUrl: "https://api.heartunlocks.com", active: false, integrationStatus: ProviderIntegrationStatus.NOT_CONNECTED },
     create: { name: "HeartUnlocks", code: "heartunlocks", apiBaseUrl: "https://api.heartunlocks.com", active: false, integrationStatus: ProviderIntegrationStatus.NOT_CONNECTED },
@@ -123,6 +123,11 @@ async function main() {
     create: { name: "Sandbox BancadaSoft", code: "mock-sandbox", active: true, integrationStatus: ProviderIntegrationStatus.CONNECTED },
   });
   const unlockTool = persistedProducts.get("unlocktool-6h");
+  await prisma.providerProduct.upsert({
+    where: { providerId_productId_externalProductId: { providerId: heartUnlocks.id, productId: unlockTool.id, externalProductId: "2194" } },
+    update: { label: "UNLOCKTOOL RENT [6 Hours]", active: true, providerCostCents: 30, currency: "USD", metadata: { requiredFields: ["Quantity"], quantity: 1, providerTime: "1-60 Minutes", imageUrl: "https://static.dhrufusion.net/f127194c-9ca4-40c1-a937-27c66f4e8c26/2026/05/24/9MaSE7cD_WhatsApp_Image_2026-05-14_at_13.46.39.jpeg" } },
+    create: { providerId: heartUnlocks.id, productId: unlockTool.id, externalProductId: "2194", label: "UNLOCKTOOL RENT [6 Hours]", providerCostCents: 30, currency: "USD", active: true, metadata: { requiredFields: ["Quantity"], quantity: 1, providerTime: "1-60 Minutes", imageUrl: "https://static.dhrufusion.net/f127194c-9ca4-40c1-a937-27c66f4e8c26/2026/05/24/9MaSE7cD_WhatsApp_Image_2026-05-14_at_13.46.39.jpeg" } },
+  });
   await prisma.providerProduct.upsert({
     where: { providerId_productId_externalProductId: { providerId: sandbox.id, productId: unlockTool.id, externalProductId: "unlocktool-sandbox" } },
     update: { active: true, providerCostCents: 1000, currency: "BRL" },

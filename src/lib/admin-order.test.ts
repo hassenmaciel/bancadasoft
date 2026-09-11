@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { adminOrderDto, type AdminOrderRecord } from "./admin-order";
+import { adminCallbackDto, adminOrderDto, sanitizeProviderError, type AdminOrderRecord } from "./admin-order";
 
 describe("mapper administrativo de pedido", () => {
   it("mantém pagamento, eventos, fulfillment, entrega e histórico separados", () => {
@@ -18,5 +18,18 @@ describe("mapper administrativo de pedido", () => {
     expect(dto.events[0]).toMatchObject({ status: "DELIVERED", note: "Entrega disponível" });
     expect(dto.payment?.status).toBe("PAID");
     expect(dto.fulfillment?.status).toBe("FULFILLED");
+  });
+
+  it("expõe somente metadados seguros do callback", () => {
+    const date = new Date("2026-09-10T12:00:00Z");
+    const dto = adminCallbackDto({id:"callback-1",status:"success",createdAt:date,processedAt:date,payload:{reference_id:"reference-1",order_id:"provider-order-1",replay:"U0VDUkVUX1BBU1NXT1JE"}});
+    expect(dto).toMatchObject({referenceId:"reference-1",providerOrderId:"provider-order-1",status:"success"});
+    expect(dto).not.toHaveProperty("payload");
+    expect(dto).not.toHaveProperty("replay");
+    expect(JSON.stringify(dto)).not.toContain("U0VDUkVUX1BBU1NXT1JE");
+  });
+
+  it("sanitiza credenciais acidentalmente presentes no último erro", () => {
+    expect(sanitizeProviderError("HTTP 401 Bearer abc123 password=unsafe token:also-unsafe")).toBe("HTTP 401 Bearer [REDACTED] password=[REDACTED] token=[REDACTED]");
   });
 });
