@@ -26,6 +26,8 @@ export default function AsaasDiagnostic({ initial }: { initial: AsaasDiagnosticD
     <dl><div><dt>Payment Provider</dt><dd>{label(state.provider)}</dd></div><div><dt>Ambiente</dt><dd>{label(state.environment)}</dd></div><div><dt>Base URL</dt><dd>{state.baseUrl}</dd></div><div><dt>API Key configurada</dt><dd>{state.apiKeyConfigured?"SIM":"NÃO"}</dd></div><div><dt>Webhook token</dt><dd>{state.webhookTokenConfigured?"SIM":"NÃO"}</dd></div><div><dt>HTTP</dt><dd>{state.httpStatus??"—"}</dd></div><div><dt>Última verificação</dt><dd>{state.checkedAt?new Date(state.checkedAt).toLocaleString("pt-BR"):"Nunca"}</dd></div></dl>
     {state.configurationError&&<p className="asaas-config-error">ERRO DE CONFIGURAÇÃO: revise provider, ambiente, URL e credenciais.</p>}
     {state.reason&&<p className="asaas-diagnostic-reason">Motivo: {reasons[state.reason]}</p>}
+    {state.target&&<p className="asaas-diagnostic-detail">Destino: {state.target.host}{state.target.path}</p>}
+    {state.error&&<div className="asaas-technical-error"><b>{state.error.category}</b><span>{state.error.message}</span><code>name={state.error.name??"—"} · code={state.error.code??"—"} · cause={state.error.causeCode??"—"} · fetch={state.requestAttempted?"INICIADO":"NÃO INICIADO"}</code></div>}
     <div className="diagnostic-actions"><button type="button" disabled={pending} onClick={testConnection}>{pending?"Testando...":"Testar conexão Asaas"}</button>{error&&<small role="alert">{error}</small>}</div>
     <div className="integration-note"><b>Consulta segura</b><span>Executa somente GET /finance/balance. O saldo e as credenciais nunca são retornados à interface.</span></div>
   </article>;

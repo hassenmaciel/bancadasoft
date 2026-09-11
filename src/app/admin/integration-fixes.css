@@ -16,3 +16,7 @@
 .diagnostic-actions small,.asaas-config-error { color:#a92c2c; font-size:9px; }
 .asaas-config-error { margin:12px 0 0; padding:10px 12px; border-radius:7px; background:#ffeaea; font-weight:800; }
 .asaas-diagnostic-reason { margin:10px 0 0; color:#52667e; font-size:9px; font-weight:700; }
+.asaas-diagnostic-detail { margin:7px 0 0; color:#52667e; font-size:9px; }
+.asaas-technical-error { display:grid; gap:5px; margin-top:10px; padding:10px 12px; border-radius:7px; background:#f5f7fa; color:#52667e; font-size:9px; }
+.asaas-technical-error b { color:#a92c2c; }
+.asaas-technical-error code { overflow-wrap:anywhere; color:#65778c; font-size:8px; }
