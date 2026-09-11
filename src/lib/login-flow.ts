@@ -1,0 +1,2 @@
+export type LoginFlowDependencies<User>={authenticate:(email:string,password:string)=>Promise<User|null>;createSession:(user:User)=>Promise<void>};
+export async function runLoginFlow<User>(email:string,password:string,deps:LoginFlowDependencies<User>){try{const user=await deps.authenticate(email,password);if(!user)return{status:401 as const,user:null};await deps.createSession(user);return{status:200 as const,user}}catch{return{status:500 as const,user:null}}}
