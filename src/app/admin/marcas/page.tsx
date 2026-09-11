@@ -1,0 +1,2 @@
+import { prisma } from "@/lib/prisma";import BrandManager from "./brand-manager";
+export default async function BrandsPage(){const rows=await prisma.brand.findMany({include:{_count:{select:{products:true}}},orderBy:{name:"asc"}});return <><header className="admin-heading"><div><small>CATÁLOGO</small><h1>Marcas</h1><p>Gerencie marcas, identidade visual e disponibilidade.</p></div></header><BrandManager rows={rows}/></>}

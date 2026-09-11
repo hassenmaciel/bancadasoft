@@ -63,22 +63,37 @@ enum ProviderOrderStatus {
 }
 
 model User {
-  id              String   @id @default(cuid())
-  email           String   @unique
+  id              String     @id @default(cuid())
+  email           String     @unique
   name            String
-  role            String   @default("CUSTOMER")
+  role            String     @default("CUSTOMER")
   passwordHash    String
-  asaasCustomerId String?  @unique
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  asaasCustomerId String?    @unique
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
   orders          Order[]
+  auditLogs       AuditLog[]
 }
 
 model Category {
-  id       String    @id @default(cuid())
-  name     String    @unique
-  slug     String    @unique
-  products Product[]
+  id        String    @id @default(cuid())
+  name      String    @unique
+  slug      String    @unique
+  active    Boolean   @default(true)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @default(now()) @updatedAt
+  products  Product[]
+}
+
+model Brand {
+  id        String    @id @default(cuid())
+  name      String    @unique
+  slug      String    @unique
+  imageUrl  String?
+  active    Boolean   @default(true)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  products  Product[]
 }
 
 model Product {
@@ -90,14 +105,46 @@ model Product {
   duration         String?
   imageUrl         String?
   priceCents       Int
+  costCents        Int?
+  featured         Boolean           @default(false)
+  sortOrder        Int               @default(0)
   status           ProductStatus     @default(DRAFT)
   available        Boolean           @default(true)
   categoryId       String
   category         Category          @relation(fields: [categoryId], references: [id])
+  brandId          String?
+  brand            Brand?            @relation(fields: [brandId], references: [id], onDelete: SetNull)
   createdAt        DateTime          @default(now())
   updatedAt        DateTime          @updatedAt
   orderItems       OrderItem[]
   providerProducts ProviderProduct[]
+}
+
+model SiteSettings {
+  id                 String   @id @default("default")
+  businessName       String   @default("BANCADASOFT")
+  slogan             String   @default("Encontrou. Pagou. Liberou.")
+  domain             String   @default("bancadasoft.com.br")
+  supportWhatsapp    String?
+  supportEmail       String?
+  supportText        String?
+  maintenanceEnabled Boolean  @default(false)
+  maintenanceMessage String   @default("Estamos realizando melhorias. Voltaremos em breve.")
+  updatedAt          DateTime @updatedAt
+}
+
+model AuditLog {
+  id          String   @id @default(cuid())
+  actorUserId String
+  actor       User     @relation(fields: [actorUserId], references: [id], onDelete: Restrict)
+  action      String
+  entityType  String
+  entityId    String?
+  metadata    Json?
+  createdAt   DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([entityType, entityId])
 }
 
 model Order {

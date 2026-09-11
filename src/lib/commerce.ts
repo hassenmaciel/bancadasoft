@@ -6,7 +6,7 @@ import { configuredPaymentProviderCode, getPaymentProvider } from "@/lib/payment
 import { paymentWebhookLookup, shouldProcessPaymentEvent, shouldStartFulfillment, transitionPayment } from "@/lib/payments/rules";
 import type { ParsedPaymentWebhook } from "@/lib/payments/types";
 
-export const catalogue=()=>prisma.product.findMany({where:publicProductWhere,include:{category:true},orderBy:{createdAt:"asc"}});
+export const catalogue=()=>prisma.product.findMany({where:publicProductWhere,include:{category:true,brand:true},orderBy:[{sortOrder:"asc"},{createdAt:"asc"}]});
 export const productsForAdmin=()=>prisma.product.findMany({include:{category:true},orderBy:{createdAt:"desc"}});
 export const setProductAvailability=(id:string,available:boolean)=>prisma.product.update({where:{id},data:{available}});
 
@@ -18,7 +18,7 @@ export async function createOrder(input:{productId:string;name:string;email:stri
   await prisma.$transaction(async(tx)=>{if(provider.code==="asaas"&&payment.externalCustomerId&&!user.asaasCustomerId)await tx.user.update({where:{id:user.id},data:{asaasCustomerId:payment.externalCustomerId}});await tx.payment.update({where:{orderId:pendingOrder.id},data:{providerReference:payment.externalPaymentId,externalPaymentId:payment.externalPaymentId,status:payment.status,pixCode:payment.pixCode,qrCode:payment.qrCode,expiresAt:payment.expiresAt}});await tx.orderEvent.create({data:{orderId:pendingOrder.id,status:OrderStatus.PENDING_PAYMENT,note:`PIX ${provider.code} criado.`}});});
   return getOrder(pendingOrder.id);
 }
-export const getOrder=(id:string)=>prisma.order.findUnique({where:{id},include:{items:{include:{product:{include:{category:true}}}},payment:true,fulfillment:true,events:{orderBy:{createdAt:"asc"}}}});
+export const getOrder=(id:string)=>prisma.order.findUnique({where:{id},include:{items:{include:{product:{include:{category:true,brand:true}}}},payment:true,fulfillment:true,events:{orderBy:{createdAt:"asc"}}}});
 
 export async function processPayment(event:ParsedPaymentWebhook){
   const lookup=paymentWebhookLookup(event);let payment=lookup.external?await prisma.payment.findFirst({where:lookup.external,include:{order:true}}):null;if(!payment&&lookup.reference)payment=await prisma.payment.findFirst({where:lookup.reference,include:{order:true}});if(!payment)return undefined;

@@ -1,5 +1,6 @@
 import type {
   Category,
+  Brand,
   Fulfillment,
   Order,
   OrderItem,
@@ -9,6 +10,7 @@ import type {
 } from "@prisma/client";
 
 export type CategoryDTO = Pick<Category, "id" | "slug" | "name">;
+export type BrandDTO = Pick<Brand, "id" | "slug" | "name">;
 
 export type ProductDTO = Pick<
   Product,
@@ -22,7 +24,7 @@ export type ProductDTO = Pick<
   | "priceCents"
   | "status"
   | "available"
-> & { category: CategoryDTO | null };
+> & { category: CategoryDTO | null; brand: BrandDTO | null };
 
 export type OrderItemDTO = { id: string; product: ProductDTO; unitPriceCents: number };
 export type PaymentDTO = Pick<Payment, "status" | "provider" | "amountCents"> & {
@@ -41,7 +43,7 @@ export type OrderDTO = Pick<Order, "id" | "publicToken" | "status" | "totalCents
 };
 export type UserSessionDTO = Pick<User, "id" | "email" | "name" | "role">;
 
-type ProductWithCategory = Product & { category?: Category | null };
+type ProductWithCategory = Product & { category?: Category | null; brand?: Brand | null };
 
 export const normalizeQrCodeImage = (encodedImage: string | null | undefined) => {
   if (!encodedImage) return null;
@@ -62,6 +64,7 @@ export const productDto = (product: ProductWithCategory): ProductDTO => ({
   category: product.category
     ? { id: product.category.id, slug: product.category.slug, name: product.category.name }
     : null,
+  brand: product.brand ? { id: product.brand.id, slug: product.brand.slug, name: product.brand.name } : null,
 });
 
 export const orderDto = (order: any): OrderDTO => ({

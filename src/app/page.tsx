@@ -25,17 +25,20 @@ export default function Home() {
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [maintenance, setMaintenance] = useState("");
 
   useEffect(() => {
     fetch("/api/products", { cache: "no-store" })
       .then(async (response) => {
         const payload = await response.json();
+        if (response.status === 503 && payload.maintenance) { setMaintenance(payload.message); return; }
         if (!response.ok) throw new Error(payload.error || "Falha ao carregar o catálogo.");
         setProducts(payload.data ?? []);
       })
       .catch((error: Error) => setNotice(error.message))
       .finally(() => setLoading(false));
   }, []);
+
 
   useEffect(() => {
     if (!order) return;
@@ -62,7 +65,7 @@ export default function Home() {
     const term = query.trim().toLocaleLowerCase("pt-BR");
     return products.filter((product) => {
       const matchesCategory = category === "ALL" || product.category?.id === category;
-      const searchable = `${product.name} ${product.description ?? ""} ${product.category?.name ?? ""}`.toLocaleLowerCase("pt-BR");
+      const searchable = `${product.name} ${product.description ?? ""} ${product.category?.name ?? ""} ${product.brand?.name ?? ""}`.toLocaleLowerCase("pt-BR");
       return matchesCategory && (!term || searchable.includes(term));
     });
   }, [category, products, query]);
@@ -143,6 +146,8 @@ export default function Home() {
     setCopied(true);
     window.setTimeout(() => setCopied(false), 2000);
   }
+
+  if (maintenance) return <main className="maintenance-screen"><section><strong>BANCADA<span>SOFT</span></strong><h1>Estamos em manutenção</h1><p>{maintenance}</p><small>Webhooks e pedidos já iniciados continuam sendo processados.</small></section></main>;
 
   return (
     <main>

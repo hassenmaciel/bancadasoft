@@ -3,11 +3,12 @@ import { FulfillmentStatus, OrderStatus, PaymentStatus, ProductStatus, ProductTy
 import { isPublicProduct, publicProductWhere } from "./catalog";
 import { normalizeQrCodeImage, orderDto, productDto } from "./dto";
 
-const category: Category = { id: "category-1", slug: "ferramentas", name: "Ferramentas" };
+const category: Category = { id: "category-1", slug: "ferramentas", name: "Ferramentas", active: true, createdAt: new Date("2026-09-10T10:00:00Z"), updatedAt: new Date("2026-09-10T10:00:00Z") };
+const categoryDto = { id: category.id, slug: category.slug, name: category.name };
 const product: Product = {
   id: "product-1", slug: "unlocktool-6h", name: "UnlockTool", description: "Aluguel de teste",
   type: ProductType.RENTAL, duration: "6 horas", imageUrl: "https://cdn.example.test/unlocktool.png",
-  priceCents: 2900, status: ProductStatus.PUBLISHED, available: true, categoryId: category.id,
+  priceCents: 2900, costCents: 1000, featured: false, sortOrder: 0, status: ProductStatus.PUBLISHED, available: true, categoryId: category.id, brandId: null,
   createdAt: new Date("2026-09-10T10:00:00Z"), updatedAt: new Date("2026-09-10T10:00:00Z"),
 };
 
@@ -16,7 +17,7 @@ describe("DTO mappers", () => {
     expect(productDto({ ...product, category })).toEqual({
       id: "product-1", slug: "unlocktool-6h", name: "UnlockTool", description: "Aluguel de teste",
       type: ProductType.RENTAL, duration: "6 horas", imageUrl: "https://cdn.example.test/unlocktool.png",
-      priceCents: 2900, status: ProductStatus.PUBLISHED, available: true, category,
+      priceCents: 2900, status: ProductStatus.PUBLISHED, available: true, category: categoryDto, brand: null,
     });
   });
 
@@ -29,7 +30,7 @@ describe("DTO mappers", () => {
       fulfillment: { status: FulfillmentStatus.FULFILLED, provider: "mock", delivery: { credential: "MOCK-123", instructions: "Teste" } },
       events: [{ status: OrderStatus.DELIVERED, note: "Entregue", createdAt: new Date("2026-09-10T10:01:00Z") }],
     });
-    expect(dto.items[0].product.category).toEqual(category);
+    expect(dto.items[0].product.category).toEqual(categoryDto);
     expect(dto.payment).toMatchObject({ status: PaymentStatus.PAID, provider: "asaas", externalPaymentId: "pay-real", pixPayload: "PIX-REAL", qrCodeImage: "data:image/png;base64,encoded-image" });
     expect(dto.fulfillment).toMatchObject({ status: FulfillmentStatus.FULFILLED, delivery: { credential: "MOCK-123" } });
     expect(dto).not.toHaveProperty("product");

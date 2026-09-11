@@ -2,7 +2,7 @@ import { prisma } from "@/lib/prisma";
 import { adminOrderDto, adminOrderInclude } from "@/lib/admin-order";
 
 export async function listAdminOrders() {
-  const orders = await prisma.order.findMany({ include: adminOrderInclude, orderBy: { createdAt: "desc" } });
+  const orders = await prisma.order.findMany({ take: 100, include: adminOrderInclude, orderBy: { createdAt: "desc" } });
   return orders.map(adminOrderDto);
 }
 

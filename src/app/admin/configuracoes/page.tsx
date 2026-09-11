@@ -1,0 +1,2 @@
+import { prisma } from "@/lib/prisma";import SettingsForm from "./settings-form";
+export default async function SettingsPage(){const settings=await prisma.siteSettings.upsert({where:{id:"default"},update:{},create:{id:"default"}});return <><header className="admin-heading"><div><small>OPERAÇÃO</small><h1>Configurações</h1><p>Informações públicas e disponibilidade da loja.</p></div></header><SettingsForm settings={settings}/></>}
