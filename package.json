@@ -7,7 +7,9 @@
     "build": "next build",
     "lint": "eslint .",
     "test": "vitest run",
-    "postinstall": "prisma generate"
+    "postinstall": "prisma generate",
+    "admin:update": "node scripts/update-admin.mjs",
+    "admin:verify": "node scripts/verify-admin-password.mjs"
   },
   "prisma": { "seed": "node prisma/seed.cjs" },
   "dependencies": {

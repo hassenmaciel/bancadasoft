@@ -1,0 +1,2 @@
+import{describe,expect,it}from"vitest";import{hashPassword,isSupportedPasswordHash,verifyPassword}from"./password";
+describe("password hashing",()=>{it("uses bcrypt cost 12 and verifies through the shared login function",async()=>{const hash=await hashPassword("Strong-Test-123!");expect(isSupportedPasswordHash(hash)).toBe(true);expect(await verifyPassword("Strong-Test-123!",hash)).toBe(true);expect(await verifyPassword("Wrong-Test-123!",hash)).toBe(false)});it("rejects malformed hashes",()=>expect(isSupportedPasswordHash("not-a-hash")).toBe(false))});

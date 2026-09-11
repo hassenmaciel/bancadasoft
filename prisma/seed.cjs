@@ -44,9 +44,8 @@ const products = [
 ];
 
 async function main() {
-  const adminPassword = process.env.SEED_ADMIN_PASSWORD;
   const userPassword = process.env.SEED_USER_PASSWORD;
-  if (!adminPassword || !userPassword) {
+  if (!userPassword) {
     throw new Error("Variáveis de senha do seed não configuradas.");
   }
 
@@ -66,13 +65,14 @@ async function main() {
     brandIds.set(slug, brand.id);
   }
 
-  const adminHash = await bcrypt.hash(adminPassword, 12);
   const userHash = await bcrypt.hash(userPassword, 12);
-  await prisma.user.upsert({
-    where: { email: "admin@bancadasoft.local" },
-    update: { passwordHash: adminHash },
-    create: { name: "Administrador", email: "admin@bancadasoft.local", role: "ADMIN", passwordHash: adminHash },
-  });
+  const existingAdmin = await prisma.user.findFirst({ where: { role: "ADMIN" }, select: { id: true } });
+  if (!existingAdmin) {
+    const adminPassword = process.env.SEED_ADMIN_PASSWORD;
+    if (!adminPassword) throw new Error("Variável de senha do ADMIN de desenvolvimento não configurada.");
+    const adminHash = await bcrypt.hash(adminPassword, 12);
+    await prisma.user.create({ data: { name: "Administrador", email: "admin@bancadasoft.local", role: "ADMIN", passwordHash: adminHash } });
+  }
   await prisma.user.upsert({
     where: { email: "usuario@bancadasoft.local" },
     update: { passwordHash: userHash },
