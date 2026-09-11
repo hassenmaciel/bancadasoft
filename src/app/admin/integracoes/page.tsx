@@ -1,5 +1,7 @@
 import { heartUnlocksGatewayStatus, listAdminIntegrations } from "@/lib/admin-integrations";
 import ProviderOperationControl from "./provider-operation-control";
+import AsaasDiagnostic from "./asaas-diagnostic";
+import { publicAsaasDiagnostic, readAsaasRuntimeConfig } from "@/lib/payments/asaas-diagnostics";
 
 export const dynamic = "force-dynamic";
 const money = (value: number, currency: string) => new Intl.NumberFormat("pt-BR", { style: "currency", currency }).format(value / 100);
@@ -7,7 +9,7 @@ const money = (value: number, currency: string) => new Intl.NumberFormat("pt-BR"
 export default async function IntegrationsPage() {
   const heartGateway = await heartUnlocksGatewayStatus();
   const providers = await listAdminIntegrations();
-  const asaasConfigured = process.env.ASAAS_ENV === "sandbox" && Boolean(process.env.ASAAS_API_KEY);
+  const asaasDiagnostic = publicAsaasDiagnostic(readAsaasRuntimeConfig());
   return <>
     <header className="admin-heading"><div><small>PROVIDERS</small><h1>Integrações</h1><p>Fornecedores e vínculos técnicos do catálogo.</p></div></header>
     <h2 className="integration-section-title">Fornecedores técnicos</h2>
@@ -23,6 +25,6 @@ export default async function IntegrationsPage() {
       </article>;
     })}</section>
     <h2 className="integration-section-title payment-title">Pagamentos</h2>
-    <section className="integration-list"><article className="integration-card payment-integration"><div className="integration-head"><div><span className="provider-mark">AS</span><div><h2>Asaas</h2><code>asaas</code></div></div><span className="connection-badge">{asaasConfigured ? "SANDBOX CONFIGURADO" : "NÃO CONFIGURADO"}</span></div><dl><div><dt>Tipo</dt><dd>PIX</dd></div><div><dt>API Base</dt><dd>https://api-sandbox.asaas.com/v3</dd></div><div><dt>Ambiente</dt><dd>Sandbox</dd></div><div><dt>Credenciais</dt><dd>{asaasConfigured ? "Configuradas" : "Não configuradas"}</dd></div></dl><div className="integration-note"><b>Ambiente seguro de testes</b><span>A chave nunca é exibida. Nenhuma operação de produção é permitida por esta integração.</span></div></article></section>
+    <section className="integration-list"><AsaasDiagnostic initial={asaasDiagnostic}/></section>
   </>;
 }
