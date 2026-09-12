@@ -30,13 +30,18 @@ export function decodeReplay(value?: string) {
   }
 }
 
+export function normalizeCredentialReplay(text: string) {
+  return text.replace(/\r\n?/g, "\n").replace(/<br\s*\/?>/gi, "\n");
+}
+
 export function parseCredentials(text: string | null) {
   if (!text) return null;
-  const username = text
-    .match(/^\s*(?:USERNAME|USER|LOGIN)\s*(?:=>|:)\s*(\S.+?)\s*$/im)?.[1]
+  const normalized = normalizeCredentialReplay(text);
+  const username = normalized
+    .match(/^\s*(?:USERNAME|USER|LOGIN)\s*(?:=>|:)\s*(.+?)\s*$/im)?.[1]
     ?.trim();
-  const password = text
-    .match(/^\s*(?:PASSWORD|PASS)\s*(?:=>|:)\s*(\S.+?)\s*$/im)?.[1]
+  const password = normalized
+    .match(/^\s*(?:PASSWORD|PASS)\s*(?:=>|:)\s*(.+?)\s*$/im)?.[1]
     ?.trim();
   return username && password ? { username, password } : null;
 }

@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { HeartUnlocksProviderAdapter, ProviderOrderUncertainError } from "./heartunlocks";
-import { decodeReplay, parseCredentials, callbackEventKey } from "./heartunlocks-callback";
+import { decodeReplay, parseCredentials, callbackEventKey, normalizeCredentialReplay } from "./heartunlocks-callback";
 
 describe("HeartUnlocks adapter", () => {
   it("reads the catalog through the authenticated gateway without creating orders", async () => {
@@ -50,6 +50,32 @@ describe("HeartUnlocks callback replay", () => {
   it("rejects invalid replay and does not invent credentials", () => {
     expect(decodeReplay("not base64!")) .toBeNull();
     expect(parseCredentials("arbitrary provider response")).toBeNull();
+  });
+  it.each([
+    "Username: TestUser<br>Password: TestPass",
+    "Username: TestUser<br/>Password: TestPass",
+    "Username: TestUser<br />Password: TestPass",
+    "Username: TestUser\r\nPassword: TestPass",
+    "  LOGIN => TestUser  <BR>  PASS => TestPass  ",
+  ])("normalizes provider line separators without retaining markup", (replay) => {
+    expect(parseCredentials(replay)).toEqual({ username: "TestUser", password: "TestPass" });
+  });
+  it("preserves legitimate credential characters and internal spaces", () => {
+    expect(parseCredentials("Username: User+tag@example.test\nPassword: p@ss word<keep>!"))
+      .toEqual({ username: "User+tag@example.test", password: "p@ss word<keep>!" });
+  });
+  it("requires both credential fields", () => {
+    expect(parseCredentials("Username: TestUser<br>")) .toBeNull();
+    expect(parseCredentials("Password: TestPass")) .toBeNull();
+  });
+  it("normalizes only provider line separators and never turns replay into executable HTML", () => {
+    expect(normalizeCredentialReplay("Username: A<br/>Password: B<script>x</script>"))
+      .toBe("Username: A\nPassword: B<script>x</script>");
+  });
+  it("parses a valid Base64 replay after normalization and rejects invalid Base64", () => {
+    const replay = Buffer.from("Username: EncodedUser<br>Password: EncodedPass").toString("base64");
+    expect(parseCredentials(decodeReplay(replay))).toEqual({ username: "EncodedUser", password: "EncodedPass" });
+    expect(decodeReplay("%%%invalid%%%")) .toBeNull();
   });
   it("produces a stable idempotency key and changes it with the event", () => {
     const event = { reference_id: "ref", order_id: "order", status: "success", replay: "abc=" };
