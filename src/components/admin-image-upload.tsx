@@ -14,7 +14,16 @@ export default function AdminImageUpload({
 }) {
   const input = useRef<HTMLInputElement>(null),
     [busy, setBusy] = useState(false),
-    [error, setError] = useState("");
+    [error, setError] = useState(""),
+    [unsavedUpload, setUnsavedUpload] = useState("");
+  async function discardUnsaved(url: string) {
+    const response = await fetch("/api/admin/assets", {
+      method: "DELETE",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ url }),
+    });
+    if (!response.ok) throw new Error("Falha ao remover imagem temporária.");
+  }
   async function upload(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
     if (!file) return;
@@ -28,9 +37,37 @@ export default function AdminImageUpload({
       body: form,
     });
     const body = await response.json();
-    setBusy(false);
-    if (!response.ok) return setError(body.error ?? "Falha no upload.");
+    if (!response.ok) {
+      setBusy(false);
+      return setError(body.error ?? "Falha no upload.");
+    }
+    if (unsavedUpload) {
+      try {
+        await discardUnsaved(unsavedUpload);
+      } catch {
+        setError("A imagem anterior não pôde ser removida.");
+      }
+    }
+    setUnsavedUpload(body.data.url);
     onChange(body.data.url);
+    setBusy(false);
+  }
+  async function remove() {
+    setBusy(true);
+    setError("");
+    try {
+      if (value === unsavedUpload) {
+        await discardUnsaved(value);
+        setUnsavedUpload("");
+      }
+      onChange("");
+    } catch (caught) {
+      setError(
+        caught instanceof Error ? caught.message : "Falha ao remover imagem.",
+      );
+    } finally {
+      setBusy(false);
+    }
   }
   return (
     <div className="admin-image-field">
@@ -60,7 +97,7 @@ export default function AdminImageUpload({
             type="button"
             className="danger-link"
             disabled={busy}
-            onClick={() => onChange("")}
+            onClick={() => void remove()}
           >
             Remover imagem
           </button>
