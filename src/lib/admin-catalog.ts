@@ -27,15 +27,18 @@ export const productInputSchema = z.object({
 export const categoryInputSchema = z.object({
   name: z.string().trim().min(1, "Nome é obrigatório.").max(80),
   slug: z.string().trim().min(1, "Slug é obrigatório.").max(100).regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, "Use letras minúsculas, números e hífens."),
+  active: z.boolean().default(true),
 });
 
 export type AdminProductDTO = Pick<Product, "id" | "slug" | "name" | "description" | "longDescription" | "type" | "deliveryType" | "deliveryEstimate" | "searchTerms" | "duration" | "priceCents" | "costCents" | "featured" | "sortOrder" | "status" | "available" | "imageUrl"> & {
   category: Pick<Category, "id" | "name" | "slug">;
   brand: Pick<Brand, "id" | "name" | "slug"> | null;
   updatedAt: string;
+  providerProducts: Array<{id:string;externalProductId:string;label:string|null;providerCostCents:number|null;currency:string;active:boolean;mode:string;metadata:unknown;updatedAt:string;provider:{id:string;name:string;code:string;active:boolean}}>;
 };
 
-export const adminProductDto = (product: Product & { category: Category; brand: Brand | null }): AdminProductDTO => ({
+type AdminProductSource=Product & {category:Category;brand:Brand|null;providerProducts?:Array<{id:string;externalProductId:string;label:string|null;providerCostCents:number|null;currency:string;active:boolean;mode:string;metadata:unknown;updatedAt:Date;provider:{id:string;name:string;code:string;active:boolean}}>};
+export const adminProductDto = (product: AdminProductSource): AdminProductDTO => ({
   id: product.id, slug: product.slug, name: product.name, description: product.description,
   longDescription: product.longDescription, deliveryType: product.deliveryType,
   deliveryEstimate: product.deliveryEstimate, searchTerms: product.searchTerms,
@@ -45,6 +48,7 @@ export const adminProductDto = (product: Product & { category: Category; brand: 
   category: { id: product.category.id, name: product.category.name, slug: product.category.slug },
   brand: product.brand ? { id: product.brand.id, name: product.brand.name, slug: product.brand.slug } : null,
   updatedAt: product.updatedAt.toISOString(),
+  providerProducts:(product.providerProducts??[]).map(link=>({...link,mode:String(link.mode),updatedAt:link.updatedAt.toISOString()})),
 });
 
 export const productStatuses = Object.values(ProductStatus);

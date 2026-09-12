@@ -86,8 +86,8 @@ async function main() {
       description: item.description,
       longDescription: null,
       type: item.type,
-      deliveryType: DeliveryType.ON_REQUEST,
-      deliveryEstimate: "Prazo informado após análise",
+      deliveryType: item.slug === "unlocktool-6h" ? DeliveryType.AUTOMATIC : DeliveryType.ON_REQUEST,
+      deliveryEstimate: item.slug === "unlocktool-6h" ? "Liberação automática após o pagamento" : "Prazo informado após análise",
       duration: item.duration ?? null,
       imageUrl: null,
       priceCents: item.priceCents,
@@ -101,7 +101,7 @@ async function main() {
     };
     const product = await prisma.product.upsert({
       where: { slug: item.slug },
-      update: data,
+      update: {},
       create: { slug: item.slug, ...data },
     });
     persistedProducts.set(item.slug, product);

@@ -12,6 +12,11 @@ export const isPublishedForStore = (status: ProductStatus, available: boolean) =
 export const canChangeLastAdmin = (adminCount: number, currentRole: string, nextRole: string) =>
   !(currentRole === "ADMIN" && nextRole !== "ADMIN" && adminCount <= 1);
 
+export type DeleteDecision = "DELETE" | "ARCHIVE" | "BLOCK";
+export const productDeleteDecision = (orderItems:number,providerLinks:number):DeleteDecision => orderItems>0||providerLinks>0?"ARCHIVE":"DELETE";
+export const relatedEntityDeleteDecision = (products:number):DeleteDecision => products>0?"ARCHIVE":"DELETE";
+export const userDeleteDecision = (input:{self:boolean;adminCount:number;role:string;orders:number}):DeleteDecision => input.self||input.role==="ADMIN"&&input.adminCount<=1?"BLOCK":input.orders>0?"ARCHIVE":"DELETE";
+
 export const publicSettings = <T extends { businessName: string; slogan: string; domain: string; supportWhatsapp: string | null; supportEmail: string | null; supportText: string | null; maintenanceEnabled: boolean; maintenanceMessage: string }>(settings: T) => ({
   businessName: settings.businessName,
   slogan: settings.slogan,
