@@ -9,7 +9,9 @@
     "test": "vitest run",
     "postinstall": "prisma generate",
     "admin:update": "node scripts/update-admin.mjs",
-    "admin:verify": "node scripts/verify-admin-password.mjs"
+    "admin:verify": "node scripts/verify-admin-password.mjs",
+    "provider:classify": "node --env-file=.env --experimental-strip-types scripts/classify-provider-products.mjs",
+    "provider:automation-report": "node --env-file=.env scripts/provider-automation-report.mjs"
   },
   "prisma": {
     "seed": "node prisma/seed.cjs"

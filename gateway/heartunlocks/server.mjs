@@ -54,8 +54,8 @@ const server = http.createServer(async (req, res) => {
     if (req.method === "POST" && url.pathname === "/orders") {
       if (!authorized(req)) return json(res, 401, { error: "UNAUTHORIZED" });
       const body = await read(req);
-      if (typeof body.productUuid !== "string" || typeof body.referenceId !== "string" || body.quantity !== 1) return json(res, 422, { error: "INVALID_ORDER" });
-      const payload = buildHeartUnlocksOrderPayload({ productUuid: body.productUuid, referenceId: body.referenceId, quantity: body.quantity, feedbackBase, callbackSecret });
+      if (typeof body.productUuid !== "string" || typeof body.referenceId !== "string" || body.quantity !== 1 || !body.fields || typeof body.fields !== "object" || Array.isArray(body.fields)) return json(res, 422, { error: "INVALID_ORDER" });
+      const payload = buildHeartUnlocksOrderPayload({ productUuid: body.productUuid, referenceId: body.referenceId, quantity: body.quantity, fields: body.fields, feedbackBase, callbackSecret });
       let result;
       try { result = await providerRequest("/api/reseller/v1/order", "POST", payload); }
       catch (error) {

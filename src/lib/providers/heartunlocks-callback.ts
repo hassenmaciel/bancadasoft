@@ -6,6 +6,7 @@ import {
   ProviderOrderStatus,
 } from "@prisma/client";
 import { prisma } from "../prisma";
+import { normalizeProviderReplay, parseProviderDelivery } from "./delivery";
 
 export type HeartUnlocksCallback = {
   reference_id: string;
@@ -31,7 +32,7 @@ export function decodeReplay(value?: string) {
 }
 
 export function normalizeCredentialReplay(text: string) {
-  return text.replace(/\r\n?/g, "\n").replace(/<br\s*\/?>/gi, "\n");
+  return normalizeProviderReplay(text);
 }
 
 export function parseCredentials(text: string | null) {
@@ -55,6 +56,11 @@ export function credentialDelivery(
     title: product.name,
     username: credentials.username,
     password: credentials.password,
+    deliveryType: "CREDENTIALS" as const,
+    deliveryFields: [
+      { key: "username", label: "Usuário/Login", value: credentials.username, sensitive: false },
+      { key: "password", label: "Senha", value: credentials.password, sensitive: true },
+    ],
     instructions: "Use as credenciais somente durante o período contratado.",
   };
 }
@@ -87,7 +93,7 @@ export async function processHeartUnlocksCallback(input: HeartUnlocksCallback) {
   if (!providerOrder) return { matched: false, duplicate: false };
   const eventKey = callbackEventKey(input);
   const normalized = input.status.toLowerCase();
-  const credentials = parseCredentials(decodeReplay(input.replay));
+  const replay = decodeReplay(input.replay);
 
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
@@ -118,6 +124,7 @@ export async function processHeartUnlocksCallback(input: HeartUnlocksCallback) {
                   },
                 },
               },
+              providerProduct: { select: { expectedDeliveryType: true } },
             },
           });
           if (
@@ -161,10 +168,11 @@ export async function processHeartUnlocksCallback(input: HeartUnlocksCallback) {
             });
             return { matched: true, duplicate: false, delivered: false };
           }
-          if (normalized === "success" && credentials) {
+          if (normalized === "success" && replay) {
             const product = current.order.items[0]?.product;
             if (!product) throw new Error("PROVIDER_PRODUCT_UNAVAILABLE");
-            const delivery = credentialDelivery(credentials, product);
+            const delivery = parseProviderDelivery(replay, product, current.providerProduct?.expectedDeliveryType);
+            if (!delivery) throw new Error("REPLAY_REQUIRES_ACTION");
             await tx.providerOrder.update({
               where: { id: current.id },
               data: {

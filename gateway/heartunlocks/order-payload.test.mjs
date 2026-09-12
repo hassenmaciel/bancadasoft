@@ -9,6 +9,7 @@ describe("HeartUnlocks quantity-only rental payload", () => {
       quantity: 1,
       feedbackBase: "https://gateway.example.test",
       callbackSecret: "test-callback-secret",
+      fields: { IMEI: "123456789012345" },
     });
     expect(payload).toEqual([
       {
@@ -19,6 +20,7 @@ describe("HeartUnlocks quantity-only rental payload", () => {
               "https://gateway.example.test/callbacks/heartunlocks?token=test-callback-secret",
             reference_id: "provider-order-amt-test",
             Quantity: 1,
+            IMEI: "123456789012345",
           },
         ],
       },

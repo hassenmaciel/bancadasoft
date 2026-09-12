@@ -77,6 +77,36 @@ enum ProviderMode {
   REAL
 }
 
+enum AutomationClass {
+  AUTO_CREDENTIAL
+  AUTO_GENERIC_REPLAY
+  AUTO_FIELD_BASED
+  REMOTE_SESSION
+  MANUAL_REVIEW
+  UNSUPPORTED
+}
+
+enum TechnicalEligibility {
+  READY
+  REVIEW
+  UNSUPPORTED
+}
+
+enum HomologationStatus {
+  UNTESTED
+  CLASS_VALIDATED
+  PRODUCT_VALIDATED
+  FAILED
+}
+
+enum ProviderDeliveryType {
+  CREDENTIALS
+  LICENSE
+  CODE
+  TEXT
+  MULTI_FIELD
+}
+
 enum DeliveryNotificationStatus {
   PENDING
   SENT
@@ -242,6 +272,7 @@ model OrderItem {
   productId      String
   product        Product @relation(fields: [productId], references: [id])
   unitPriceCents Int
+  providerFields Json?
 }
 
 model Payment {
@@ -304,26 +335,34 @@ model Provider {
 }
 
 model ProviderProduct {
-  id                String          @id @default(cuid())
-  providerId        String
-  provider          Provider        @relation(fields: [providerId], references: [id], onDelete: Restrict)
-  productId         String?
-  product           Product?        @relation(fields: [productId], references: [id], onDelete: Restrict)
-  externalProductId String
-  label             String?
-  providerCostCents Int?
-  currency          String          @default("BRL")
-  active            Boolean         @default(true)
-  mode              ProviderMode    @default(REAL)
-  metadata          Json?
-  lastSyncedAt      DateTime?
-  syncStatus        String?
-  createdAt         DateTime        @default(now())
-  updatedAt         DateTime        @updatedAt
-  orders            ProviderOrder[]
+  id                   String               @id @default(cuid())
+  providerId           String
+  provider             Provider             @relation(fields: [providerId], references: [id], onDelete: Restrict)
+  productId            String?
+  product              Product?             @relation(fields: [productId], references: [id], onDelete: Restrict)
+  externalProductId    String
+  label                String?
+  providerCostCents    Int?
+  currency             String               @default("BRL")
+  active               Boolean              @default(true)
+  mode                 ProviderMode         @default(REAL)
+  metadata             Json?
+  lastSyncedAt         DateTime?
+  syncStatus           String?
+  automationClass      AutomationClass      @default(MANUAL_REVIEW)
+  technicalEligibility TechnicalEligibility @default(REVIEW)
+  homologationStatus   HomologationStatus   @default(UNTESTED)
+  contractSignature    String?
+  fieldSchema          Json?
+  expectedDeliveryType ProviderDeliveryType @default(TEXT)
+  createdAt            DateTime             @default(now())
+  updatedAt            DateTime             @updatedAt
+  orders               ProviderOrder[]
 
   @@unique([providerId, externalProductId])
   @@index([productId, active])
+  @@index([providerId, automationClass, technicalEligibility])
+  @@index([contractSignature])
 }
 
 model ProviderOrder {

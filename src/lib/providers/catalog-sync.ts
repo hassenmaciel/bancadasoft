@@ -18,7 +18,9 @@ export async function syncProviderCatalog(providerId: string, actorUserId: strin
     throw new Error("PROVIDER_CATALOG_SYNC_FAILED");
   }
   const syncedAt = new Date();
-  const existing = await prisma.providerProduct.findMany({ where: { providerId }, select: { externalProductId: true, productId: true } });
+  const existing = await prisma.providerProduct.findMany({ where: { providerId }, select: { externalProductId: true, productId: true, homologationStatus: true } });
+  const validated = await prisma.providerProduct.findMany({ where: { providerId, homologationStatus: "PRODUCT_VALIDATED", contractSignature: { not: null } }, select: { contractSignature: true } });
+  const validatedSignatures = new Set(validated.flatMap((item) => item.contractSignature ? [item.contractSignature] : []));
   const byExternalId = new Map(existing.map((item) => [item.externalProductId, item]));
   let created = 0;
   let updated = 0;
@@ -27,10 +29,13 @@ export async function syncProviderCatalog(providerId: string, actorUserId: strin
   const operations = catalog.map((item) => {
     const current = byExternalId.get(item.externalProductId);
     const update = providerCatalogSyncData(item, syncedAt);
+    const homologationStatus = current?.homologationStatus === "PRODUCT_VALIDATED"
+      ? "PRODUCT_VALIDATED" as const
+      : validatedSignatures.has(update.contractSignature) ? "CLASS_VALIDATED" as const : "UNTESTED" as const;
     if (current) {
       updated += 1;
       if (!current.productId) unlinked += 1;
-      return prisma.providerProduct.update({ where: { providerId_externalProductId: { providerId, externalProductId: item.externalProductId } }, data: update });
+      return prisma.providerProduct.update({ where: { providerId_externalProductId: { providerId, externalProductId: item.externalProductId } }, data: { ...update, homologationStatus } });
     }
     created += 1;
     unlinked += 1;
@@ -46,6 +51,12 @@ export async function syncProviderCatalog(providerId: string, actorUserId: strin
           metadata: item.metadata as Prisma.InputJsonValue,
           lastSyncedAt: syncedAt,
           syncStatus: "SYNCED",
+          automationClass: update.automationClass,
+          technicalEligibility: update.technicalEligibility,
+          contractSignature: update.contractSignature,
+          fieldSchema: update.fieldSchema,
+          expectedDeliveryType: update.expectedDeliveryType,
+          homologationStatus,
       },
     });
   });

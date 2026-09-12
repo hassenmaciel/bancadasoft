@@ -11,4 +11,5 @@ export const checkoutSchema = z.object({
   whatsapp: z.string().min(10).max(25).refine(isValidWhatsapp),
   cpfCnpj: z.string().refine(isValidCpf),
   deliveryAccessToken: z.string().min(32).max(200),
+  providerFields: z.record(z.string(), z.string().max(500)).optional().default({}),
 });

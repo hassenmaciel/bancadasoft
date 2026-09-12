@@ -2,23 +2,28 @@
 
 import { useEffect, useRef, useState } from "react";
 
-type Props = { title?: string; username?: string; password?: string; instructions?: string };
+type DeliveryField = { key: string; label: string; value: string; sensitive: boolean };
+type Props = { title?: string; username?: string; password?: string; credential?: string; instructions?: string; deliveryFields?: DeliveryField[] };
 
-export default function CredentialDelivery({ title, username, password, instructions }: Props) {
-  const [copied, setCopied] = useState<"username" | "password" | null>(null);
+export default function CredentialDelivery({ title, username, password, credential, instructions, deliveryFields }: Props) {
+  const [copied, setCopied] = useState<string | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => () => { if (timer.current) clearTimeout(timer.current); }, []);
-  async function copy(kind: "username" | "password", value: string) {
+  async function copy(kind: string, value: string) {
     await navigator.clipboard.writeText(value);
     setCopied(kind);
     if (timer.current) clearTimeout(timer.current);
     timer.current = setTimeout(() => setCopied(null), 1600);
   }
-  return <section className="delivery credential-delivery" aria-label="Credenciais de acesso">
+  const fields: DeliveryField[] = deliveryFields?.length ? deliveryFields : [
+    ...(username ? [{ key: "username", label: "Usuário/Login", value: username, sensitive: false }] : []),
+    ...(password ? [{ key: "password", label: "Senha", value: password, sensitive: true }] : []),
+    ...(credential ? [{ key: "credential", label: "Código/Licença", value: credential, sensitive: true }] : []),
+  ];
+  return <section className="delivery credential-delivery" aria-label="Entrega digital">
     <b>Acesso liberado</b>
-    <p>{title ?? "Credenciais de acesso"}</p>
-    {username && <div><span>Usuário/Login</span><strong>{username}</strong><button type="button" onClick={() => copy("username", username)}>{copied === "username" ? "Copiado" : "Copiar usuário"}</button></div>}
-    {password && <div><span>Senha</span><strong>{password}</strong><button type="button" onClick={() => copy("password", password)}>{copied === "password" ? "Copiada" : "Copiar senha"}</button></div>}
+    <p>{title ?? "Entrega digital"}</p>
+    {fields.map((field) => <div key={field.key}><span>{field.label}</span><strong>{field.value}</strong><button type="button" onClick={() => copy(field.key, field.value)}>{copied === field.key ? "Copiado" : "Copiar"}</button></div>)}
     {instructions && <small>{instructions}</small>}
   </section>;
 }

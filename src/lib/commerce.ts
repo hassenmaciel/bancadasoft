@@ -23,6 +23,7 @@ import { PixPaymentReconciliationRequiredError } from "@/lib/payments/types";
 import { createDeliveryAccess } from "@/lib/guest-delivery";
 import { reconcilePendingPixPayment } from "@/lib/payment-reconciliation";
 import { resolveProviderProduct } from "@/lib/providers/selection";
+import { validateDynamicFieldValues, type DynamicField } from "@/lib/providers/automation";
 import {
   digitsOnly,
   isValidCpf,
@@ -51,6 +52,7 @@ export async function createOrder(input: {
   whatsapp: string;
   cpfCnpj: string;
   deliveryAccessToken: string;
+  providerFields?: Record<string, string>;
 }) {
   const cpfCnpj = digitsOnly(input.cpfCnpj);
   const whatsapp = normalizeWhatsapp(input.whatsapp);
@@ -78,14 +80,23 @@ export async function createOrder(input: {
     }),
   ]);
   if (!product) return undefined;
+  const providerResolution = resolveProviderProduct(
+    product.providerProducts,
+    settings?.providerMode ?? ProviderMode.TEST,
+  );
   if (
     product.deliveryType === DeliveryType.AUTOMATIC &&
-    resolveProviderProduct(
-      product.providerProducts,
-      settings?.providerMode ?? ProviderMode.TEST,
-    ).status !== "SELECTED"
+    providerResolution.status !== "SELECTED"
   )
     return undefined;
+  const providerFields = providerResolution.providerProduct
+    ? validateDynamicFieldValues(
+        Array.isArray(providerResolution.providerProduct.fieldSchema)
+          ? providerResolution.providerProduct.fieldSchema as unknown as DynamicField[]
+          : [],
+        input.providerFields,
+      )
+    : {};
   const previousUser = await prisma.user.findUnique({
     where: { email: input.email },
     select: { cpfCnpj: true, asaasCustomerId: true },
@@ -122,7 +133,7 @@ export async function createOrder(input: {
       customerId: user.id,
       totalCents: product.priceCents,
       items: {
-        create: { productId: product.id, unitPriceCents: product.priceCents },
+        create: { productId: product.id, unitPriceCents: product.priceCents, providerFields },
       },
       payment: {
         create: {

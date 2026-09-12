@@ -53,6 +53,7 @@ describe("AMT 2h automated rental", () => {
         productUuid: "2337",
         referenceId: "provider-order-amt",
         quantity: 1,
+        fields: {},
       });
       return new Response(
         JSON.stringify({

@@ -17,7 +17,7 @@ describe("DTO mappers", () => {
     expect(productDto({ ...product, category })).toEqual({
       id: "product-1", slug: "unlocktool-6h", name: "UnlockTool", description: "Aluguel de teste",
       type: ProductType.RENTAL, deliveryType: DeliveryType.AUTOMATIC, deliveryEstimate: "imediato", longDescription: null, duration: "6 horas", imageUrl: "https://cdn.example.test/unlocktool.png",
-      priceCents: 2900, status: ProductStatus.PUBLISHED, available: true, category: categoryDto, brand: null,
+      priceCents: 2900, status: ProductStatus.PUBLISHED, available: true, category: categoryDto, brand: null, checkoutFields: [],
     });
   });
 

@@ -17,7 +17,7 @@ describe("HeartUnlocks adapter", () => {
   it("sends the mapped product, reference and required quantity to the gateway", async () => {
     const fetcher = vi.fn(async (_url: string, init?: RequestInit) => {
       const body = JSON.parse(String(init?.body));
-      expect(body).toEqual({ productUuid: "2194", referenceId: "provider-order-1", quantity: 1 });
+      expect(body).toEqual({ productUuid: "2194", referenceId: "provider-order-1", quantity: 1, fields: {} });
       expect((init?.headers as Record<string,string>).authorization).toBe("Bearer test-secret");
       return new Response(JSON.stringify({ externalOrderId: "hu-1", referenceId: body.referenceId, status: "PROCESSING" }), { status: 202 });
     });

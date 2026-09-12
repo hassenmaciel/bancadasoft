@@ -8,6 +8,7 @@ import type {
   Product,
   User,
 } from "@prisma/client";
+import type { DynamicField } from "./providers/automation";
 
 export type CategoryDTO = Pick<Category, "id" | "slug" | "name">;
 export type BrandDTO = Pick<Brand, "id" | "slug" | "name">;
@@ -27,7 +28,7 @@ export type ProductDTO = Pick<
   | "priceCents"
   | "status"
   | "available"
-> & { category: CategoryDTO | null; brand: BrandDTO | null };
+> & { category: CategoryDTO | null; brand: BrandDTO | null; checkoutFields: DynamicField[] };
 
 export type OrderItemDTO = { id: string; product: ProductDTO; unitPriceCents: number };
 export type PaymentDTO = Pick<Payment, "status" | "amountCents"> & {
@@ -37,6 +38,8 @@ export type PaymentDTO = Pick<Payment, "status" | "amountCents"> & {
   expirationDate: Date;
 };
 export type DeliveryDTO = {
+  deliveryType?: "CREDENTIALS" | "LICENSE" | "CODE" | "TEXT" | "MULTI_FIELD";
+  deliveryFields?: Array<{ key: string; label: string; value: string; sensitive: boolean }>;
   title?: string;
   username?: string;
   password?: string;
@@ -52,7 +55,13 @@ export type OrderDTO = Pick<Order, "id" | "publicToken" | "status" | "totalCents
 };
 export type UserSessionDTO = Pick<User, "id" | "email" | "name" | "role">;
 
-type ProductWithCategory = Product & { category?: Category | null; brand?: Brand | null };
+type ProductWithCategory = Product & { category?: Category | null; brand?: Brand | null; providerProducts?: Array<{ active: boolean; mode: string; technicalEligibility?: string; fieldSchema?: unknown; provider?: { active: boolean; code: string } }> };
+
+const publicCheckoutFields = (product: ProductWithCategory): DynamicField[] => {
+  const link = product.providerProducts?.find((candidate) => candidate.active && candidate.mode === "REAL" && candidate.provider?.active && candidate.provider.code === "heartunlocks" && candidate.technicalEligibility === "READY");
+  if (!Array.isArray(link?.fieldSchema)) return [];
+  return (link.fieldSchema as DynamicField[]).filter((field) => field.customerVisible && field.key !== "quantity").map((field) => ({ ...field, sensitive: false }));
+};
 
 export const normalizeQrCodeImage = (encodedImage: string | null | undefined) => {
   if (!encodedImage) return null;
@@ -77,6 +86,7 @@ export const productDto = (product: ProductWithCategory): ProductDTO => ({
     ? { id: product.category.id, slug: product.category.slug, name: product.category.name }
     : null,
   brand: product.brand ? { id: product.brand.id, slug: product.brand.slug, name: product.brand.name } : null,
+  checkoutFields: publicCheckoutFields(product),
 });
 
 export const orderDto = (order: any, options: { includeDelivery?: boolean } = {}): OrderDTO => ({

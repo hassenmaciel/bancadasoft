@@ -1,5 +1,6 @@
 import type { ProviderCatalogItem } from "./types";
 import type { Prisma } from "@prisma/client";
+import { classifyProviderProduct } from "./automation";
 
 type JsonRecord = Record<string, unknown>;
 
@@ -83,13 +84,19 @@ export function parseHeartUnlocksCatalogResponse(payload: unknown): ProviderCata
 }
 
 export function providerCatalogSyncData(item: ProviderCatalogItem, syncedAt: Date) {
-  const update: Prisma.ProviderProductUpdateInput = {
+  const automation = classifyProviderProduct({ providerCode: "heartunlocks", label: item.label, providerCostCents: item.costCents ?? null, metadata: item.metadata });
+  const update = {
     label: item.label,
     metadata: item.metadata as Prisma.InputJsonValue,
     lastSyncedAt: syncedAt,
     syncStatus: "SYNCED",
+    automationClass: automation.automationClass,
+    technicalEligibility: automation.technicalEligibility,
+    contractSignature: automation.contractSignature,
+    fieldSchema: automation.fieldSchema as unknown as Prisma.InputJsonValue,
+    expectedDeliveryType: automation.expectedDeliveryType,
+    ...(item.costCents !== undefined ? { providerCostCents: item.costCents } : {}),
+    ...(item.currency ? { currency: item.currency } : {}),
   };
-  if (item.costCents !== undefined) update.providerCostCents = item.costCents;
-  if (item.currency) update.currency = item.currency;
   return update;
 }

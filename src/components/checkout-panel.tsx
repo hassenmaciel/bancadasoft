@@ -161,6 +161,9 @@ export default function CheckoutPanel({ product }: { product: ProductDTO }) {
           whatsapp: form.get("whatsapp"),
           cpfCnpj: String(form.get("cpfCnpj") ?? "").replace(/\D/g, ""),
           deliveryAccessToken,
+          providerFields: Object.fromEntries(
+            product.checkoutFields.map((field) => [field.key, String(form.get(`provider:${field.key}`) ?? "")]),
+          ),
         }),
       });
       const payload = await readCheckoutResponse(response);
@@ -315,6 +318,34 @@ export default function CheckoutPanel({ product }: { product: ProductDTO }) {
                         required
                       />
                     </label>
+                    {product.checkoutFields.map((field) => (
+                      <label key={field.key} htmlFor={`checkout-provider-${field.key}`}>
+                        {field.label}
+                        {field.type === "textarea" ? (
+                          <textarea
+                            id={`checkout-provider-${field.key}`}
+                            name={`provider:${field.key}`}
+                            placeholder={field.placeholder}
+                            required={field.required}
+                            minLength={field.validation?.minLength}
+                            maxLength={field.validation?.maxLength}
+                          />
+                        ) : (
+                          <input
+                            id={`checkout-provider-${field.key}`}
+                            name={`provider:${field.key}`}
+                            type={field.type === "email" ? "email" : field.type === "number" || field.type === "imei" ? "text" : "text"}
+                            inputMode={field.type === "number" || field.type === "imei" ? "numeric" : undefined}
+                            placeholder={field.placeholder}
+                            required={field.required}
+                            minLength={field.validation?.minLength}
+                            maxLength={field.validation?.maxLength}
+                            pattern={field.validation?.pattern}
+                            autoComplete="off"
+                          />
+                        )}
+                      </label>
+                    ))}
                   </div>
                   {notice && (
                     <p className="checkout-error" role="alert">

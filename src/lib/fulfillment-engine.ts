@@ -158,7 +158,11 @@ export async function executeFulfillment(
     const result = await adapter.createOrder({
       providerProductId: selected.externalProductId,
       reference: prepared.id,
-      payload: { orderId, Quantity: 1 },
+      payload: {
+        orderId,
+        Quantity: 1,
+        fields: (order.items[0]?.providerFields as Record<string, string | number> | null) ?? {},
+      },
     });
     const outcome = providerOutcome(result.status, result.delivery);
     if (outcome.deliver) {

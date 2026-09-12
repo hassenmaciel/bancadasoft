@@ -35,10 +35,10 @@ export type AdminProductDTO = Pick<Product, "id" | "slug" | "name" | "descriptio
   category: Pick<Category, "id" | "name" | "slug">;
   brand: Pick<Brand, "id" | "name" | "slug"> | null;
   updatedAt: string;
-  providerProducts: Array<{id:string;externalProductId:string;label:string|null;providerCostCents:number|null;currency:string;active:boolean;mode:string;metadata:unknown;lastSyncedAt:string|null;syncStatus:string|null;updatedAt:string;provider:{id:string;name:string;code:string;active:boolean}}>;
+  providerProducts: Array<{id:string;externalProductId:string;label:string|null;providerCostCents:number|null;currency:string;active:boolean;mode:string;metadata:unknown;lastSyncedAt:string|null;syncStatus:string|null;updatedAt:string;automationClass:string;technicalEligibility:string;homologationStatus:string;contractSignature:string|null;fieldSchema:unknown;expectedDeliveryType:string;provider:{id:string;name:string;code:string;active:boolean}}>;
 };
 
-type AdminProductSource=Product & {category:Category;brand:Brand|null;providerProducts?:Array<{id:string;externalProductId:string;label:string|null;providerCostCents:number|null;currency:string;active:boolean;mode:string;metadata:unknown;lastSyncedAt:Date|null;syncStatus:string|null;updatedAt:Date;provider:{id:string;name:string;code:string;active:boolean}}>};
+type AdminProductSource=Product & {category:Category;brand:Brand|null;providerProducts?:Array<{id:string;externalProductId:string;label:string|null;providerCostCents:number|null;currency:string;active:boolean;mode:string;metadata:unknown;lastSyncedAt:Date|null;syncStatus:string|null;updatedAt:Date;automationClass:string;technicalEligibility:string;homologationStatus:string;contractSignature:string|null;fieldSchema:unknown;expectedDeliveryType:string;provider:{id:string;name:string;code:string;active:boolean}}>};
 export const operationalProviderProducts = <T extends {active:boolean;mode:string;provider:{active:boolean;code:string}}>(links:T[]) =>
   links.filter(link => link.active && link.mode === "REAL" && link.provider.active && isProductionProviderCode(link.provider.code));
 
