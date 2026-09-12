@@ -30,6 +30,12 @@ export type PricingProductSource = {
   }>;
 };
 
+export const isPricingSimulationEligible = (row: {
+  active: boolean;
+  mode: string;
+  provider: { active: boolean; code: string };
+}) => row.active && row.mode === "REAL" && row.provider.active && isProductionProviderCode(row.provider.code);
+
 export const disabledPricingConfiguration: GlobalPricingRule = {
   automaticEnabled: false,
   exchangeRateMicros: null,
@@ -135,7 +141,7 @@ export async function simulateProviderProductPricing() {
       product: { select: { id: true, type: true, pricingMode: true, manualPriceCents: true, priceCents: true } },
     },
   });
-  const results = rows.map((row) => {
+  const results = rows.filter(isPricingSimulationEligible).map((row) => {
     const product = row.product;
     const pricingMode: PricingModeValue = product?.pricingMode ?? "AUTO_GLOBAL";
     const result = calculatePricing({

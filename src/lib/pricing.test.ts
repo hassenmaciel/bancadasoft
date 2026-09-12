@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { calculatePricing, roundCommercial, summarizePricingResults, type GlobalPricingRule } from "./pricing";
-import { pricingUpdateData, type PricingProductSource } from "./pricing-service";
+import { isPricingSimulationEligible, pricingUpdateData, type PricingProductSource } from "./pricing-service";
 
 const global: GlobalPricingRule = {
   automaticEnabled: true,
@@ -136,5 +136,10 @@ describe("pricing engine", () => {
     ]);
     expect(report).toMatchObject({ providerProducts: 2, validCosts: 1, suggested: 1, statuses: { NO_COST: 1 } });
     expect(report.byGroup).toEqual({ RENTAL: 1, UNLINKED: 1 });
+  });
+
+  it("excludes inactive sandbox history from the commercial simulation", () => {
+    expect(isPricingSimulationEligible({ active: false, mode: "TEST", provider: { active: false, code: "mock-sandbox" } })).toBe(false);
+    expect(isPricingSimulationEligible({ active: true, mode: "REAL", provider: { active: true, code: "heartunlocks" } })).toBe(true);
   });
 });
