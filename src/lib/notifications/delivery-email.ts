@@ -37,14 +37,15 @@ export const maskEmail = (email: string) => {
 export function deliveryEmailContent(
   notice: DeliveryNotice & { customerName: string },
 ): DeliveryEmailContent {
-  const subject = "BancadaSoft — Seu acesso UnlockTool foi liberado";
+  const subject = `BancadaSoft — Seu acesso ${notice.productName} foi liberado`;
   const name = escapeHtml(notice.customerName);
   const number = escapeHtml(notice.orderNumber);
+  const product = escapeHtml(notice.productName);
   const url = escapeHtml(notice.secureUrl);
   return {
     subject,
-    html: `<div style="font-family:Arial,sans-serif;color:#10213b;max-width:600px;margin:auto"><h1 style="color:#0878f9">BancadaSoft</h1><p>Olá, ${name}.</p><p>Seu acesso ao UnlockTool 6 horas foi liberado.</p><p><strong>Pedido:</strong> ${number}</p><p><a href="${url}" style="display:inline-block;background:#0878f9;color:#fff;padding:12px 20px;border-radius:8px;text-decoration:none;font-weight:bold">ACESSAR MEU LOGIN</a></p><p>Por segurança, não compartilhe este link.</p><p>BancadaSoft<br>Encontrou. Pagou. Liberou.</p></div>`,
-    text: `Olá, ${notice.customerName}.\n\nSeu acesso ao UnlockTool 6 horas foi liberado.\n\nPedido: ${notice.orderNumber}\n\nAcesse seu login com segurança:\n${notice.secureUrl}\n\nPor segurança, não compartilhe este link.\n\nBancadaSoft\nEncontrou. Pagou. Liberou.`,
+    html: `<div style="font-family:Arial,sans-serif;color:#10213b;max-width:600px;margin:auto"><h1 style="color:#0878f9">BancadaSoft</h1><p>Olá, ${name}.</p><p>Seu acesso a ${product} foi liberado.</p><p><strong>Pedido:</strong> ${number}</p><p><a href="${url}" style="display:inline-block;background:#0878f9;color:#fff;padding:12px 20px;border-radius:8px;text-decoration:none;font-weight:bold">ACESSAR MEU LOGIN</a></p><p>Por segurança, não compartilhe este link.</p><p>BancadaSoft<br>Encontrou. Pagou. Liberou.</p></div>`,
+    text: `Olá, ${notice.customerName}.\n\nSeu acesso a ${notice.productName} foi liberado.\n\nPedido: ${notice.orderNumber}\n\nAcesse seu login com segurança:\n${notice.secureUrl}\n\nPor segurança, não compartilhe este link.\n\nBancadaSoft\nEncontrou. Pagou. Liberou.`,
   };
 }
 export class ResendEmailTransport implements EmailTransport {

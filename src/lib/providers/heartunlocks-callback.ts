@@ -46,6 +46,19 @@ export function parseCredentials(text: string | null) {
   return username && password ? { username, password } : null;
 }
 
+export function credentialDelivery(
+  credentials: { username: string; password: string },
+  product: { name: string },
+) {
+  return {
+    kind: "credentials",
+    title: product.name,
+    username: credentials.username,
+    password: credentials.password,
+    instructions: "Use as credenciais somente durante o período contratado.",
+  };
+}
+
 export function callbackEventKey(input: HeartUnlocksCallback) {
   return createHash("sha256")
     .update(
@@ -95,7 +108,17 @@ export async function processHeartUnlocksCallback(input: HeartUnlocksCallback) {
           });
           const current = await tx.providerOrder.findUniqueOrThrow({
             where: { id: providerOrder.id },
-            include: { fulfillment: true },
+            include: {
+              fulfillment: true,
+              order: {
+                select: {
+                  items: {
+                    take: 1,
+                    select: { product: { select: { name: true } } },
+                  },
+                },
+              },
+            },
           });
           if (
             current.status === ProviderOrderStatus.COMPLETED ||
@@ -139,14 +162,9 @@ export async function processHeartUnlocksCallback(input: HeartUnlocksCallback) {
             return { matched: true, duplicate: false, delivered: false };
           }
           if (normalized === "success" && credentials) {
-            const delivery = {
-              kind: "credentials",
-              title: "UnlockTool — Aluguel 6 horas",
-              username: credentials.username,
-              password: credentials.password,
-              instructions:
-                "Use as credenciais somente durante o período contratado.",
-            };
+            const product = current.order.items[0]?.product;
+            if (!product) throw new Error("PROVIDER_PRODUCT_UNAVAILABLE");
+            const delivery = credentialDelivery(credentials, product);
             await tx.providerOrder.update({
               where: { id: current.id },
               data: {

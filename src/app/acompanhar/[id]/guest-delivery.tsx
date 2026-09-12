@@ -2,17 +2,14 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import CredentialDelivery from "@/components/credential-delivery";
+import type { DeliveryDTO } from "@/lib/dto";
 
 type State = {
   number: string;
   status: string;
   products: string[];
   paymentStatus: string | null;
-  delivery: {
-    username?: string;
-    password?: string;
-    instructions?: string;
-  } | null;
+  delivery: DeliveryDTO | null;
 };
 const message = (state: State) =>
   state.delivery

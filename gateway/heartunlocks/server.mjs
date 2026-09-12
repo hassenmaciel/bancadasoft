@@ -1,6 +1,7 @@
 import http from "node:http";
 import https from "node:https";
 import { URL } from "node:url";
+import { buildHeartUnlocksOrderPayload } from "./order-payload.mjs";
 
 const port = Number(process.env.PORT || 8787);
 const apiBase = process.env.HEARTUNLOCKS_API_BASE_URL || "https://api.heartunlocks.com";
@@ -54,8 +55,7 @@ const server = http.createServer(async (req, res) => {
       if (!authorized(req)) return json(res, 401, { error: "UNAUTHORIZED" });
       const body = await read(req);
       if (typeof body.productUuid !== "string" || typeof body.referenceId !== "string" || body.quantity !== 1) return json(res, 422, { error: "INVALID_ORDER" });
-      const feedbackUrl = new URL(`/callbacks/heartunlocks?token=${encodeURIComponent(callbackSecret)}`, feedbackBase).toString();
-      const payload = [{ product_uuid: body.productUuid, fields: [{ feedback_url: feedbackUrl, reference_id: body.referenceId, Quantity: 1 }] }];
+      const payload = buildHeartUnlocksOrderPayload({ productUuid: body.productUuid, referenceId: body.referenceId, quantity: body.quantity, feedbackBase, callbackSecret });
       let result;
       try { result = await providerRequest("/api/reseller/v1/order", "POST", payload); }
       catch (error) {

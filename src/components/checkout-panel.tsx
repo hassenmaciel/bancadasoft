@@ -3,7 +3,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { FormEvent, useEffect, useRef, useState } from "react";
-import type { OrderDTO, ProductDTO } from "@/lib/dto";
+import type { DeliveryDTO, OrderDTO, ProductDTO } from "@/lib/dto";
 import { createOrderPoller } from "@/lib/order-polling";
 import CredentialDelivery from "@/components/credential-delivery";
 import {
@@ -27,11 +27,7 @@ export default function CheckoutPanel({ product }: { product: ProductDTO }) {
   const [notice, setNotice] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [copied, setCopied] = useState(false);
-  const [delivery, setDelivery] = useState<{
-    username?: string;
-    password?: string;
-    instructions?: string;
-  } | null>(null);
+  const [delivery, setDelivery] = useState<DeliveryDTO | null>(null);
   const submitGuard = useRef(createCheckoutSubmissionGuard());
   const storageKey = `bancadasoft:checkout:${product.id}`;
   const paid = order?.payment?.status === "PAID";

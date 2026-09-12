@@ -36,7 +36,13 @@ export type PaymentDTO = Pick<Payment, "status" | "amountCents"> & {
   qrCodeImage: string | null;
   expirationDate: Date;
 };
-export type DeliveryDTO = { credential?: string; instructions?: string };
+export type DeliveryDTO = {
+  title?: string;
+  username?: string;
+  password?: string;
+  credential?: string;
+  instructions?: string;
+};
 export type FulfillmentDTO = Pick<Fulfillment, "status"> & { delivery?: DeliveryDTO };
 export type OrderDTO = Pick<Order, "id" | "publicToken" | "status" | "totalCents" | "createdAt"> & {
   items: OrderItemDTO[];

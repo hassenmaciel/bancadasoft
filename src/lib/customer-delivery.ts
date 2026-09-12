@@ -1,4 +1,4 @@
-export type CredentialDeliveryData = { username?:string; password?:string; instructions?:string };
+export type CredentialDeliveryData = { title?:string; username?:string; password?:string; instructions?:string };
 
 export function customerOrderState(order:string, payment?:string, fulfillment?:string) {
   if (order === "DELIVERED") return "Acesso liberado";
