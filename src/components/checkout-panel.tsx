@@ -11,6 +11,10 @@ import {
   createCheckoutSubmissionGuard,
   readCheckoutResponse,
 } from "@/lib/checkout-response";
+import {
+  needsGuestCheckoutRecovery,
+  parseSavedCheckoutReference,
+} from "@/lib/checkout-recovery";
 
 const money = (value: number) =>
   new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(
@@ -48,30 +52,60 @@ export default function CheckoutPanel({ product }: { product: ProductDTO }) {
   useEffect(() => {
     const saved = localStorage.getItem(storageKey);
     if (!saved) return;
-    try {
-      const ref = JSON.parse(saved) as {
-        id?: string;
-        publicToken?: string;
-        deliveryAccessToken?: string;
-      };
-      if (!ref.id || !ref.publicToken) {
-        if (ref.deliveryAccessToken) queueMicrotask(() => setOpen(true));
-        return;
-      }
-      fetch(
-        `/api/orders/${ref.id}?token=${encodeURIComponent(ref.publicToken)}`,
-        { cache: "no-store" },
-      )
-        .then((response) => (response.ok ? response.json() : Promise.reject()))
-        .then(async (payload) => {
-          setOrder(payload.data);
-          setOpen(true);
-          if (payload.data.status === "DELIVERED") await loadDelivery(ref.id!);
-        })
-        .catch(() => localStorage.removeItem(storageKey));
-    } catch {
+    const ref = parseSavedCheckoutReference(saved);
+    if (!ref) {
       localStorage.removeItem(storageKey);
+      return;
     }
+    let active = true;
+    const restore = async () => {
+      try {
+        const response = needsGuestCheckoutRecovery(ref)
+          ? await fetch("/api/checkout/recover", {
+              method: "POST",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({
+                deliveryAccessToken: ref.deliveryAccessToken,
+              }),
+              cache: "no-store",
+            })
+          : await fetch(
+              `/api/orders/${ref.id}?token=${encodeURIComponent(ref.publicToken!)}`,
+              { cache: "no-store" },
+            );
+        const payload = await readCheckoutResponse(response);
+        if (!response.ok || !payload?.data || !active) {
+          if (response.status === 400 || response.status === 404)
+            localStorage.removeItem(storageKey);
+          return;
+        }
+        const deliveryAccessToken =
+          ref.deliveryAccessToken ?? payload.deliveryAccessToken;
+        setOrder(payload.data);
+        setOpen(true);
+        localStorage.setItem(
+          storageKey,
+          JSON.stringify({
+            id: payload.data.id,
+            publicToken: payload.data.publicToken,
+            deliveryAccessToken,
+          }),
+        );
+        if (deliveryAccessToken)
+          localStorage.setItem(
+            `bancadasoft:delivery:${payload.data.id}`,
+            deliveryAccessToken,
+          );
+        if (payload.data.status === "DELIVERED")
+          await loadDelivery(payload.data.id);
+      } catch {
+        if (active) setOpen(true);
+      }
+    };
+    void restore();
+    return () => {
+      active = false;
+    };
   }, [storageKey]);
   useEffect(() => {
     if (!order) return;
