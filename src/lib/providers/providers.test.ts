@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { HeartUnlocksDisconnectedAdapter, HEARTUNLOCKS_API_BASE_URL } from "./heartunlocks";
-import { selectProviderProduct, type ProviderProductCandidate } from "./selection";
+import { resolveProviderProduct, selectProviderProduct, type ProviderProductCandidate } from "./selection";
 
 const candidate = (input: Partial<ProviderProductCandidate> = {}): ProviderProductCandidate => ({
   id: "link-1", productId: "internal-product-1", externalProductId: "external-service-10",
-  active: true, providerCostCents: 1000, provider: { id: "provider-1", active: true }, ...input,
+  active: true, mode: "TEST", providerCostCents: 1000, provider: { id: "provider-1", active: true }, ...input,
 });
 
 describe("ProviderAdapter", () => {
@@ -16,18 +16,22 @@ describe("ProviderAdapter", () => {
   });
 });
 
-describe("seleção de ProviderProduct", () => {
-  it("mantém separados o produto interno e o identificador externo", () => {
-    const selected = selectProviderProduct([candidate()]);
-    expect(selected?.productId).toBe("internal-product-1");
-    expect(selected?.externalProductId).toBe("external-service-10");
+describe("seleção determinística de ProviderProduct", () => {
+  it("seleciona o único vínculo ativo do modo solicitado", () => {
+    const selected = selectProviderProduct([candidate()], "TEST");
+    expect(selected).toMatchObject({ productId: "internal-product-1", externalProductId: "external-service-10" });
   });
-  it("ignora vínculos e providers inativos", () => {
-    expect(selectProviderProduct([candidate({ active: false })])).toBeNull();
-    expect(selectProviderProduct([candidate({ provider: { id: "provider-1", active: false } })])).toBeNull();
+  it("isola mock TEST do fornecedor REAL", () => {
+    const testLink = candidate({ id: "mock", mode: "TEST" });
+    const realLink = candidate({ id: "heart", mode: "REAL", externalProductId: "2194" });
+    expect(selectProviderProduct([testLink, realLink], "REAL")?.id).toBe("heart");
+    expect(selectProviderProduct([testLink, realLink], "TEST")?.id).toBe("mock");
   });
-  it("prefere o vínculo ativo de menor custo conhecido", () => {
-    const selected = selectProviderProduct([candidate({ id: "expensive", providerCostCents: 2000 }), candidate({ id: "economical", providerCostCents: 900 })]);
-    expect(selected?.id).toBe("economical");
+  it("falha fechado sem vínculo elegível", () => {
+    expect(resolveProviderProduct([candidate({ active: false })], "TEST").status).toBe("MISSING");
+    expect(resolveProviderProduct([candidate({ provider: { id: "provider-1", active: false } })], "TEST").status).toBe("MISSING");
+  });
+  it("não escolhe silenciosamente entre dois vínculos elegíveis", () => {
+    expect(resolveProviderProduct([candidate({ id: "one" }), candidate({ id: "two" })], "TEST").status).toBe("AMBIGUOUS");
   });
 });

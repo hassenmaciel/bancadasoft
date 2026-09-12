@@ -119,19 +119,19 @@ async function main() {
   });
   const sandbox = await prisma.provider.upsert({
     where: { code: "mock-sandbox" },
-    update: { active: true, integrationStatus: ProviderIntegrationStatus.CONNECTED },
+    update: { name: "Sandbox BancadaSoft" },
     create: { name: "Sandbox BancadaSoft", code: "mock-sandbox", active: true, integrationStatus: ProviderIntegrationStatus.CONNECTED },
   });
   const unlockTool = persistedProducts.get("unlocktool-6h");
   await prisma.providerProduct.upsert({
     where: { providerId_productId_externalProductId: { providerId: heartUnlocks.id, productId: unlockTool.id, externalProductId: "2194" } },
-    update: { label: "UNLOCKTOOL RENT [6 Hours]", active: true, providerCostCents: 30, currency: "USD", metadata: { requiredFields: ["Quantity"], quantity: 1, providerTime: "1-60 Minutes", imageUrl: "https://static.dhrufusion.net/f127194c-9ca4-40c1-a937-27c66f4e8c26/2026/05/24/9MaSE7cD_WhatsApp_Image_2026-05-14_at_13.46.39.jpeg" } },
-    create: { providerId: heartUnlocks.id, productId: unlockTool.id, externalProductId: "2194", label: "UNLOCKTOOL RENT [6 Hours]", providerCostCents: 30, currency: "USD", active: true, metadata: { requiredFields: ["Quantity"], quantity: 1, providerTime: "1-60 Minutes", imageUrl: "https://static.dhrufusion.net/f127194c-9ca4-40c1-a937-27c66f4e8c26/2026/05/24/9MaSE7cD_WhatsApp_Image_2026-05-14_at_13.46.39.jpeg" } },
+    update: { label: "UNLOCKTOOL RENT [6 Hours]", providerCostCents: 30, currency: "USD", mode: "REAL", metadata: { requiredFields: ["Quantity"], quantity: 1, providerTime: "1-60 Minutes", imageUrl: "https://static.dhrufusion.net/f127194c-9ca4-40c1-a937-27c66f4e8c26/2026/05/24/9MaSE7cD_WhatsApp_Image_2026-05-14_at_13.46.39.jpeg" } },
+    create: { providerId: heartUnlocks.id, productId: unlockTool.id, externalProductId: "2194", label: "UNLOCKTOOL RENT [6 Hours]", providerCostCents: 30, currency: "USD", active: true, mode: "REAL", metadata: { requiredFields: ["Quantity"], quantity: 1, providerTime: "1-60 Minutes", imageUrl: "https://static.dhrufusion.net/f127194c-9ca4-40c1-a937-27c66f4e8c26/2026/05/24/9MaSE7cD_WhatsApp_Image_2026-05-14_at_13.46.39.jpeg" } },
   });
   await prisma.providerProduct.upsert({
     where: { providerId_productId_externalProductId: { providerId: sandbox.id, productId: unlockTool.id, externalProductId: "unlocktool-sandbox" } },
-    update: { active: true, providerCostCents: 1000, currency: "BRL" },
-    create: { providerId: sandbox.id, productId: unlockTool.id, externalProductId: "unlocktool-sandbox", label: "UnlockTool Sandbox", providerCostCents: 1000, currency: "BRL", active: true },
+    update: { providerCostCents: 1000, currency: "BRL", mode: "TEST" },
+    create: { providerId: sandbox.id, productId: unlockTool.id, externalProductId: "unlocktool-sandbox", label: "UnlockTool Sandbox", providerCostCents: 1000, currency: "BRL", active: true, mode: "TEST" },
   });
 }
 

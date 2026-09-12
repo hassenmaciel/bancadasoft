@@ -73,7 +73,7 @@ export const productDto = (product: ProductWithCategory): ProductDTO => ({
   brand: product.brand ? { id: product.brand.id, slug: product.brand.slug, name: product.brand.name } : null,
 });
 
-export const orderDto = (order: any): OrderDTO => ({
+export const orderDto = (order: any, options: { includeDelivery?: boolean } = {}): OrderDTO => ({
   id: order.id,
   publicToken: order.publicToken,
   status: order.status,
@@ -97,7 +97,7 @@ export const orderDto = (order: any): OrderDTO => ({
   fulfillment: order.fulfillment
     ? {
         status: order.fulfillment.status,
-        delivery: (order.fulfillment.delivery as DeliveryDTO | null) ?? undefined,
+        delivery: options.includeDelivery === false ? undefined : (order.fulfillment.delivery as DeliveryDTO | null) ?? undefined,
       }
     : null,
   events: order.events,

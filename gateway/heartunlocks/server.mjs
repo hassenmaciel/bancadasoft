@@ -45,7 +45,13 @@ const server = http.createServer(async (req, res) => {
       if (typeof body.productUuid !== "string" || typeof body.referenceId !== "string" || body.quantity !== 1) return json(res, 422, { error: "INVALID_ORDER" });
       const feedbackUrl = new URL(`/callbacks/heartunlocks?token=${encodeURIComponent(callbackSecret)}`, feedbackBase).toString();
       const payload = [{ product_uuid: body.productUuid, fields: [{ feedback_url: feedbackUrl, reference_id: body.referenceId, Quantity: 1 }] }];
-      const result = await providerRequest("/api/reseller/v1/order", "POST", payload);
+      let result;
+      try { result = await providerRequest("/api/reseller/v1/order", "POST", payload); }
+      catch (error) {
+        const code = error instanceof Error ? error.message : "PROVIDER_RESULT_UNCERTAIN";
+        if (/^PROVIDER_HTTP_4\d\d$/.test(code)) return json(res, 422, { error: "PROVIDER_REJECTED" });
+        return json(res, 202, { referenceId: body.referenceId, status: "PROCESSING", uncertain: true });
+      }
       const item = Array.isArray(result?.data) ? result.data[0] : null;
       if (result?.status !== "success" || !item?.order_uuid) return json(res, 502, { error: "PROVIDER_REJECTED" });
       console.info("order accepted", { referenceId: body.referenceId, orderId: item.order_uuid });

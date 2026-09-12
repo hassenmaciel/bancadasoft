@@ -5,7 +5,7 @@ import { AsaasPaymentProvider, mapAsaasEvent, mapAsaasStatus } from "./asaas";
 import { validateAsaasWebhookToken } from "./asaas-webhook";
 
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
-const input = { orderId: "order-test", amountCents: 2990, expiresAt: new Date("2026-09-15T12:00:00Z"), customer: { internalId: "user-test", name: "Cliente Sandbox", email: "sandbox@example.test", cpfCnpj: "52998224725" } };
+const input = { orderId: "order-test", amountCents: 2990, expiresAt: new Date("2026-09-15T12:00:00Z"), customer: { internalId: "user-test", name: "Cliente Sandbox", email: "sandbox@example.test", cpfCnpj: "52998224725", mobilePhone:"5511999999999" } };
 
 describe("AsaasClient Sandbox", () => {
   it("usa somente a API Sandbox e envia os cabeçalhos exigidos", async () => {
@@ -40,7 +40,7 @@ describe("AsaasPaymentProvider", () => {
     expect(fetcher).toHaveBeenCalledTimes(3);
     const customerBody = JSON.parse(String(fetcher.mock.calls[0][1].body));
     const paymentBody = JSON.parse(String(fetcher.mock.calls[1][1].body));
-    expect(customerBody).toMatchObject({ name: "Cliente Sandbox", cpfCnpj: "52998224725", externalReference: "user-test", notificationDisabled: true });
+    expect(customerBody).toMatchObject({ name: "Cliente Sandbox", cpfCnpj: "52998224725", mobilePhone:"5511999999999", externalReference: "user-test", notificationDisabled: true });
     expect(paymentBody).toMatchObject({ customer: "cus_sandbox", billingType: "PIX", value: 29.9, dueDate: "2026-09-15", externalReference: "order-test" });
     expect(fetcher.mock.calls[2][0]).toBe(`${ASAAS_SANDBOX_BASE_URL}/payments/pay_sandbox/pixQrCode`);
   });

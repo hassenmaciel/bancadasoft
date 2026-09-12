@@ -1,6 +1,6 @@
 import type { PaymentStatus } from "@prisma/client";
 
-export type PaymentCustomer={internalId:string;name:string;email:string;cpfCnpj?:string;externalCustomerId?:string};
+export type PaymentCustomer={internalId:string;name:string;email:string;cpfCnpj?:string;mobilePhone?:string;externalCustomerId?:string};
 export type PixPaymentInput={orderId:string;amountCents:number;expiresAt:Date;customer:PaymentCustomer};
 export type PixPaymentResult={externalPaymentId:string;externalCustomerId?:string;status:PaymentStatus;pixCode:string;qrCode?:string;expiresAt:Date};
 export type PaymentStatusResult={externalPaymentId:string;status:PaymentStatus};

@@ -16,7 +16,7 @@ export async function heartUnlocksGatewayStatus() {
 }
 
 export async function listAdminIntegrations() {
-  const providers = await prisma.provider.findMany({
+  const [providers,settings] = await Promise.all([prisma.provider.findMany({
     include: {
       products: {
         include: { product: { select: { id: true, name: true, slug: true } } },
@@ -25,8 +25,8 @@ export async function listAdminIntegrations() {
       _count: { select: { products: true, orders: true } },
     },
     orderBy: { name: "asc" },
-  });
-  return providers.map((provider) => ({
+  }),prisma.siteSettings.findUnique({where:{id:"default"},select:{providerMode:true}})]);
+  return {mode:settings?.providerMode??"TEST",providers:providers.map((provider) => ({
     id: provider.id,
     name: provider.name,
     code: provider.code,
@@ -43,7 +43,9 @@ export async function listAdminIntegrations() {
       providerCostCents: link.providerCostCents,
       currency: link.currency,
       active: link.active,
+      mode: link.mode,
+      operational:link.active&&provider.active&&link.mode===(settings?.providerMode??"TEST"),
       product: link.product,
     })),
-  }));
+  }))};
 }

@@ -11,7 +11,9 @@
     "admin:update": "node scripts/update-admin.mjs",
     "admin:verify": "node scripts/verify-admin-password.mjs"
   },
-  "prisma": { "seed": "node prisma/seed.cjs" },
+  "prisma": {
+    "seed": "node prisma/seed.cjs"
+  },
   "dependencies": {
     "@prisma/client": "^6.19.0",
     "bcryptjs": "^3.0.3",
@@ -20,6 +22,7 @@
     "prisma": "^6.19.0",
     "react": "19.2.3",
     "react-dom": "19.2.3",
+    "resend": "^6.28.0",
     "zod": "4.1.13"
   },
   "devDependencies": {

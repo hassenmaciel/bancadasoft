@@ -19,5 +19,6 @@ describe("retry controlado",()=>{
   it("permite FAILED abaixo do limite",()=>expect(validateProviderExecution({...valid,providerOrderStatus:"FAILED",attempts:1},true)).toBeNull());
   it("rejeita COMPLETED",()=>expect(validateProviderExecution({...valid,providerOrderStatus:"COMPLETED",attempts:1},true)).toBe("RETRY_NOT_ALLOWED"));
   it("rejeita a partir de três tentativas",()=>expect(validateProviderExecution({...valid,providerOrderStatus:"FAILED",attempts:MAX_PROVIDER_ATTEMPTS},true)).toBe("RETRY_LIMIT_REACHED"));
+  it("bloqueia retry quando houve tentativa externa incerta",()=>{expect(validateProviderExecution({...valid,providerOrderStatus:"FAILED",attempts:1,requestReference:"ref"},true)).toBe("RECONCILIATION_REQUIRED");expect(validateProviderExecution({...valid,providerOrderStatus:"FAILED",attempts:1,resultUncertain:true},true)).toBe("RECONCILIATION_REQUIRED");expect(validateProviderExecution({...valid,providerOrderStatus:"FAILED",attempts:1,hasCallback:true},true)).toBe("RECONCILIATION_REQUIRED");});
   it("mantém retry restrito a ADMIN",()=>{expect(()=>assertAdminRole("USER")).toThrow("FORBIDDEN");expect(()=>assertAdminRole("ADMIN")).not.toThrow();});
 });

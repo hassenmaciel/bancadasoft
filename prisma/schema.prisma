@@ -72,6 +72,18 @@ enum ProviderOrderStatus {
   CANCELLED
 }
 
+enum ProviderMode {
+  TEST
+  REAL
+}
+
+enum DeliveryNotificationStatus {
+  PENDING
+  SENT
+  FAILED
+  NOT_CONFIGURED
+}
+
 model User {
   id              String     @id @default(cuid())
   email           String     @unique
@@ -79,6 +91,8 @@ model User {
   role            String     @default("CUSTOMER")
   passwordHash    String
   asaasCustomerId String?    @unique
+  cpfCnpj         String?
+  whatsapp        String?
   createdAt       DateTime   @default(now())
   updatedAt       DateTime   @updatedAt
   orders          Order[]
@@ -139,16 +153,17 @@ model Product {
 }
 
 model SiteSettings {
-  id                 String   @id @default("default")
-  businessName       String   @default("BANCADASOFT")
-  slogan             String   @default("Encontrou. Pagou. Liberou.")
-  domain             String   @default("bancadasoft.com.br")
+  id                 String       @id @default("default")
+  businessName       String       @default("BANCADASOFT")
+  slogan             String       @default("Encontrou. Pagou. Liberou.")
+  domain             String       @default("bancadasoft.com.br")
   supportWhatsapp    String?
   supportEmail       String?
   supportText        String?
-  maintenanceEnabled Boolean  @default(false)
-  maintenanceMessage String   @default("Estamos realizando melhorias. Voltaremos em breve.")
-  updatedAt          DateTime @updatedAt
+  maintenanceEnabled Boolean      @default(false)
+  maintenanceMessage String       @default("Estamos realizando melhorias. Voltaremos em breve.")
+  providerMode       ProviderMode @default(TEST)
+  updatedAt          DateTime     @updatedAt
 }
 
 model AuditLog {
@@ -166,19 +181,57 @@ model AuditLog {
 }
 
 model Order {
-  id             String          @id @default(cuid())
-  publicToken    String          @unique
-  status         OrderStatus     @default(PENDING_PAYMENT)
-  customerId     String
-  customer       User            @relation(fields: [customerId], references: [id])
-  totalCents     Int
-  createdAt      DateTime        @default(now())
-  updatedAt      DateTime        @updatedAt
-  items          OrderItem[]
-  payment        Payment?
-  fulfillment    Fulfillment?
-  events         OrderEvent[]
-  providerOrders ProviderOrder[]
+  id                     String                  @id @default(cuid())
+  publicToken            String                  @unique
+  status                 OrderStatus             @default(PENDING_PAYMENT)
+  customerId             String
+  customer               User                    @relation(fields: [customerId], references: [id])
+  totalCents             Int
+  createdAt              DateTime                @default(now())
+  updatedAt              DateTime                @updatedAt
+  items                  OrderItem[]
+  payment                Payment?
+  fulfillment            Fulfillment?
+  events                 OrderEvent[]
+  providerOrders         ProviderOrder[]
+  deliveryTokenHash      String?                 @unique
+  deliveryTokenExpiresAt DateTime?
+  deliveryTokenRevokedAt DateTime?
+  deliveryTokenEncrypted String?
+  deliveryNotifiedAt     DateTime?
+  deliveryAccessAttempts DeliveryAccessAttempt[]
+  deliveryNotifications  DeliveryNotification[]
+}
+
+model DeliveryNotification {
+  id                String                     @id @default(cuid())
+  orderId           String
+  order             Order                      @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  channel           String                     @default("EMAIL")
+  status            DeliveryNotificationStatus @default(PENDING)
+  provider          String                     @default("resend")
+  recipientMasked   String
+  providerMessageId String?
+  attempts          Int                        @default(0)
+  lastAttemptAt     DateTime?
+  sentAt            DateTime?
+  errorMessage      String?
+  createdAt         DateTime                   @default(now())
+  updatedAt         DateTime                   @updatedAt
+
+  @@unique([orderId, channel])
+  @@index([status, createdAt])
+}
+
+model DeliveryAccessAttempt {
+  id          String   @id @default(cuid())
+  orderId     String
+  order       Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  fingerprint String
+  successful  Boolean  @default(false)
+  createdAt   DateTime @default(now())
+
+  @@index([orderId, fingerprint, createdAt])
 }
 
 model OrderItem {
@@ -260,6 +313,7 @@ model ProviderProduct {
   providerCostCents Int?
   currency          String          @default("BRL")
   active            Boolean         @default(true)
+  mode              ProviderMode    @default(REAL)
   metadata          Json?
   createdAt         DateTime        @default(now())
   updatedAt         DateTime        @updatedAt

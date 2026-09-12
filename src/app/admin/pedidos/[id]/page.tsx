@@ -3,23 +3,308 @@ import { notFound } from "next/navigation";
 import { getAdminOrder } from "@/lib/admin-orders";
 import RetryButton from "./retry-button";
 
-export const dynamic="force-dynamic";
-const money=(value:number,currency="BRL")=>new Intl.NumberFormat("pt-BR",{style:"currency",currency}).format(value/100);
-const date=(value:string)=>new Intl.DateTimeFormat("pt-BR",{dateStyle:"medium",timeStyle:"short"}).format(new Date(value));
-const deliveryText=(delivery:unknown)=>delivery?JSON.stringify(delivery,null,2):"Nenhuma entrega disponível.";
+export const dynamic = "force-dynamic";
+const money = (value: number, currency = "BRL") =>
+  new Intl.NumberFormat("pt-BR", { style: "currency", currency }).format(
+    value / 100,
+  );
+const date = (value: string) =>
+  new Intl.DateTimeFormat("pt-BR", {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(new Date(value));
+const deliveryText = (delivery: unknown) =>
+  delivery ? JSON.stringify(delivery, null, 2) : "Nenhuma entrega disponível.";
 
-export default async function OrderDetailPage({params}:{params:Promise<{id:string}>}){
-  const{id}=await params;const order=await getAdminOrder(id);if(!order)notFound();
-  return <><header className="admin-heading"><div><Link href="/admin/pedidos">← Pedidos</Link><h1>Pedido #{order.id.slice(-8).toUpperCase()}</h1><p>Criado em {date(order.createdAt)}</p></div><span className={`status-badge detail-status status-${order.status.toLowerCase()}`}>{order.status}</span></header>
-  <div className="order-detail-grid">
-    <section className="detail-card"><h2>Dados do pedido</h2><dl><div><dt>ID</dt><dd>{order.id}</dd></div><div><dt>Cliente</dt><dd>{order.customer.name}<small>{order.customer.email}</small></dd></div><div><dt>Total</dt><dd>{money(order.totalCents)}</dd></div><div><dt>Status</dt><dd>{order.status}</dd></div></dl></section>
-    <section className="detail-card"><h2>Itens</h2>{order.items.map(item=><article className="detail-item" key={item.id}><div><b>{item.product.name}</b><small>{item.product.slug}</small></div><span>{money(item.unitPriceCents)}</span></article>)}</section>
-    <section className="detail-card"><h2>Pagamento</h2>{order.payment?<><dl><div><dt>Status</dt><dd>{order.payment.status}</dd></div><div><dt>Método</dt><dd>{order.payment.provider}</dd></div><div><dt>Valor</dt><dd>{money(order.totalCents)}</dd></div><div><dt>Criado</dt><dd>{date(order.payment.createdAt)}</dd></div><div><dt>Expira</dt><dd>{date(order.payment.expiresAt)}</dd></div></dl><h3>Eventos de pagamento</h3>{order.payment.events.length?<ul className="event-list">{order.payment.events.map(event=><li key={event.id}><b>{event.providerEventId}</b><time>{date(event.createdAt)}</time></li>)}</ul>:<p className="detail-empty">Nenhum evento recebido.</p>}</>:<p className="detail-empty">Pagamento ainda não criado.</p>}</section>
-    <section className="detail-card"><h2>Fulfillment</h2>{order.fulfillment?<dl><div><dt>Status</dt><dd>{order.fulfillment.status}</dd></div><div><dt>Provider</dt><dd>{order.fulfillment.provider}</dd></div><div><dt>Criado</dt><dd>{date(order.fulfillment.createdAt)}</dd></div><div><dt>Atualizado</dt><dd>{date(order.fulfillment.updatedAt)}</dd></div></dl>:<p className="detail-empty">Fulfillment ainda não criado.</p>}</section>
-    <section className="detail-card"><h2>Pedidos do provider</h2>{order.fulfillment?.providerOrders.length?order.fulfillment.providerOrders.map(providerOrder=><article className="provider-order" key={providerOrder.id}><dl>
-      <div><dt>Provider</dt><dd>{providerOrder.providerName}</dd></div><div><dt>Provider Product ID</dt><dd>{providerOrder.externalProductId??"—"}</dd></div><div><dt>Provider Order ID</dt><dd>{providerOrder.externalOrderId??"—"}</dd></div><div><dt>Reference ID</dt><dd>{providerOrder.requestReference??"—"}</dd></div><div><dt>Provider Status</dt><dd>{providerOrder.status}</dd></div><div><dt>Fulfillment Status</dt><dd>{order.fulfillment?.status}</dd></div><div><dt>Tentativas</dt><dd>{providerOrder.attempts} / 3</dd></div><div><dt>Custo interno</dt><dd>{providerOrder.costCents===null?"Não informado":money(providerOrder.costCents,providerOrder.currency)}</dd></div><div><dt>Criado</dt><dd>{date(providerOrder.createdAt)}</dd></div><div><dt>Atualizado</dt><dd>{date(providerOrder.updatedAt)}</dd></div><div><dt>Último erro</dt><dd>{providerOrder.lastError??"—"}</dd></div>
-      </dl>{providerOrder.status==="FAILED"&&providerOrder.attempts<3&&order.payment?.status==="PAID"&&order.status!=="DELIVERED"&&<RetryButton orderId={order.id}/>}<h3>Callbacks HeartUnlocks</h3>{providerOrder.callbackEvents.length?<div className="provider-table"><div className="provider-row provider-row-head"><span>Data/hora</span><span>Status</span><span>Order ID</span><span>Reference ID</span></div>{providerOrder.callbackEvents.map(event=><div className="provider-row" key={event.id}><time>{date(event.createdAt)}</time><span>{event.status}</span><code>{event.providerOrderId??"—"}</code><code>{event.referenceId??"—"}</code></div>)}</div>:<p className="detail-empty">Nenhum callback recebido.</p>}</article>):<p className="detail-empty">Nenhuma execução de provider registrada.</p>}</section>
-    <section className="detail-card"><h2>Entrega</h2><pre className="delivery-data">{deliveryText(order.fulfillment?.delivery)}</pre></section>
-    <section className="detail-card timeline-card"><h2>Histórico</h2>{order.events.length?<ol className="timeline">{order.events.map(event=><li key={event.id}><span/><div><b>{event.status}</b><p>{event.note}</p><time>{date(event.createdAt)}</time></div></li>)}</ol>:<p className="detail-empty">Nenhum evento no histórico.</p>}</section>
-  </div></>;
+export default async function OrderDetailPage({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}) {
+  const { id } = await params;
+  const order = await getAdminOrder(id);
+  if (!order) notFound();
+  const maskedCpf = order.customer.cpfCnpj
+    ? `***.***.***-${order.customer.cpfCnpj.slice(-2)}`
+    : "Não informado";
+  return (
+    <>
+      <header className="admin-heading">
+        <div>
+          <Link href="/admin/pedidos">← Pedidos</Link>
+          <h1>Pedido #{order.id.slice(-8).toUpperCase()}</h1>
+          <p>Criado em {date(order.createdAt)}</p>
+        </div>
+        <span
+          className={`status-badge detail-status status-${order.status.toLowerCase()}`}
+        >
+          {order.status}
+        </span>
+      </header>
+      <div className="order-detail-grid">
+        <section className="detail-card">
+          <h2>Dados do pedido</h2>
+          <dl>
+            <div>
+              <dt>ID</dt>
+              <dd>{order.id}</dd>
+            </div>
+            <div>
+              <dt>Cliente</dt>
+              <dd>
+                {order.customer.name}
+                <small>{order.customer.email}</small>
+              </dd>
+            </div>
+            <div>
+              <dt>Total</dt>
+              <dd>{money(order.totalCents)}</dd>
+            </div>
+            <div>
+              <dt>Tipo</dt>
+              <dd>{order.customer.guest ? "VISITANTE" : "CONTA"}</dd>
+            </div>
+            <div>
+              <dt>CPF</dt>
+              <dd>{maskedCpf}</dd>
+            </div>
+            <div>
+              <dt>WhatsApp</dt>
+              <dd>{order.customer.whatsapp ?? "Não informado"}</dd>
+            </div>
+            <div>
+              <dt>Status</dt>
+              <dd>{order.status}</dd>
+            </div>
+          </dl>
+        </section>
+        <section className="detail-card">
+          <h2>Itens</h2>
+          {order.items.map((item) => (
+            <article className="detail-item" key={item.id}>
+              <div>
+                <b>{item.product.name}</b>
+                <small>{item.product.slug}</small>
+              </div>
+              <span>{money(item.unitPriceCents)}</span>
+            </article>
+          ))}
+        </section>
+        <section className="detail-card">
+          <h2>Pagamento</h2>
+          {order.payment ? (
+            <>
+              <dl>
+                <div>
+                  <dt>Status</dt>
+                  <dd>{order.payment.status}</dd>
+                </div>
+                <div>
+                  <dt>Método</dt>
+                  <dd>{order.payment.provider}</dd>
+                </div>
+                <div>
+                  <dt>Valor</dt>
+                  <dd>{money(order.totalCents)}</dd>
+                </div>
+                <div>
+                  <dt>Criado</dt>
+                  <dd>{date(order.payment.createdAt)}</dd>
+                </div>
+                <div>
+                  <dt>Expira</dt>
+                  <dd>{date(order.payment.expiresAt)}</dd>
+                </div>
+              </dl>
+              <h3>Eventos de pagamento</h3>
+              {order.payment.events.length ? (
+                <ul className="event-list">
+                  {order.payment.events.map((event) => (
+                    <li key={event.id}>
+                      <b>{event.providerEventId}</b>
+                      <time>{date(event.createdAt)}</time>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="detail-empty">Nenhum evento recebido.</p>
+              )}
+            </>
+          ) : (
+            <p className="detail-empty">Pagamento ainda não criado.</p>
+          )}
+        </section>
+        <section className="detail-card">
+          <h2>Fulfillment</h2>
+          {order.fulfillment ? (
+            <dl>
+              <div>
+                <dt>Status</dt>
+                <dd>{order.fulfillment.status}</dd>
+              </div>
+              <div>
+                <dt>Provider</dt>
+                <dd>{order.fulfillment.provider}</dd>
+              </div>
+              <div>
+                <dt>Criado</dt>
+                <dd>{date(order.fulfillment.createdAt)}</dd>
+              </div>
+              <div>
+                <dt>Atualizado</dt>
+                <dd>{date(order.fulfillment.updatedAt)}</dd>
+              </div>
+            </dl>
+          ) : (
+            <p className="detail-empty">Fulfillment ainda não criado.</p>
+          )}
+        </section>
+        <section className="detail-card">
+          <h2>Pedidos do provider</h2>
+          {order.fulfillment?.providerOrders.length ? (
+            order.fulfillment.providerOrders.map((providerOrder) => (
+              <article className="provider-order" key={providerOrder.id}>
+                <dl>
+                  <div>
+                    <dt>Provider</dt>
+                    <dd>{providerOrder.providerName}</dd>
+                  </div>
+                  <div>
+                    <dt>Provider Product ID</dt>
+                    <dd>{providerOrder.externalProductId ?? "—"}</dd>
+                  </div>
+                  <div>
+                    <dt>Provider Order ID</dt>
+                    <dd>{providerOrder.externalOrderId ?? "—"}</dd>
+                  </div>
+                  <div>
+                    <dt>Reference ID</dt>
+                    <dd>{providerOrder.requestReference ?? "—"}</dd>
+                  </div>
+                  <div>
+                    <dt>Provider Status</dt>
+                    <dd>{providerOrder.status}</dd>
+                  </div>
+                  <div>
+                    <dt>Fulfillment Status</dt>
+                    <dd>{order.fulfillment?.status}</dd>
+                  </div>
+                  <div>
+                    <dt>Tentativas</dt>
+                    <dd>{providerOrder.attempts} / 3</dd>
+                  </div>
+                  <div>
+                    <dt>Custo interno</dt>
+                    <dd>
+                      {providerOrder.costCents === null
+                        ? "Não informado"
+                        : money(
+                            providerOrder.costCents,
+                            providerOrder.currency,
+                          )}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>Criado</dt>
+                    <dd>{date(providerOrder.createdAt)}</dd>
+                  </div>
+                  <div>
+                    <dt>Atualizado</dt>
+                    <dd>{date(providerOrder.updatedAt)}</dd>
+                  </div>
+                  <div>
+                    <dt>Último erro</dt>
+                    <dd>{providerOrder.lastError ?? "—"}</dd>
+                  </div>
+                </dl>
+                {providerOrder.status === "FAILED" &&
+                  providerOrder.attempts < 3 &&
+                  order.payment?.status === "PAID" &&
+                  order.status !== "DELIVERED" && (
+                    <RetryButton orderId={order.id} />
+                  )}
+                <h3>Callbacks HeartUnlocks</h3>
+                {providerOrder.callbackEvents.length ? (
+                  <div className="provider-table">
+                    <div className="provider-row provider-row-head">
+                      <span>Data/hora</span>
+                      <span>Status</span>
+                      <span>Order ID</span>
+                      <span>Reference ID</span>
+                    </div>
+                    {providerOrder.callbackEvents.map((event) => (
+                      <div className="provider-row" key={event.id}>
+                        <time>{date(event.createdAt)}</time>
+                        <span>{event.status}</span>
+                        <code>{event.providerOrderId ?? "—"}</code>
+                        <code>{event.referenceId ?? "—"}</code>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="detail-empty">Nenhum callback recebido.</p>
+                )}
+              </article>
+            ))
+          ) : (
+            <p className="detail-empty">
+              Nenhuma execução de provider registrada.
+            </p>
+          )}
+        </section>
+        <section className="detail-card">
+          <h2>Entrega</h2>
+          <pre className="delivery-data">
+            {deliveryText(order.fulfillment?.delivery)}
+          </pre>
+        </section>
+        <section className="detail-card">
+          <h2>E-mail de entrega</h2>
+          {order.deliveryNotifications.length ? (
+            order.deliveryNotifications.map((item) => (
+              <dl key={item.id}>
+                <div>
+                  <dt>Status</dt>
+                  <dd>{item.status}</dd>
+                </div>
+                <div>
+                  <dt>Destinatário</dt>
+                  <dd>{item.recipientMasked}</dd>
+                </div>
+                <div>
+                  <dt>Última tentativa</dt>
+                  <dd>{item.lastAttemptAt ? date(item.lastAttemptAt) : "—"}</dd>
+                </div>
+                <div>
+                  <dt>Enviado</dt>
+                  <dd>{item.sentAt ? date(item.sentAt) : "—"}</dd>
+                </div>
+              </dl>
+            ))
+          ) : (
+            <p className="detail-empty">PENDENTE / NÃO CONFIGURADO</p>
+          )}
+        </section>
+        <section className="detail-card timeline-card">
+          <h2>Histórico</h2>
+          {order.events.length ? (
+            <ol className="timeline">
+              {order.events.map((event) => (
+                <li key={event.id}>
+                  <span />
+                  <div>
+                    <b>{event.status}</b>
+                    <p>{event.note}</p>
+                    <time>{date(event.createdAt)}</time>
+                  </div>
+                </li>
+              ))}
+            </ol>
+          ) : (
+            <p className="detail-empty">Nenhum evento no histórico.</p>
+          )}
+        </section>
+      </div>
+    </>
+  );
 }

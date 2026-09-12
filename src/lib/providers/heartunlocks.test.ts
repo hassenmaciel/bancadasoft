@@ -24,6 +24,11 @@ describe("HeartUnlocks adapter", () => {
     const adapter = new HeartUnlocksProviderAdapter({ gatewayUrl: "https://gateway.test", gatewaySecret: "secret", fetcher, timeoutMs: 1 });
     await expect(adapter.createOrder({ providerProductId: "2194", reference: "ref", payload: { Quantity: 1 } })).rejects.toBeInstanceOf(ProviderOrderUncertainError);
   });
+
+  it("marks a gateway 5xx result as uncertain instead of allowing a blind retry", async () => {
+    const adapter = new HeartUnlocksProviderAdapter({ gatewayUrl: "https://gateway.test", gatewaySecret: "secret", fetcher: vi.fn(async () => new Response("upstream error", { status: 502 })) });
+    await expect(adapter.createOrder({ providerProductId: "2194", reference: "ref", payload: { Quantity: 1 } })).rejects.toBeInstanceOf(ProviderOrderUncertainError);
+  });
 });
 
 describe("HeartUnlocks callback replay", () => {

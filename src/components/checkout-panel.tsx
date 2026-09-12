@@ -2,11 +2,15 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useEffect, useRef, useState } from "react";
 import type { OrderDTO, ProductDTO } from "@/lib/dto";
 import { createOrderPoller } from "@/lib/order-polling";
+import CredentialDelivery from "@/components/credential-delivery";
 
-const money = (value: number) => new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(value / 100);
+const money = (value: number) =>
+  new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(
+    value / 100,
+  );
 
 export default function CheckoutPanel({ product }: { product: ProductDTO }) {
   const [open, setOpen] = useState(false);
@@ -14,18 +18,76 @@ export default function CheckoutPanel({ product }: { product: ProductDTO }) {
   const [notice, setNotice] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [delivery, setDelivery] = useState<{
+    username?: string;
+    password?: string;
+    instructions?: string;
+  } | null>(null);
+  const lock = useRef(false);
+  const storageKey = `bancadasoft:checkout:${product.id}`;
+  const paid = order?.payment?.status === "PAID";
+  const delivered = order?.status === "DELIVERED" && !!delivery;
+  const failed = order?.status === "FAILED";
 
+  async function loadDelivery(orderId: string) {
+    const token = localStorage.getItem(`bancadasoft:delivery:${orderId}`);
+    if (!token) return;
+    const response = await fetch(`/api/orders/${orderId}/delivery`, {
+      headers: { authorization: `Bearer ${token}` },
+      cache: "no-store",
+    });
+    if (!response.ok) return;
+    const payload = await response.json();
+    if (payload.data.delivery) setDelivery(payload.data.delivery);
+  }
+  useEffect(() => {
+    const saved = localStorage.getItem(storageKey);
+    if (!saved) return;
+    try {
+      const ref = JSON.parse(saved) as {
+        id?: string;
+        publicToken?: string;
+        deliveryAccessToken?: string;
+      };
+      if (!ref.id || !ref.publicToken) {
+        if (ref.deliveryAccessToken) queueMicrotask(() => setOpen(true));
+        return;
+      }
+      fetch(
+        `/api/orders/${ref.id}?token=${encodeURIComponent(ref.publicToken)}`,
+        { cache: "no-store" },
+      )
+        .then((response) => (response.ok ? response.json() : Promise.reject()))
+        .then(async (payload) => {
+          setOrder(payload.data);
+          setOpen(true);
+          if (payload.data.status === "DELIVERED") await loadDelivery(ref.id!);
+        })
+        .catch(() => localStorage.removeItem(storageKey));
+    } catch {
+      localStorage.removeItem(storageKey);
+    }
+  }, [storageKey]);
   useEffect(() => {
     if (!order) return;
     const poller = createOrderPoller({
       initialOrder: order,
       fetchOrder: async () => {
-        const response = await fetch(`/api/orders/${order.id}?token=${encodeURIComponent(order.publicToken)}`, { cache: "no-store" });
+        const response = await fetch(
+          `/api/orders/${order.id}?token=${encodeURIComponent(order.publicToken)}`,
+          { cache: "no-store" },
+        );
         const payload = await response.json();
-        if (!response.ok) throw new Error(payload.error || "Não foi possível atualizar o pedido.");
-        return payload.data as OrderDTO;
+        if (!response.ok)
+          throw new Error(
+            payload.error || "Não foi possível atualizar o pedido.",
+          );
+        return payload.data;
       },
-      onUpdate: setOrder,
+      onUpdate: (updated) => {
+        setOrder(updated);
+        if (updated.status === "DELIVERED") void loadDelivery(updated.id);
+      },
     });
     poller.start();
     return poller.stop;
@@ -33,35 +95,383 @@ export default function CheckoutPanel({ product }: { product: ProductDTO }) {
 
   async function checkout(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (submitting) return;
+    if (lock.current) return;
+    lock.current = true;
     setSubmitting(true);
     setNotice("");
     const form = new FormData(event.currentTarget);
     try {
+      let deliveryAccessToken = "";
+      const saved = localStorage.getItem(storageKey);
+      if (saved) {
+        try {
+          deliveryAccessToken =
+            (JSON.parse(saved) as { deliveryAccessToken?: string })
+              .deliveryAccessToken ?? "";
+        } catch {}
+      }
+      if (!deliveryAccessToken) {
+        deliveryAccessToken = crypto.randomUUID();
+        localStorage.setItem(
+          storageKey,
+          JSON.stringify({ deliveryAccessToken }),
+        );
+      }
       const response = await fetch("/api/checkout", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ productId: product.id, name: form.get("name"), email: form.get("email"), whatsapp: form.get("whatsapp"), cpfCnpj: String(form.get("cpfCnpj") ?? "").replace(/\D/g, "") }),
+        body: JSON.stringify({
+          productId: product.id,
+          name: form.get("name"),
+          email: form.get("email"),
+          whatsapp: form.get("whatsapp"),
+          cpfCnpj: String(form.get("cpfCnpj") ?? "").replace(/\D/g, ""),
+          deliveryAccessToken,
+        }),
       });
       const payload = await response.json();
-      if (!response.ok) throw new Error(payload.error || "Não foi possível criar o pedido.");
+      if (!response.ok)
+        throw new Error(payload.error || "Não foi possível criar o pedido.");
       setOrder(payload.data);
-    } catch (error) { setNotice(error instanceof Error ? error.message : "Não foi possível criar o pedido."); }
-    finally { setSubmitting(false); }
+      localStorage.setItem(
+        storageKey,
+        JSON.stringify({
+          id: payload.data.id,
+          publicToken: payload.data.publicToken,
+          deliveryAccessToken,
+        }),
+      );
+      localStorage.setItem(
+        `bancadasoft:delivery:${payload.data.id}`,
+        payload.deliveryAccessToken,
+      );
+    } catch (error) {
+      setNotice(
+        error instanceof Error
+          ? error.message
+          : "Não foi possível criar o pedido.",
+      );
+    } finally {
+      lock.current = false;
+      setSubmitting(false);
+    }
   }
-
   async function copyPix() {
     if (!order?.payment?.pixPayload) return;
     await navigator.clipboard.writeText(order.payment.pixPayload);
     setCopied(true);
-    window.setTimeout(() => setCopied(false), 2000);
+    setTimeout(() => setCopied(false), 2000);
+  }
+  function close() {
+    if (submitting) return;
+    setOpen(false);
+    setOrder(null);
+    setNotice("");
+    setCopied(false);
+    setDelivery(null);
   }
 
-  function close() { setOpen(false); setOrder(null); setNotice(""); setCopied(false); }
-
-  return <>
-    <button className="product-buy" disabled={!product.available} onClick={() => setOpen(true)}>{product.available ? "Comprar com PIX" : "Indisponível"}</button>
-    {open && !order && <dialog open><form onSubmit={checkout}><button type="button" className="close" onClick={close} aria-label="Fechar">×</button><span className="dialog-kicker">Checkout seguro</span><h2>Finalizar com PIX</h2><p>{product.name} · <b>{money(product.priceCents)}</b></p>{notice && <p className="notice error">{notice}</p>}<label>Nome completo<input name="name" autoComplete="name" required /></label><label>WhatsApp<input name="whatsapp" autoComplete="tel" required /></label><label>E-mail<input name="email" type="email" autoComplete="email" required /></label><label>CPF ou CNPJ<input name="cpfCnpj" inputMode="numeric" autoComplete="off" minLength={11} maxLength={18} required /></label><button className="primary" disabled={submitting}>{submitting ? "Criando pedido..." : "Gerar PIX"}</button></form></dialog>}
-    {open && order && <dialog open><div className="order"><button type="button" className="close" onClick={close} aria-label="Fechar">×</button><span className="dialog-kicker">Pedido {order.publicToken.slice(0, 8)}</span><h2>{order.fulfillment?.delivery ? "Acesso liberado!" : order.payment?.status === "PAID" ? "Pagamento confirmado" : "Aguardando pagamento"}</h2><p>{order.items.map((item) => item.product.name).join(", ")}</p>{order.payment && <div className="pix-payment">{order.payment.qrCodeImage && <div className="qr-frame"><Image src={order.payment.qrCodeImage} width={220} height={220} unoptimized alt="QR Code PIX do pedido" /></div>}<strong>{money(order.payment.amountCents)}</strong><span className="payment-status">{order.payment.status === "PAID" ? "Pagamento confirmado" : "Pagamento pendente"}</span>{order.payment.pixPayload && <><code>{order.payment.pixPayload}</code><button type="button" className="copy-pix" onClick={copyPix}>{copied ? "PIX copiado" : "Copiar PIX"}</button></>}</div>}{order.fulfillment?.delivery && <div className="delivery"><b>Entrega disponível</b><p>{order.fulfillment.delivery.instructions}</p></div>}<Link className="order-link" href={`/meus-pedidos/${order.id}`}>Acompanhar em Meus pedidos</Link>{notice && <p className="notice error">{notice}</p>}</div></dialog>}
-  </>;
+  return (
+    <>
+      <button
+        className="product-buy"
+        disabled={!product.available}
+        onClick={() => setOpen(true)}
+      >
+        {product.available ? "COMPRAR COM PIX" : "Indisponível"}
+      </button>
+      {open && (
+        <dialog
+          className="checkout-modal"
+          open
+          aria-labelledby="checkout-title"
+          onCancel={(event) => {
+            event.preventDefault();
+            close();
+          }}
+        >
+          <button
+            type="button"
+            className="checkout-close"
+            onClick={close}
+            disabled={submitting}
+            aria-label="Fechar checkout"
+          >
+            ×
+          </button>
+          <div className="checkout-shell">
+            <section className="checkout-main">
+              {!order ? (
+                <form
+                  className="checkout-form"
+                  onSubmit={checkout}
+                  noValidate={false}
+                >
+                  <span className="checkout-kicker">✓ Checkout seguro</span>
+                  <h2 id="checkout-title">Finalize sua compra</h2>
+                  <p className="checkout-lead">
+                    Preencha seus dados para gerar o PIX.
+                    <br />
+                    Não é necessário criar uma conta.
+                  </p>
+                  <div className="checkout-fields">
+                    <label htmlFor="checkout-name">
+                      Nome completo
+                      <input
+                        id="checkout-name"
+                        name="name"
+                        autoComplete="name"
+                        placeholder="Seu nome completo"
+                        required
+                      />
+                    </label>
+                    <label htmlFor="checkout-cpf">
+                      CPF <em>obrigatório</em>
+                      <input
+                        id="checkout-cpf"
+                        name="cpfCnpj"
+                        inputMode="numeric"
+                        autoComplete="off"
+                        placeholder="000.000.000-00"
+                        minLength={11}
+                        maxLength={14}
+                        onInput={(event) => {
+                          const input = event.currentTarget;
+                          const digits = input.value
+                            .replace(/\D/g, "")
+                            .slice(0, 11);
+                          input.value = digits
+                            .replace(/(\d{3})(\d)/, "$1.$2")
+                            .replace(/(\d{3})(\d)/, "$1.$2")
+                            .replace(/(\d{3})(\d{1,2})$/, "$1-$2");
+                        }}
+                        required
+                      />
+                    </label>
+                    <label htmlFor="checkout-email">
+                      E-mail
+                      <input
+                        id="checkout-email"
+                        name="email"
+                        type="email"
+                        autoComplete="email"
+                        placeholder="seu@email.com"
+                        required
+                      />
+                    </label>
+                    <label htmlFor="checkout-whatsapp">
+                      WhatsApp
+                      <input
+                        id="checkout-whatsapp"
+                        name="whatsapp"
+                        inputMode="tel"
+                        autoComplete="tel"
+                        placeholder="(00) 00000-0000"
+                        minLength={10}
+                        maxLength={16}
+                        onInput={(event) => {
+                          const input = event.currentTarget;
+                          const digits = input.value
+                            .replace(/\D/g, "")
+                            .slice(0, 11);
+                          input.value = digits
+                            .replace(/^(\d{2})(\d)/, "($1) $2")
+                            .replace(/(\d{5})(\d{4})$/, "$1-$2");
+                        }}
+                        required
+                      />
+                    </label>
+                  </div>
+                  {notice && (
+                    <p className="checkout-error" role="alert">
+                      {notice}
+                    </p>
+                  )}
+                  <button
+                    className="checkout-submit"
+                    disabled={submitting}
+                    aria-busy={submitting}
+                  >
+                    {submitting ? (
+                      <>
+                        <span className="button-spinner" />
+                        GERANDO PIX...
+                      </>
+                    ) : (
+                      <>▣ GERAR PIX</>
+                    )}
+                  </button>
+                  <div className="checkout-security">
+                    <span>▣</span>
+                    <p>
+                      <b>COMPRA SEGURA</b>Seus dados são utilizados somente para
+                      processar esta compra.
+                    </p>
+                  </div>
+                </form>
+              ) : (
+                <div className="checkout-state" aria-live="polite">
+                  {delivered ? (
+                    <>
+                      <span className="state-icon state-success">✓</span>
+                      <span className="checkout-kicker">Pedido concluído</span>
+                      <h2 id="checkout-title">Acesso liberado</h2>
+                      <div className="progress-checks">
+                        <span>✓ Pagamento confirmado</span>
+                        <span>✓ Liberação concluída</span>
+                      </div>
+                      <p>Seu acesso está pronto para uso.</p>
+                      <CredentialDelivery {...delivery} />
+                      <p className="checkout-guidance">
+                        Guarde essas informações até finalizar o período de uso.
+                      </p>
+                      <p className="email-note">
+                        Também enviamos um link de recuperação para seu e-mail.
+                      </p>
+                    </>
+                  ) : failed ? (
+                    <>
+                      <span className="state-icon state-wait">!</span>
+                      <h2 id="checkout-title">
+                        Estamos concluindo sua liberação
+                      </h2>
+                      <p>
+                        Aguarde alguns instantes. Se necessário, nossa equipe
+                        acompanhará o pedido.
+                      </p>
+                    </>
+                  ) : paid ? (
+                    <>
+                      <span className="state-icon state-success">✓</span>
+                      <span className="checkout-kicker">
+                        Pagamento confirmado
+                      </span>
+                      <h2 id="checkout-title">Liberando seu acesso...</h2>
+                      <div className="processing-line">
+                        <span />
+                        <span />
+                        <span />
+                      </div>
+                      <p>Não é necessário atualizar ou clicar novamente.</p>
+                    </>
+                  ) : (
+                    <>
+                      <span className="checkout-kicker">Pagamento via PIX</span>
+                      <h2 id="checkout-title">Aguardando pagamento</h2>
+                      <div className="pix-status">
+                        <span />
+                        Aguardando confirmação do pagamento
+                      </div>
+                      {order.payment && (
+                        <div className="pix-layout">
+                          <div className="qr-frame">
+                            {order.payment.qrCodeImage && (
+                              <Image
+                                src={order.payment.qrCodeImage}
+                                width={210}
+                                height={210}
+                                unoptimized
+                                alt="QR Code PIX do pedido"
+                              />
+                            )}
+                          </div>
+                          <div className="pix-details">
+                            <small>VALOR</small>
+                            <strong>{money(order.payment.amountCents)}</strong>
+                            <label>
+                              PIX COPIA E COLA
+                              <code>{order.payment.pixPayload}</code>
+                            </label>
+                            <button
+                              type="button"
+                              className="copy-pix"
+                              onClick={copyPix}
+                            >
+                              {copied ? "COPIADO ✓" : "COPIAR PIX"}
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                      <p className="checkout-guidance">
+                        Após realizar o pagamento, aguarde nesta página. Seu
+                        acesso será liberado automaticamente.
+                      </p>
+                      <p className="checkout-warning">
+                        Não feche esta janela até seu login ser exibido.
+                      </p>
+                      <p className="checkout-recovery">
+                        Se fechar por engano, você poderá recuperar o acesso
+                        pelo link enviado ao seu e-mail.
+                      </p>
+                    </>
+                  )}
+                  <Link
+                    className="order-link checkout-order-link"
+                    href={`/acompanhar/${order.id}`}
+                  >
+                    Acompanhar pedido em página separada
+                  </Link>
+                </div>
+              )}
+            </section>
+            <aside className="checkout-summary">
+              <span className="summary-brand">
+                BANCADA<span>SOFT</span>
+              </span>
+              <div className="summary-art">
+                {product.imageUrl ? (
+                  <Image
+                    src={product.imageUrl}
+                    alt={product.name}
+                    width={180}
+                    height={150}
+                    unoptimized
+                  />
+                ) : (
+                  <b>{product.name.slice(0, 2).toUpperCase()}</b>
+                )}
+              </div>
+              <span className="summary-type">
+                {product.type === "RENTAL" ? "ALUGUEL" : "FERRAMENTA"}
+              </span>
+              <h3>{product.name}</h3>
+              <p>
+                {product.duration ??
+                  product.deliveryEstimate ??
+                  "Acesso temporário"}
+              </p>
+              <dl>
+                <div>
+                  <dt>Acesso temporário</dt>
+                  <dd>{product.duration ?? "Conforme produto"}</dd>
+                </div>
+                <div>
+                  <dt>Entrega automática</dt>
+                  <dd>Após confirmação e liberação</dd>
+                </div>
+                <div>
+                  <dt>Pagamento</dt>
+                  <dd>PIX</dd>
+                </div>
+                <div>
+                  <dt>Entrega</dt>
+                  <dd>Na própria tela</dd>
+                </div>
+                <div>
+                  <dt>Suporte</dt>
+                  <dd>WhatsApp BancadaSoft</dd>
+                </div>
+              </dl>
+              <div className="summary-total">
+                <span>TOTAL</span>
+                <strong>
+                  {money(order?.totalCents ?? product.priceCents)}
+                </strong>
+              </div>
+            </aside>
+          </div>
+        </dialog>
+      )}
+    </>
+  );
 }

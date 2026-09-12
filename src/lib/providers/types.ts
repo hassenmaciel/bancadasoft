@@ -2,7 +2,7 @@ export type ProviderHealth = { connected: boolean; message: string };
 export type ProviderCatalogItem = { externalProductId: string; label: string; costCents?: number; currency?: string };
 export type ProviderBalance = { amountCents: number; currency: string };
 export type ProviderOrderInput = { providerProductId: string; reference: string; payload: Record<string, unknown> };
-export type ProviderOrderResult = { externalOrderId: string; status: "COMPLETED" | "PROCESSING" | "FAILED"; reference?: string; delivery?: Record<string, unknown>; error?: string };
+export type ProviderOrderResult = { externalOrderId?: string; status: "COMPLETED" | "PROCESSING" | "FAILED"; reference?: string; delivery?: Record<string, unknown>; error?: string };
 
 export interface ProviderAdapter {
   readonly code: string;

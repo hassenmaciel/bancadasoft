@@ -40,6 +40,18 @@ describe("DTO mappers", () => {
     expect(dto).not.toHaveProperty("delivery");
   });
 
+  it("remove a entrega quando o pedido é consultado apenas por token público", () => {
+    const dto = orderDto({
+      id:"order-1", publicToken:"public-token", status:OrderStatus.DELIVERED, totalCents:2900, createdAt:new Date(),
+      items:[{id:"item-1",unitPriceCents:2900,product:{...product,category}}], payment:null,
+      fulfillment:{status:FulfillmentStatus.FULFILLED,delivery:{username:"private-user",password:"private-pass"}}, events:[],
+    }, {includeDelivery:false});
+    expect(dto.fulfillment?.status).toBe(FulfillmentStatus.FULFILLED);
+    expect(dto.fulfillment?.delivery).toBeUndefined();
+    expect(JSON.stringify(dto)).not.toContain("private-user");
+    expect(JSON.stringify(dto)).not.toContain("private-pass");
+  });
+
   it("normaliza a imagem real do QR Code sem alterar data URLs válidas", () => {
     expect(normalizeQrCodeImage("encoded-image")).toBe("data:image/png;base64,encoded-image");
     expect(normalizeQrCodeImage("data:image/png;base64,ready")).toBe("data:image/png;base64,ready");
