@@ -1,11 +1,11 @@
 "use client";
-import { FormEvent, useMemo, useState } from "react";
+import { FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { AdminProductDTO } from "@/lib/admin-catalog";
-import { commercialMetrics } from "@/lib/admin-rules";
 import AdminImageUpload from "@/components/admin-image-upload";
 import AdminConfirmDialog from "@/components/admin-confirm-dialog";
 type Option = { id: string; name: string };
+const brl = (cents: number | null | undefined) => cents == null ? "—" : new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(cents / 100);
 const slugify = (v: string) =>
   v
     .normalize("NFD")
@@ -43,15 +43,13 @@ export default function ProductForm({
     [saving, setSaving] = useState(false),
     [confirming, setConfirming] = useState(false),
     [slug, setSlug] = useState(product?.slug ?? ""),
-    [price, setPrice] = useState(product ? product.priceCents / 100 : 0),
+    [pricingMode, setPricingMode] = useState(product?.pricingMode ?? "MANUAL"),
+    [price, setPrice] = useState(product ? (product.manualPriceCents ?? product.priceCents) / 100 : 0),
     [cost, setCost] = useState(
       product?.costCents == null ? "" : String(product.costCents / 100),
     ),
     [image, setImage] = useState(product?.imageUrl ?? "");
-  const metrics = useMemo(
-    () => cost === "" ? null : commercialMetrics(Math.round(price * 100), Math.round(Number(cost) * 100)),
-    [price, cost],
-  );
+  const pricing = product?.pricing;
   async function submit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setSaving(true);
@@ -67,8 +65,10 @@ export default function ProductForm({
       deliveryEstimate: f.get("deliveryEstimate") || null,
       searchTerms: f.get("searchTerms") || "",
       duration: f.get("duration") || null,
-      priceCents: Math.round(price * 100),
+      priceCents: product?.priceCents ?? Math.round(price * 100),
       costCents: cost === "" ? null : Math.round(Number(cost) * 100),
+      pricingMode,
+      manualPriceCents: pricingMode === "MANUAL" ? Math.round(price * 100) : null,
       categoryId: f.get("categoryId"),
       brandId: f.get("brandId") || null,
       imageUrl: image || null,
@@ -279,18 +279,44 @@ export default function ProductForm({
           </fieldset>
         ) : null}
         <fieldset>
-          <legend>Definido pela BancadaSoft</legend>
+          <legend>Precificação BancadaSoft</legend>
           <div className="form-grid">
             <label>
-              Preço final (R$)
+              Modo de preço
+              <select value={pricingMode} onChange={(event) => setPricingMode(event.target.value as typeof pricingMode)}>
+                <option value="AUTO_GLOBAL">Automático · regra global</option>
+                <option value="AUTO_GROUP">Automático · regra do grupo</option>
+                <option value="MANUAL">Manual</option>
+              </select>
+            </label>
+            <label>
+              Preço manual final (R$)
               <input
                 type="number"
-                min="0"
+                min="0.01"
                 step=".01"
                 value={price}
                 onChange={(e) => setPrice(Number(e.target.value))}
+                disabled={pricingMode !== "MANUAL"}
               />
+              {pricingMode === "MANUAL" && <small>PREÇO MANUAL · protegido contra sincronizações</small>}
             </label>
+          </div>
+          {pricing ? <div className="pricing-summary-grid">
+            <article><small>CUSTO ORIGINAL</small><b>{pricing.providerCostCents == null ? "—" : new Intl.NumberFormat("pt-BR", { style: "currency", currency: pricing.providerCurrency ?? "USD" }).format(pricing.providerCostCents / 100)}</b><span>{pricing.providerCurrency ?? "Sem moeda"}</span></article>
+            <article><small>CÂMBIO CONFIGURADO</small><b>{pricing.exchangeRateMicros == null ? "—" : (pricing.exchangeRateMicros / 1_000_000).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 6 })}</b><span>buffer {(pricing.exchangeBufferBps / 100).toFixed(2)}%</span></article>
+            <article><small>CUSTO CONVERTIDO</small><b>{brl(pricing.providerCostBrlCents)}</b><span>BRL</span></article>
+            <article><small>REGRA AUTOMÁTICA</small><b>{pricing.appliedRule}</b><span>{pricing.roundingMode}</span></article>
+            <article><small>PREÇO SUGERIDO</small><b>{brl(pricing.suggestedPriceCents)}</b><span>{pricing.pricingStatus}</span></article>
+            <article><small>PREÇO EFETIVO</small><b>{brl(pricing.effectivePriceCents)}</b><span>{pricingMode === "MANUAL" ? "PREÇO MANUAL" : "AUTOMÁTICO"}</span></article>
+            <article><small>LUCRO ESTIMADO</small><b>{brl(pricing.estimatedProfitCents)}</b><span>taxa {brl(pricing.paymentFeeCents)}</span></article>
+            <article><small>MARGEM SOBRE VENDA</small><b>{pricing.estimatedMarginBps == null ? "—" : `${(pricing.estimatedMarginBps / 100).toFixed(2)}%`}</b><span>alvo {(pricing.targetMarginBps / 100).toFixed(2)}%</span></article>
+          </div> : <p className="security-note">Vincule um fornecedor operacional e configure o motor para calcular a sugestão.</p>}
+          <small className="pricing-help">A sugestão é recalculada após salvar. Preços manuais nunca são substituídos automaticamente.</small>
+        </fieldset>
+        <fieldset>
+          <legend>Controles comerciais</legend>
+          <div className="form-grid">
             <label>
               Custo interno opcional (R$)
               <input
@@ -301,22 +327,6 @@ export default function ProductForm({
                 onChange={(e) => setCost(e.target.value)}
               />
             </label>
-          </div>
-          <div className="commercial-summary">
-            {metrics ? <>
-            <span>
-              Lucro interno{" "}
-              <b>
-                {(metrics.profitCents / 100).toLocaleString("pt-BR", {
-                  style: "currency",
-                  currency: "BRL",
-                })}
-              </b>
-            </span>
-            <span>
-              Margem <b>{metrics.marginPercent.toFixed(2)}%</b>
-            </span>
-            </> : <span>Margem não calculada sem custo BRL. Custos em moeda estrangeira permanecem separados.</span>}
           </div>
           <div className="form-grid">
             <label>

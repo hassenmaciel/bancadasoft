@@ -8,9 +8,13 @@ const { requireAdmin, updateMany, auditCreate, transaction } = vi.hoisted(() => 
 });
 vi.mock("@/lib/auth", () => ({ requireAdmin }));
 vi.mock("@/lib/prisma", () => ({ prisma: { $transaction: transaction } }));
+vi.mock("@/lib/admin-catalog", () => ({ adminProductDto: vi.fn() }));
+vi.mock("@/lib/pricing-service", () => ({ calculateProductPricing: vi.fn(), loadPricingContext: vi.fn(), recalculateProducts: vi.fn() }));
 vi.mock("@/lib/admin-product-bulk", () => ({
   bulkProductSchema: { safeParse: (value: { ids?: string[]; action?: string }) => value.ids?.length && value.action ? { success: true, data: value } : { success: false } },
   bulkStatus: (action: string) => ({ PUBLISH: "PUBLISHED", DRAFT: "DRAFT", PAUSE: "PAUSED", ARCHIVE: "ARCHIVED" })[action],
+  isPricingBulkAction: () => false,
+  pricingModeForBulkAction: () => null,
 }));
 import { PATCH } from "./route";
 

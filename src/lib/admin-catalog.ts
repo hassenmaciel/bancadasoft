@@ -1,6 +1,7 @@
-import { DeliveryType, ProductStatus, ProductType, type Brand, type Category, type Product } from "@prisma/client";
+import { DeliveryType, PricingMode, ProductStatus, ProductType, type Brand, type Category, type Product } from "@prisma/client";
 import { z } from "zod";
 import { isProductionProviderCode } from "./providers/selection";
+import type { PricingResult } from "./pricing";
 
 const optionalUrl = z.union([z.string().url("Informe uma URL válida."), z.literal("")]).transform((value) => value || null);
 
@@ -16,6 +17,8 @@ export const productInputSchema = z.object({
   duration: z.string().trim().max(80).nullable().optional(),
   priceCents: z.number().int().min(0, "O preço não pode ser negativo."),
   costCents: z.number().int().min(0).nullable().optional(),
+  pricingMode: z.nativeEnum(PricingMode).default(PricingMode.MANUAL),
+  manualPriceCents: z.number().int().min(1).nullable().optional(),
   featured: z.boolean().default(false),
   sortOrder: z.number().int().min(0).default(0),
   categoryId: z.string().trim().min(1, "Categoria é obrigatória."),
@@ -23,6 +26,13 @@ export const productInputSchema = z.object({
   imageUrl: optionalUrl.nullable().optional(),
   status: z.nativeEnum(ProductStatus),
   available: z.boolean().default(true),
+}).transform((value) => ({
+  ...value,
+  manualPriceCents: value.pricingMode === PricingMode.MANUAL ? value.manualPriceCents ?? value.priceCents : null,
+})).superRefine((value, context) => {
+  if (value.pricingMode === PricingMode.MANUAL && !value.manualPriceCents) {
+    context.addIssue({ code: "custom", path: ["manualPriceCents"], message: "Informe o preço manual." });
+  }
 });
 
 export const categoryInputSchema = z.object({
@@ -31,10 +41,12 @@ export const categoryInputSchema = z.object({
   active: z.boolean().default(true),
 });
 
-export type AdminProductDTO = Pick<Product, "id" | "slug" | "name" | "description" | "longDescription" | "type" | "deliveryType" | "deliveryEstimate" | "searchTerms" | "duration" | "priceCents" | "costCents" | "featured" | "sortOrder" | "status" | "available" | "imageUrl"> & {
+export type AdminProductDTO = Pick<Product, "id" | "slug" | "name" | "description" | "longDescription" | "type" | "deliveryType" | "deliveryEstimate" | "searchTerms" | "duration" | "priceCents" | "costCents" | "pricingMode" | "manualPriceCents" | "suggestedPriceCents" | "pricingStatus" | "featured" | "sortOrder" | "status" | "available" | "imageUrl"> & {
   category: Pick<Category, "id" | "name" | "slug">;
   brand: Pick<Brand, "id" | "name" | "slug"> | null;
   updatedAt: string;
+  pricingComputedAt: string | null;
+  pricing: PricingResult | null;
   providerProducts: Array<{id:string;externalProductId:string;label:string|null;providerCostCents:number|null;currency:string;active:boolean;mode:string;metadata:unknown;lastSyncedAt:string|null;syncStatus:string|null;updatedAt:string;automationClass:string;technicalEligibility:string;homologationStatus:string;contractSignature:string|null;fieldSchema:unknown;expectedDeliveryType:string;provider:{id:string;name:string;code:string;active:boolean}}>;
 };
 
@@ -42,12 +54,15 @@ type AdminProductSource=Product & {category:Category;brand:Brand|null;providerPr
 export const operationalProviderProducts = <T extends {active:boolean;mode:string;provider:{active:boolean;code:string}}>(links:T[]) =>
   links.filter(link => link.active && link.mode === "REAL" && link.provider.active && isProductionProviderCode(link.provider.code));
 
-export const adminProductDto = (product: AdminProductSource): AdminProductDTO => ({
+export const adminProductDto = (product: AdminProductSource, pricing: PricingResult | null = null): AdminProductDTO => ({
   id: product.id, slug: product.slug, name: product.name, description: product.description,
   longDescription: product.longDescription, deliveryType: product.deliveryType,
   deliveryEstimate: product.deliveryEstimate, searchTerms: product.searchTerms,
   type: product.type, duration: product.duration, priceCents: product.priceCents,
-  costCents: product.costCents, featured: product.featured, sortOrder: product.sortOrder,
+  costCents: product.costCents, pricingMode: product.pricingMode, manualPriceCents: product.manualPriceCents,
+  suggestedPriceCents: product.suggestedPriceCents, pricingStatus: product.pricingStatus,
+  pricingComputedAt: product.pricingComputedAt?.toISOString() ?? null, pricing,
+  featured: product.featured, sortOrder: product.sortOrder,
   status: product.status, available: product.available, imageUrl: product.imageUrl,
   category: { id: product.category.id, name: product.category.name, slug: product.category.slug },
   brand: product.brand ? { id: product.brand.id, name: product.brand.name, slug: product.brand.slug } : null,

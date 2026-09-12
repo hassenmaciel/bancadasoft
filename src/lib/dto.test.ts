@@ -19,6 +19,10 @@ describe("DTO mappers", () => {
       type: ProductType.RENTAL, deliveryType: DeliveryType.AUTOMATIC, deliveryEstimate: "imediato", longDescription: null, duration: "6 horas", imageUrl: "https://cdn.example.test/unlocktool.png",
       priceCents: 2900, status: ProductStatus.PUBLISHED, available: true, category: categoryDto, brand: null, checkoutFields: [],
     });
+    expect(productDto({ ...product, category })).not.toHaveProperty("costCents");
+    expect(productDto({ ...product, category })).not.toHaveProperty("manualPriceCents");
+    expect(productDto({ ...product, category })).not.toHaveProperty("suggestedPriceCents");
+    expect(productDto({ ...product, category })).not.toHaveProperty("pricingStatus");
   });
 
   it("mantém itens, pagamento, fulfillment e entrega no OrderDTO", () => {

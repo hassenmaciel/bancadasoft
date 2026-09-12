@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { adminProductDto } from "@/lib/admin-catalog";
 import ProductForm from "../product-form";
+import { calculateProductPricing, loadPricingContext } from "@/lib/pricing-service";
 
 export const dynamic = "force-dynamic";
 
@@ -14,8 +15,11 @@ export default async function EditProductPage({ params }: { params: Promise<{ id
   });
   if (!product) notFound();
 
-  const categories = await prisma.category.findMany({ orderBy: { name: "asc" } });
-  const brands = await prisma.brand.findMany({ orderBy: { name: "asc" } });
+  const [categories, brands, pricingContext] = await Promise.all([
+    prisma.category.findMany({ orderBy: { name: "asc" } }),
+    prisma.brand.findMany({ orderBy: { name: "asc" } }),
+    loadPricingContext(),
+  ]);
 
   return (
     <>
@@ -27,7 +31,7 @@ export default async function EditProductPage({ params }: { params: Promise<{ id
         </div>
       </header>
       <ProductForm
-        product={adminProductDto(product)}
+        product={adminProductDto(product, calculateProductPricing(product, pricingContext))}
         categories={categories.map(({ id: categoryId, name }) => ({ id: categoryId, name }))}
         brands={brands.map(({ id: brandId, name }) => ({ id: brandId, name }))}
       />

@@ -3,7 +3,6 @@ import Image from "next/image";
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import type { AdminProductDTO } from "@/lib/admin-catalog";
-import { commercialMetrics } from "@/lib/admin-rules";
 const brl = (v: number) =>
   new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(
     v / 100,
@@ -25,8 +24,13 @@ export default function ProductList({
     [brand, setBrand] = useState("ALL"),
     [type, setType] = useState("ALL"),
     [automation, setAutomation] = useState("ALL"),
+    [pricingMode, setPricingMode] = useState("ALL"),
+    [pricingStatus, setPricingStatus] = useState("ALL"),
+    [marginBelow, setMarginBelow] = useState(""),
+    [profitBelow, setProfitBelow] = useState(""),
     [selected, setSelected] = useState<string[]>([]),
-    [busy, setBusy] = useState(false);
+    [busy, setBusy] = useState(false),
+    [simulation, setSimulation] = useState<Record<string, unknown> | null>(null);
   const products = useMemo(
     () =>
       rows.filter(
@@ -36,11 +40,15 @@ export default function ProductList({
           (brand === "ALL" || p.brand?.id === brand) &&
           (type === "ALL" || p.type === type) &&
           (automation === "ALL" || p.providerProducts.some((link) => link.automationClass === automation)) &&
+          (pricingMode === "ALL" || p.pricingMode === pricingMode) &&
+          (pricingStatus === "ALL" || p.pricingStatus === pricingStatus) &&
+          (marginBelow === "" || (p.pricing?.estimatedMarginBps ?? Infinity) < Number(marginBelow) * 100) &&
+          (profitBelow === "" || (p.pricing?.estimatedProfitCents ?? Infinity) < Number(profitBelow) * 100) &&
           `${p.name} ${p.slug} ${p.searchTerms}`
             .toLowerCase()
             .includes(query.toLowerCase()),
       ),
-    [rows, query, status, category, brand, type, automation],
+    [rows, query, status, category, brand, type, automation, pricingMode, pricingStatus, marginBelow, profitBelow],
   );
   async function bulk(action: "PUBLISH" | "DRAFT" | "PAUSE" | "ARCHIVE") {
     if (!selected.length || busy) return;
@@ -51,6 +59,26 @@ export default function ProductList({
       setRows((current) => current.map((product) => selected.includes(product.id) ? { ...product, status: nextStatus as AdminProductDTO["status"] } : product));
       setSelected([]);
     }
+    setBusy(false);
+  }
+  async function bulkPricing(action: "APPLY_GLOBAL" | "APPLY_GROUP" | "REMOVE_MANUAL" | "RECALCULATE") {
+    if (!selected.length || busy) return;
+    if (action !== "RECALCULATE" && !window.confirm("Esta ação remove o preço manual dos produtos selecionados. Deseja continuar?")) return;
+    setBusy(true);
+    const response = await fetch("/api/admin/products/bulk", { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ ids: selected, action }) });
+    const body = await response.json();
+    if (response.ok && Array.isArray(body.data)) {
+      const updated = new Map((body.data as AdminProductDTO[]).map((product) => [product.id, product]));
+      setRows((current) => current.map((product) => updated.get(product.id) ?? product));
+      setSelected([]);
+    }
+    setBusy(false);
+  }
+  async function simulate() {
+    setBusy(true);
+    const response = await fetch("/api/admin/pricing/simulate", { method: "POST" });
+    const body = await response.json();
+    setSimulation(response.ok ? body.data : { error: body.error ?? "Falha na simulação" });
     setBusy(false);
   }
   return (
@@ -119,6 +147,18 @@ export default function ProductList({
           <option value="MANUAL_REVIEW">Revisão manual</option>
           <option value="UNSUPPORTED">Não suportado</option>
         </select>
+        <select value={pricingMode} onChange={(e) => setPricingMode(e.target.value)}>
+          <option value="ALL">Modo de preço</option>
+          <option value="AUTO_GLOBAL">Automático global</option>
+          <option value="AUTO_GROUP">Automático por grupo</option>
+          <option value="MANUAL">Manual</option>
+        </select>
+        <select value={pricingStatus} onChange={(e) => setPricingStatus(e.target.value)}>
+          <option value="ALL">Status de pricing</option>
+          {['AUTO_OK', 'MANUAL', 'NEEDS_REVIEW', 'NO_COST', 'INVALID_CONFIG'].map((value) => <option key={value}>{value}</option>)}
+        </select>
+        <input value={marginBelow} onChange={(event) => setMarginBelow(event.target.value)} type="number" min="0" step="0.01" placeholder="Margem abaixo de %" />
+        <input value={profitBelow} onChange={(event) => setProfitBelow(event.target.value)} type="number" step="0.01" placeholder="Lucro abaixo de R$" />
       </section>
       <section className="admin-filters">
         <button disabled={!selected.length || busy} onClick={() => bulk("PUBLISH")}>Publicar selecionados</button>
@@ -126,30 +166,38 @@ export default function ProductList({
         <button disabled={!selected.length || busy} onClick={() => bulk("PAUSE")}>Pausar selecionados</button>
         <button disabled={!selected.length || busy} onClick={() => bulk("ARCHIVE")}>Arquivar selecionados</button>
       </section>
+      <section className="admin-filters pricing-bulk-actions">
+        <button disabled={!selected.length || busy} onClick={() => bulkPricing("APPLY_GLOBAL")}>Aplicar regra global</button>
+        <button disabled={!selected.length || busy} onClick={() => bulkPricing("APPLY_GROUP")}>Aplicar regra do grupo</button>
+        <button disabled={!selected.length || busy} onClick={() => bulkPricing("REMOVE_MANUAL")}>Remover preço manual</button>
+        <button disabled={!selected.length || busy} onClick={() => bulkPricing("RECALCULATE")}>Recalcular sugestões</button>
+        <button disabled={busy} onClick={simulate}>Simular catálogo completo</button>
+      </section>
+      {simulation && <section className="pricing-simulation"><h2>Simulação sem alterar preços públicos</h2><pre>{JSON.stringify(simulation, null, 2)}</pre></section>}
       <section className="admin-table-wrap">
         <table className="admin-table">
           <thead>
             <tr>
               <th><input type="checkbox" aria-label="Selecionar produtos exibidos" checked={products.length > 0 && products.every((product) => selected.includes(product.id))} onChange={(event) => setSelected(event.target.checked ? products.map((product) => product.id) : [])} /></th>
               <th>Produto</th>
-              <th>Categoria / Marca</th>
-              <th>Entrega</th>
-              <th>Preço BancadaSoft</th>
-              <th>Custo</th>
+              <th>Provider</th>
+              <th>Automação</th>
+              <th>Grupo</th>
+              <th>Cost original</th>
+              <th>Cost BRL</th>
+              <th>Suggested</th>
+              <th>Effective</th>
+              <th>Profit</th>
               <th>Margem</th>
-              <th>Status</th>
+              <th>Pricing</th>
+              <th>Publicação</th>
               <th />
             </tr>
           </thead>
           <tbody>
             {products.map((product) => {
-              const providerCost = product.providerProducts.find(
-                  (link) => link.providerCostCents !== null,
-                ),
-                metrics =
-                  product.costCents === null
-                    ? null
-                    : commercialMetrics(product.priceCents, product.costCents);
+              const providerCost = product.providerProducts.find((link) => link.providerCostCents !== null);
+              const pricing = product.pricing;
               return (
                 <tr key={product.id}>
                   <td><input type="checkbox" aria-label={`Selecionar ${product.name}`} checked={selected.includes(product.id)} onChange={(event) => setSelected((current) => event.target.checked ? [...new Set([...current, product.id])] : current.filter((id) => id !== product.id))} /></td>
@@ -184,18 +232,13 @@ export default function ProductList({
                     </div>
                   </td>
                   <td>
-                    {product.category.name}
-                    <small className="cell-subtitle">
-                      {product.brand?.name ?? "Sem marca"}
-                    </small>
+                    {providerCost?.provider.name ?? "—"}
+                    {providerCost && <small className="cell-subtitle">ID {providerCost.externalProductId}</small>}
                   </td>
                   <td>
-                    {product.deliveryType}
-                    <small className="cell-subtitle">
-                      {product.deliveryEstimate ?? "Sem override comercial"}
-                    </small>
+                    {providerCost?.automationClass ?? "—"}
                   </td>
-                  <td>{brl(product.priceCents)}</td>
+                  <td>{product.type}<small className="cell-subtitle">{product.category.name}</small></td>
                   <td>
                     {providerCost && providerCost.providerCostCents !== null ? (
                       <>
@@ -203,30 +246,18 @@ export default function ProductList({
                           style: "currency",
                           currency: providerCost.currency,
                         }).format(providerCost.providerCostCents / 100)}
-                        <small className="cell-subtitle">
-                          Sincronizado do fornecedor
-                        </small>
+                        <small className="cell-subtitle">{providerCost.currency}</small>
                       </>
-                    ) : product.costCents === null ? (
-                      "Não informado"
-                    ) : (
-                      brl(product.costCents)
-                    )}
+                    ) : "—"}
                   </td>
+                  <td>{pricing?.providerCostBrlCents == null ? "—" : brl(pricing.providerCostBrlCents)}</td>
+                  <td>{pricing?.suggestedPriceCents == null ? "—" : brl(pricing.suggestedPriceCents)}</td>
+                  <td>{brl(product.priceCents)}<small className="cell-subtitle">{product.pricingMode === "MANUAL" ? "PREÇO MANUAL" : "AUTO"}</small></td>
+                  <td>{pricing?.estimatedProfitCents == null ? "—" : brl(pricing.estimatedProfitCents)}</td>
                   <td>
-                    {metrics ? (
-                      <>
-                        {brl(metrics.profitCents)}
-                        <small className="cell-subtitle">
-                          {metrics.marginPercent.toFixed(2)}%
-                        </small>
-                      </>
-                    ) : (
-                      <span className="cell-subtitle">
-                        Não calculada sem conversão cambial
-                      </span>
-                    )}
+                    {pricing?.estimatedMarginBps == null ? "—" : `${(pricing.estimatedMarginBps / 100).toFixed(2)}%`}
                   </td>
+                  <td><span className={`status-badge pricing-${product.pricingStatus.toLowerCase()}`}>{product.pricingStatus}</span><small className="cell-subtitle">{product.pricingMode}</small></td>
                   <td>
                     <span
                       className={`status-badge status-${product.status.toLowerCase()}`}

@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { audit, safeChangeMetadata } from "@/lib/audit";
 import { productDeleteDecision } from "@/lib/admin-rules";
 import { removeAdminAsset } from "@/lib/admin-storage";
+import { calculateProductPricing, loadPricingContext, pricingUpdateData } from "@/lib/pricing-service";
 type Context = { params: Promise<{ id: string }> };
 const include = {
   category: true,
@@ -19,8 +20,9 @@ export async function GET(_: Request, context: Context) {
   }
   const { id } = await context.params,
     product = await prisma.product.findUnique({ where: { id }, include });
-  return product
-    ? NextResponse.json({ data: adminProductDto(product) })
+  const pricingContext = product ? await loadPricingContext() : null;
+  return product && pricingContext
+    ? NextResponse.json({ data: adminProductDto(product, calculateProductPricing(product, pricingContext)) })
     : NextResponse.json({ error: "Produto não encontrado." }, { status: 404 });
 }
 export async function PUT(request: Request, context: Context) {
@@ -44,11 +46,19 @@ export async function PUT(request: Request, context: Context) {
       { status: 404 },
     );
   try {
-    const product = await prisma.product.update({
+    const pricingContext = await loadPricingContext();
+    const input = {
+      ...parsed.data,
+      manualPriceCents: parsed.data.pricingMode === "MANUAL" ? parsed.data.manualPriceCents : null,
+      priceCents: parsed.data.pricingMode === "MANUAL" ? parsed.data.manualPriceCents! : previous.priceCents,
+    };
+    const intermediate = await prisma.product.update({
       where: { id },
-      data: parsed.data,
+      data: input,
       include,
     });
+    const pricing = calculateProductPricing(intermediate, pricingContext);
+    const product = await prisma.product.update({ where: { id }, data: pricingUpdateData(intermediate, pricing), include });
     await audit(
       admin.id,
       "PRODUCT_UPDATED",
@@ -58,7 +68,7 @@ export async function PUT(request: Request, context: Context) {
     );
     if (previous.imageUrl && previous.imageUrl !== product.imageUrl)
       await removeAdminAsset(previous.imageUrl).catch(() => false);
-    return NextResponse.json({ data: adminProductDto(product) });
+    return NextResponse.json({ data: adminProductDto(product, calculateProductPricing(product, pricingContext)) });
   } catch {
     return NextResponse.json(
       { error: "Não foi possível atualizar o produto." },

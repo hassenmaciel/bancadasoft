@@ -114,6 +114,34 @@ enum DeliveryNotificationStatus {
   NOT_CONFIGURED
 }
 
+enum PricingMode {
+  AUTO_GLOBAL
+  AUTO_GROUP
+  MANUAL
+}
+
+enum PricingStatus {
+  AUTO_OK
+  MANUAL
+  NEEDS_REVIEW
+  NO_COST
+  INVALID_CONFIG
+}
+
+enum PricingFeeType {
+  FIXED
+  PERCENTAGE
+  COMBINED
+}
+
+enum PricingRoundingMode {
+  NONE
+  X_90
+  X_99
+  NEAREST_1
+  NEAREST_5
+}
+
 model User {
   id              String     @id @default(cuid())
   email           String     @unique
@@ -152,35 +180,76 @@ model Brand {
 }
 
 model Product {
-  id               String            @id @default(cuid())
-  slug             String            @unique
-  name             String
-  description      String
-  longDescription  String?
-  type             ProductType
-  deliveryType     DeliveryType      @default(AUTOMATIC)
-  deliveryEstimate String?
-  searchTerms      String            @default("")
-  duration         String?
-  imageUrl         String?
-  priceCents       Int
-  costCents        Int?
-  featured         Boolean           @default(false)
-  sortOrder        Int               @default(0)
-  status           ProductStatus     @default(DRAFT)
-  available        Boolean           @default(true)
-  categoryId       String
-  category         Category          @relation(fields: [categoryId], references: [id])
-  brandId          String?
-  brand            Brand?            @relation(fields: [brandId], references: [id], onDelete: SetNull)
-  createdAt        DateTime          @default(now())
-  updatedAt        DateTime          @updatedAt
-  orderItems       OrderItem[]
-  providerProducts ProviderProduct[]
+  id                  String            @id @default(cuid())
+  slug                String            @unique
+  name                String
+  description         String
+  longDescription     String?
+  type                ProductType
+  deliveryType        DeliveryType      @default(AUTOMATIC)
+  deliveryEstimate    String?
+  searchTerms         String            @default("")
+  duration            String?
+  imageUrl            String?
+  priceCents          Int
+  costCents           Int?
+  pricingMode         PricingMode       @default(MANUAL)
+  manualPriceCents    Int?
+  suggestedPriceCents Int?
+  pricingStatus       PricingStatus     @default(MANUAL)
+  pricingComputedAt   DateTime?
+  featured            Boolean           @default(false)
+  sortOrder           Int               @default(0)
+  status              ProductStatus     @default(DRAFT)
+  available           Boolean           @default(true)
+  categoryId          String
+  category            Category          @relation(fields: [categoryId], references: [id])
+  brandId             String?
+  brand               Brand?            @relation(fields: [brandId], references: [id], onDelete: SetNull)
+  createdAt           DateTime          @default(now())
+  updatedAt           DateTime          @updatedAt
+  orderItems          OrderItem[]
+  providerProducts    ProviderProduct[]
 
   @@index([status, available, sortOrder])
   @@index([categoryId, status])
   @@index([brandId, status])
+}
+
+model PricingConfiguration {
+  id                 String              @id @default("default")
+  automaticEnabled   Boolean             @default(false)
+  exchangeRateMicros Int?
+  exchangeBufferBps  Int                 @default(0)
+  targetMarginBps    Int                 @default(0)
+  minimumProfitCents Int                 @default(0)
+  asaasFeeType       PricingFeeType      @default(FIXED)
+  asaasFixedFeeCents Int                 @default(0)
+  asaasPercentBps    Int                 @default(0)
+  roundingMode       PricingRoundingMode @default(NONE)
+  minimumPriceCents  Int                 @default(0)
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+  groupRules         PricingGroupRule[]
+}
+
+model PricingGroupRule {
+  id                 String               @id @default(cuid())
+  configurationId    String               @default("default")
+  configuration      PricingConfiguration @relation(fields: [configurationId], references: [id], onDelete: Cascade)
+  productType        ProductType
+  exchangeBufferBps  Int?
+  targetMarginBps    Int?
+  minimumProfitCents Int?
+  minimumPriceCents  Int?
+  roundingMode       PricingRoundingMode?
+  additionalFeeCents Int?
+  additionalFeeBps   Int?
+  createdAt          DateTime             @default(now())
+  updatedAt          DateTime             @updatedAt
+
+  @@unique([configurationId, productType])
+  @@index([productType])
 }
 
 model SiteSettings {

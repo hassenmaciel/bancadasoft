@@ -3,6 +3,7 @@ import { prisma } from "../prisma";
 import type { ProviderCatalogItem } from "./types";
 import { resolveProviderAdapter } from "./registry";
 import { providerCatalogSyncData } from "./heartunlocks-catalog";
+import { recalculateProducts } from "../pricing-service";
 
 export async function syncProviderCatalog(providerId: string, actorUserId: string) {
   const provider = await prisma.provider.findUnique({ where: { id: providerId }, select: { id: true, code: true } });
@@ -67,5 +68,7 @@ export async function syncProviderCatalog(providerId: string, actorUserId: strin
       entityId: provider.id,
       metadata: { found: catalog.length, created, updated, unlinked, syncedAt: syncedAt.toISOString() },
   } })]);
+  const linkedProductIds = [...new Set(existing.flatMap((item) => item.productId ? [item.productId] : []))];
+  await recalculateProducts(linkedProductIds);
   return { found: catalog.length, created, updated, unlinked, syncedAt: syncedAt.toISOString() };
 }
