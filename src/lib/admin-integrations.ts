@@ -1,6 +1,7 @@
 import { ProviderIntegrationStatus } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { configuredHeartUnlocksAdapter, HeartUnlocksProviderAdapter } from "@/lib/providers/heartunlocks";
+import { isProductionProviderCode } from "@/lib/providers/selection";
 
 export async function heartUnlocksGatewayStatus() {
   const adapter = configuredHeartUnlocksAdapter();
@@ -31,7 +32,7 @@ export async function listAdminIntegrations() {
     _max:{createdAt:true},
   })]);
   const latestSync = new Map(lastSyncs.flatMap(sync=>sync.entityId&&sync._max.createdAt?[[sync.entityId,sync._max.createdAt] as const]:[]));
-  return {mode:settings?.providerMode??"TEST",providers:providers.map((provider) => ({
+  return {mode:settings?.providerMode??"TEST",providers:providers.filter(provider=>isProductionProviderCode(provider.code)).map((provider) => ({
     id: provider.id,
     name: provider.name,
     code: provider.code,

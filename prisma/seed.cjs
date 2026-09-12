@@ -119,8 +119,8 @@ async function main() {
   });
   const sandbox = await prisma.provider.upsert({
     where: { code: "mock-sandbox" },
-    update: { name: "Sandbox BancadaSoft" },
-    create: { name: "Sandbox BancadaSoft", code: "mock-sandbox", active: true, integrationStatus: ProviderIntegrationStatus.CONNECTED },
+    update: { name: "Sandbox BancadaSoft", active: false, integrationStatus: ProviderIntegrationStatus.NOT_CONNECTED },
+    create: { name: "Sandbox BancadaSoft", code: "mock-sandbox", active: false, integrationStatus: ProviderIntegrationStatus.NOT_CONNECTED },
   });
   const unlockTool = persistedProducts.get("unlocktool-6h");
   await prisma.providerProduct.upsert({
@@ -130,8 +130,8 @@ async function main() {
   });
   await prisma.providerProduct.upsert({
     where: { providerId_externalProductId: { providerId: sandbox.id, externalProductId: "unlocktool-sandbox" } },
-    update: { providerCostCents: 1000, currency: "BRL", mode: "TEST" },
-    create: { providerId: sandbox.id, productId: unlockTool.id, externalProductId: "unlocktool-sandbox", label: "UnlockTool Sandbox", providerCostCents: 1000, currency: "BRL", active: true, mode: "TEST" },
+    update: { productId: null, active: false, mode: "TEST" },
+    create: { providerId: sandbox.id, productId: null, externalProductId: "unlocktool-sandbox", label: "UnlockTool Sandbox", providerCostCents: 1000, currency: "BRL", active: false, mode: "TEST" },
   });
 }
 

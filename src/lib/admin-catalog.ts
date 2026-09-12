@@ -1,5 +1,6 @@
 import { DeliveryType, ProductStatus, ProductType, type Brand, type Category, type Product } from "@prisma/client";
 import { z } from "zod";
+import { isProductionProviderCode } from "./providers/selection";
 
 const optionalUrl = z.union([z.string().url("Informe uma URL válida."), z.literal("")]).transform((value) => value || null);
 
@@ -38,6 +39,9 @@ export type AdminProductDTO = Pick<Product, "id" | "slug" | "name" | "descriptio
 };
 
 type AdminProductSource=Product & {category:Category;brand:Brand|null;providerProducts?:Array<{id:string;externalProductId:string;label:string|null;providerCostCents:number|null;currency:string;active:boolean;mode:string;metadata:unknown;lastSyncedAt:Date|null;syncStatus:string|null;updatedAt:Date;provider:{id:string;name:string;code:string;active:boolean}}>};
+export const operationalProviderProducts = <T extends {active:boolean;mode:string;provider:{active:boolean;code:string}}>(links:T[]) =>
+  links.filter(link => link.active && link.mode === "REAL" && link.provider.active && isProductionProviderCode(link.provider.code));
+
 export const adminProductDto = (product: AdminProductSource): AdminProductDTO => ({
   id: product.id, slug: product.slug, name: product.name, description: product.description,
   longDescription: product.longDescription, deliveryType: product.deliveryType,
@@ -48,7 +52,7 @@ export const adminProductDto = (product: AdminProductSource): AdminProductDTO =>
   category: { id: product.category.id, name: product.category.name, slug: product.category.slug },
   brand: product.brand ? { id: product.brand.id, name: product.brand.name, slug: product.brand.slug } : null,
   updatedAt: product.updatedAt.toISOString(),
-  providerProducts:(product.providerProducts??[]).map(link=>({...link,mode:String(link.mode),lastSyncedAt:link.lastSyncedAt?.toISOString()??null,updatedAt:link.updatedAt.toISOString()})),
+  providerProducts:operationalProviderProducts(product.providerProducts??[]).map(link=>({...link,mode:String(link.mode),lastSyncedAt:link.lastSyncedAt?.toISOString()??null,updatedAt:link.updatedAt.toISOString()})),
 });
 
 export const productStatuses = Object.values(ProductStatus);

@@ -4,7 +4,7 @@ import { resolveProviderProduct, selectProviderProduct, type ProviderProductCand
 
 const candidate = (input: Partial<ProviderProductCandidate> = {}): ProviderProductCandidate => ({
   id: "link-1", productId: "internal-product-1", externalProductId: "external-service-10",
-  active: true, mode: "TEST", providerCostCents: 1000, provider: { id: "provider-1", active: true }, ...input,
+  active: true, mode: "TEST", providerCostCents: 1000, provider: { id: "provider-1", code: "mock-sandbox", active: true }, ...input,
 });
 
 describe("ProviderAdapter", () => {
@@ -23,13 +23,19 @@ describe("seleção determinística de ProviderProduct", () => {
   });
   it("isola mock TEST do fornecedor REAL", () => {
     const testLink = candidate({ id: "mock", mode: "TEST" });
-    const realLink = candidate({ id: "heart", mode: "REAL", externalProductId: "2194" });
+    const realLink = candidate({ id: "heart", mode: "REAL", externalProductId: "2194", provider: { id: "heart-provider", code: "heartunlocks", active: true } });
     expect(selectProviderProduct([testLink, realLink], "REAL")?.id).toBe("heart");
     expect(selectProviderProduct([testLink, realLink], "TEST")?.id).toBe("mock");
   });
   it("falha fechado sem vínculo elegível", () => {
     expect(resolveProviderProduct([candidate({ active: false })], "TEST").status).toBe("MISSING");
-    expect(resolveProviderProduct([candidate({ provider: { id: "provider-1", active: false } })], "TEST").status).toBe("MISSING");
+    expect(resolveProviderProduct([candidate({ provider: { id: "provider-1", code: "mock-sandbox", active: false } })], "TEST").status).toBe("MISSING");
+  });
+  it("nunca seleciona sandbox no modo REAL, mesmo se estiver configurado incorretamente", () => {
+    const sandbox = candidate({ mode: "REAL", provider: { id: "sandbox", code: "mock-sandbox", active: true } });
+    const heart = candidate({ id: "heart", mode: "REAL", externalProductId: "2194", provider: { id: "heart-provider", code: "heartunlocks", active: true } });
+    expect(resolveProviderProduct([sandbox, heart], "REAL")).toMatchObject({ status: "SELECTED", providerProduct: { id: "heart" } });
+    expect(resolveProviderProduct([sandbox], "REAL").status).toBe("MISSING");
   });
   it("não escolhe silenciosamente entre dois vínculos elegíveis", () => {
     expect(resolveProviderProduct([candidate({ id: "one" }), candidate({ id: "two" })], "TEST").status).toBe("AMBIGUOUS");
