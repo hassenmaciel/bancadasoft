@@ -124,12 +124,12 @@ async function main() {
   });
   const unlockTool = persistedProducts.get("unlocktool-6h");
   await prisma.providerProduct.upsert({
-    where: { providerId_productId_externalProductId: { providerId: heartUnlocks.id, productId: unlockTool.id, externalProductId: "2194" } },
-    update: { label: "UNLOCKTOOL RENT [6 Hours]", providerCostCents: 30, currency: "USD", mode: "REAL", metadata: { requiredFields: ["Quantity"], quantity: 1, providerTime: "1-60 Minutes", imageUrl: "https://static.dhrufusion.net/f127194c-9ca4-40c1-a937-27c66f4e8c26/2026/05/24/9MaSE7cD_WhatsApp_Image_2026-05-14_at_13.46.39.jpeg" } },
-    create: { providerId: heartUnlocks.id, productId: unlockTool.id, externalProductId: "2194", label: "UNLOCKTOOL RENT [6 Hours]", providerCostCents: 30, currency: "USD", active: true, mode: "REAL", metadata: { requiredFields: ["Quantity"], quantity: 1, providerTime: "1-60 Minutes", imageUrl: "https://static.dhrufusion.net/f127194c-9ca4-40c1-a937-27c66f4e8c26/2026/05/24/9MaSE7cD_WhatsApp_Image_2026-05-14_at_13.46.39.jpeg" } },
+    where: { providerId_externalProductId: { providerId: heartUnlocks.id, externalProductId: "2194" } },
+    update: {},
+    create: { providerId: heartUnlocks.id, productId: unlockTool.id, externalProductId: "2194", label: "UNLOCKTOOL RENT [6 Hours]", providerCostCents: null, currency: "UNSPECIFIED", active: true, mode: "REAL", metadata: { requiredFields: [{ type: "quantity", name: "Quantity", base: true, required: true }] } },
   });
   await prisma.providerProduct.upsert({
-    where: { providerId_productId_externalProductId: { providerId: sandbox.id, productId: unlockTool.id, externalProductId: "unlocktool-sandbox" } },
+    where: { providerId_externalProductId: { providerId: sandbox.id, externalProductId: "unlocktool-sandbox" } },
     update: { providerCostCents: 1000, currency: "BRL", mode: "TEST" },
     create: { providerId: sandbox.id, productId: unlockTool.id, externalProductId: "unlocktool-sandbox", label: "UnlockTool Sandbox", providerCostCents: 1000, currency: "BRL", active: true, mode: "TEST" },
   });

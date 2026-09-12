@@ -20,7 +20,8 @@ function providerRequest(path, method, body) {
   return new Promise((resolve, reject) => {
     const request = https.request(new URL(path, apiBase), { method, family: 4, timeout: 15000, headers: { accept: "application/json", "content-type": "application/json", authorization: `Bearer ${apiToken}` } }, (response) => {
       const chunks = [];
-      response.on("data", (chunk) => chunks.push(chunk));
+      let size = 0;
+      response.on("data", (chunk) => { size += chunk.length; if (size > 5 * 1024 * 1024) response.destroy(new Error("PROVIDER_RESPONSE_TOO_LARGE")); else chunks.push(chunk); });
       response.on("end", () => { try { const data = JSON.parse(Buffer.concat(chunks).toString("utf8")); if ((response.statusCode || 500) >= 400) return reject(new Error(`PROVIDER_HTTP_${response.statusCode}`)); resolve(data); } catch { reject(new Error("PROVIDER_INVALID_JSON")); } });
     });
     request.on("timeout", () => request.destroy(new Error("PROVIDER_TIMEOUT_UNCERTAIN")));
@@ -39,6 +40,16 @@ const server = http.createServer(async (req, res) => {
   try {
     const url = new URL(req.url || "/", `http://${req.headers.host || "localhost"}`);
     if (req.method === "GET" && url.pathname === "/health") return authorized(req) ? json(res, 200, { ok: true, service: "heartunlocks-gateway" }) : json(res, 401, { ok: false });
+    if (req.method === "GET" && url.pathname === "/products") {
+      if (!authorized(req)) return json(res, 401, { error: "UNAUTHORIZED" });
+      try { return json(res, 200, await providerRequest("/api/reseller/v1/products", "GET")); }
+      catch (error) {
+        const code = error instanceof Error ? error.message : "PROVIDER_ERROR";
+        if (code === "PROVIDER_RESPONSE_TOO_LARGE") return json(res, 502, { error: code });
+        if (/^PROVIDER_HTTP_4\d\d$/.test(code)) return json(res, 502, { error: "PROVIDER_AUTH_OR_REQUEST_REJECTED" });
+        return json(res, 502, { error: "PROVIDER_UNAVAILABLE" });
+      }
+    }
     if (req.method === "POST" && url.pathname === "/orders") {
       if (!authorized(req)) return json(res, 401, { error: "UNAUTHORIZED" });
       const body = await read(req);

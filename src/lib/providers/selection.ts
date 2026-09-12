@@ -1,6 +1,6 @@
 export type ProviderModeValue = "TEST" | "REAL";
 export type ProviderProductCandidate = {
-  id: string; productId: string; externalProductId: string; active: boolean; mode: ProviderModeValue;
+  id: string; productId: string | null; externalProductId: string; active: boolean; mode: ProviderModeValue;
   providerCostCents: number | null; provider: { id: string; active: boolean };
 };
 

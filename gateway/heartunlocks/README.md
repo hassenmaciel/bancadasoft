@@ -1,5 +1,9 @@
 # HeartUnlocks Gateway
 
+## Catalogo somente leitura
+
+`GET /products` exige o mesmo header `Authorization: Bearer ...` usado pelo health. A rota encaminha exclusivamente `GET /api/reseller/v1/products`, forca saida IPv4, limita a resposta e nunca expoe o token do provider.
+
 Serviço Node.js sem dependências externas para executar na VPS com o IPv4 autorizado. Ele mantém o token HeartUnlocks fora da Vercel, recebe pedidos internos autenticados e encaminha callbacks ao BancadaSoft.
 
 ## Variáveis

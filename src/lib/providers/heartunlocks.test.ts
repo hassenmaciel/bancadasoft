@@ -3,6 +3,17 @@ import { HeartUnlocksProviderAdapter, ProviderOrderUncertainError } from "./hear
 import { decodeReplay, parseCredentials, callbackEventKey } from "./heartunlocks-callback";
 
 describe("HeartUnlocks adapter", () => {
+  it("reads the catalog through the authenticated gateway without creating orders", async () => {
+    const fetcher = vi.fn(async (url: string, init?: RequestInit) => {
+      expect(url).toBe("https://gateway.test/products");
+      expect(init?.method).toBeUndefined();
+      expect((init?.headers as Record<string,string>).authorization).toBe("Bearer test-secret");
+      return new Response(JSON.stringify({ status: "success", data: { currency: "USD", products: { "2194": { name: "UNLOCKTOOL RENT [6 Hours]", price: "0.28" } } } }));
+    });
+    const adapter = new HeartUnlocksProviderAdapter({ gatewayUrl: "https://gateway.test", gatewaySecret: "test-secret", fetcher });
+    await expect(adapter.listProducts()).resolves.toEqual([expect.objectContaining({ externalProductId: "2194", costCents: 28, currency: "USD" })]);
+    expect(fetcher).toHaveBeenCalledOnce();
+  });
   it("sends the mapped product, reference and required quantity to the gateway", async () => {
     const fetcher = vi.fn(async (_url: string, init?: RequestInit) => {
       const body = JSON.parse(String(init?.body));

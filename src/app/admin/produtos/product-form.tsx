@@ -262,17 +262,17 @@ export default function ProductForm({
                     <dd>{link.currency}</dd>
                   </div>
                   <div>
-                    <dt>Status</dt>
-                    <dd>
-                      {link.active && link.provider.active
-                        ? "Operacional"
-                        : "Inativo"}
-                    </dd>
+                    <dt>Status da sincronização</dt>
+                    <dd>{link.syncStatus ?? "Não sincronizado"}</dd>
                   </div>
                   <div>
-                    <dt>Última atualização</dt>
-                    <dd>{new Date(link.updatedAt).toLocaleString("pt-BR")}</dd>
+                    <dt>Última sincronização</dt>
+                    <dd>{link.lastSyncedAt ? new Date(link.lastSyncedAt).toLocaleString("pt-BR") : "Não sincronizado"}</dd>
                   </div>
+                  <div><dt>Operação</dt><dd>{link.active && link.provider.active ? "Ativa" : "Inativa"}</dd></div>
+                  <div><dt>Prazo do fornecedor</dt><dd>{typeof link.metadata === "object" && link.metadata && "providerTime" in link.metadata ? String((link.metadata as {providerTime?:unknown}).providerTime ?? "Não informado") : "Não informado"}</dd></div>
+                  <div><dt>Tipo do fornecedor</dt><dd>{typeof link.metadata === "object" && link.metadata && "providerType" in link.metadata ? String((link.metadata as {providerType?:unknown}).providerType ?? "Não informado") : "Não informado"}</dd></div>
+                  <div><dt>Status do fornecedor</dt><dd>{typeof link.metadata === "object" && link.metadata && "providerStatus" in link.metadata ? String((link.metadata as {providerStatus?:unknown}).providerStatus ?? "Não informado pelo fornecedor") : "Não informado pelo fornecedor"}</dd></div>
                 </dl>
               </div>
             ))}

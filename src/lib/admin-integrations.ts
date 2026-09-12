@@ -16,7 +16,7 @@ export async function heartUnlocksGatewayStatus() {
 }
 
 export async function listAdminIntegrations() {
-  const [providers,settings] = await Promise.all([prisma.provider.findMany({
+  const [providers,settings,lastSyncs] = await Promise.all([prisma.provider.findMany({
     include: {
       products: {
         include: { product: { select: { id: true, name: true, slug: true } } },
@@ -25,7 +25,12 @@ export async function listAdminIntegrations() {
       _count: { select: { products: true, orders: true } },
     },
     orderBy: { name: "asc" },
-  }),prisma.siteSettings.findUnique({where:{id:"default"},select:{providerMode:true}})]);
+  }),prisma.siteSettings.findUnique({where:{id:"default"},select:{providerMode:true}}),prisma.auditLog.groupBy({
+    by:["entityId"],
+    where:{entityType:"Provider",action:"PROVIDER_CATALOG_SYNC_SUCCEEDED"},
+    _max:{createdAt:true},
+  })]);
+  const latestSync = new Map(lastSyncs.flatMap(sync=>sync.entityId&&sync._max.createdAt?[[sync.entityId,sync._max.createdAt] as const]:[]));
   return {mode:settings?.providerMode??"TEST",providers:providers.map((provider) => ({
     id: provider.id,
     name: provider.name,
@@ -36,6 +41,7 @@ export async function listAdminIntegrations() {
     productCount: provider._count.products,
     orderCount: provider._count.orders,
     updatedAt: provider.updatedAt.toISOString(),
+    lastCatalogSync:latestSync.get(provider.id)?.toISOString()??null,
     products: provider.products.map((link) => ({
       id: link.id,
       externalProductId: link.externalProductId,
@@ -45,6 +51,9 @@ export async function listAdminIntegrations() {
       active: link.active,
       mode: link.mode,
       operational:link.active&&provider.active&&link.mode===(settings?.providerMode??"TEST"),
+      lastSyncedAt:link.lastSyncedAt?.toISOString()??null,
+      syncStatus:link.syncStatus,
+      metadata:link.metadata,
       product: link.product,
     })),
   }))};
