@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getAdminOrder } from "@/lib/admin-orders";
 import RetryButton from "./retry-button";
+import ReconcilePixButton from "./reconcile-pix-button";
 
 export const dynamic = "force-dynamic";
 const money = (value: number, currency = "BRL") =>
@@ -116,6 +117,11 @@ export default async function OrderDetailPage({
                   <dd>{date(order.payment.expiresAt)}</dd>
                 </div>
               </dl>
+              {order.payment.provider === "asaas" &&
+                order.payment.status === "PENDING" &&
+                !order.payment.pixCode && (
+                  <ReconcilePixButton orderId={order.id} />
+                )}
               <h3>Eventos de pagamento</h3>
               {order.payment.events.length ? (
                 <ul className="event-list">

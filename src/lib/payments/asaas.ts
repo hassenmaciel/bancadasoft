@@ -1,13 +1,14 @@
 import { PaymentStatus } from "@prisma/client";
-import { AsaasClient, ASAAS_PRODUCTION_BASE_URL, ASAAS_SANDBOX_BASE_URL } from "./asaas-client";
+import { AsaasClient, AsaasClientError, ASAAS_PRODUCTION_BASE_URL, ASAAS_SANDBOX_BASE_URL } from "./asaas-client";
 import type {
   ParsedPaymentWebhook,
   PaymentProvider,
   PaymentStatusResult,
   PixPaymentInput,
+  PixPaymentDetails,
   PixPaymentResult,
 } from "./types";
-import { PaymentProviderNotConnectedError } from "./types";
+import { PaymentProviderNotConnectedError, PixPaymentReconciliationRequiredError } from "./types";
 
 export const ASAAS_API_BASE_URL = ASAAS_SANDBOX_BASE_URL;
 type CustomerResponse = { id?: string };
@@ -43,8 +44,16 @@ export const mapAsaasEvent = (event: string): PaymentStatus | null =>
 export class AsaasPaymentProvider implements PaymentProvider {
   readonly code = "asaas";
   readonly connected: boolean;
-  constructor(private readonly client: AsaasClient | null = null) {
+  constructor(private readonly client: AsaasClient | null = null,private readonly pixOptions:{maxAttempts?:number;wait?:(milliseconds:number)=>Promise<void>}={}) {
     this.connected = !!client;
+  }
+  async getPixPaymentDetails(externalPaymentId:string):Promise<PixPaymentDetails>{
+    const client=this.configured();const maxAttempts=this.pixOptions.maxAttempts??3;const wait=this.pixOptions.wait??((milliseconds:number)=>new Promise<void>((resolve)=>setTimeout(resolve,milliseconds)));
+    for(let attempt=1;attempt<=maxAttempts;attempt++){
+      try{const qr=await client.request<PixResponse>(`/payments/${encodeURIComponent(externalPaymentId)}/pixQrCode`);if(!qr.payload||!qr.expirationDate)throw new Error("ASAAS_INVALID_PIX_RESPONSE");return{externalPaymentId,pixCode:qr.payload,qrCode:qr.encodedImage,expiresAt:new Date(qr.expirationDate)};}
+      catch(error){const retryable=error instanceof AsaasClientError&&error.status===400&&error.providerReason==="PIX_NOT_READY";if(!retryable||attempt===maxAttempts)throw error;await wait(attempt*400);}
+    }
+    throw new Error("ASAAS_INVALID_PIX_RESPONSE");
   }
   private configured() {
     if (!this.client) throw new PaymentProviderNotConnectedError(this.code);
@@ -83,18 +92,15 @@ export class AsaasPaymentProvider implements PaymentProvider {
       }),
     });
     if (!payment.id) throw new Error("ASAAS_INVALID_PAYMENT_RESPONSE");
-    const qr = await client.request<PixResponse>(
-      `/payments/${encodeURIComponent(payment.id)}/pixQrCode`,
-    );
-    if (!qr.payload || !qr.expirationDate)
-      throw new Error("ASAAS_INVALID_PIX_RESPONSE");
+    let qr:PixPaymentDetails;
+    try{qr=await this.getPixPaymentDetails(payment.id);}catch(error){const providerCode=error instanceof AsaasClientError?error.providerReason??error.message:"ASAAS_PIX_LOOKUP_FAILED";throw new PixPaymentReconciliationRequiredError(payment.id,customerId,providerCode);}
     return {
       externalPaymentId: payment.id,
       externalCustomerId: customerId,
       status: mapAsaasStatus(payment.status ?? "PENDING"),
-      pixCode: qr.payload,
-      qrCode: qr.encodedImage,
-      expiresAt: new Date(qr.expirationDate),
+      pixCode: qr.pixCode,
+      qrCode: qr.qrCode,
+      expiresAt: qr.expiresAt,
     };
   }
   async getPaymentStatus(

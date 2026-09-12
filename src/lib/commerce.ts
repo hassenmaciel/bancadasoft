@@ -19,7 +19,9 @@ import {
   transitionPayment,
 } from "@/lib/payments/rules";
 import type { ParsedPaymentWebhook } from "@/lib/payments/types";
+import { PixPaymentReconciliationRequiredError } from "@/lib/payments/types";
 import { createDeliveryAccess } from "@/lib/guest-delivery";
+import { reconcilePendingPixPayment } from "@/lib/payment-reconciliation";
 import { resolveProviderProduct } from "@/lib/providers/selection";
 import {
   digitsOnly,
@@ -58,11 +60,13 @@ export async function createOrder(input: {
   const recovered = await prisma.order.findUnique({
     where: { deliveryTokenHash: access.tokenHash },
   });
-  if (recovered)
+  if (recovered) {
+    await reconcilePendingPixPayment(recovered.id);
     return {
       order: await getOrder(recovered.id),
       deliveryAccessToken: access.token,
     };
+  }
   const [product, settings] = await Promise.all([
     prisma.product.findFirst({
       where: { id: input.productId, ...publicProductWhere },
@@ -139,19 +143,47 @@ export async function createOrder(input: {
     },
     include: { payment: true },
   });
-  const payment = await provider.createPixPayment({
-    orderId: publicToken,
-    amountCents: product.priceCents,
-    expiresAt,
-    customer: {
-      internalId: user.id,
-      name: user.name,
-      email: user.email,
-      cpfCnpj,
-      mobilePhone: whatsapp,
-      externalCustomerId: reusableAsaasCustomerId ?? undefined,
-    },
-  });
+  let payment;
+  try {
+    payment = await provider.createPixPayment({
+      orderId: publicToken,
+      amountCents: product.priceCents,
+      expiresAt,
+      customer: {
+        internalId: user.id,
+        name: user.name,
+        email: user.email,
+        cpfCnpj,
+        mobilePhone: whatsapp,
+        externalCustomerId: reusableAsaasCustomerId ?? undefined,
+      },
+    });
+  } catch (error) {
+    if (error instanceof PixPaymentReconciliationRequiredError) {
+      await prisma.$transaction(async (tx) => {
+        if (error.externalCustomerId && !user.asaasCustomerId)
+          await tx.user.update({
+            where: { id: user.id },
+            data: { asaasCustomerId: error.externalCustomerId },
+          });
+        await tx.payment.update({
+          where: { orderId: pendingOrder.id },
+          data: {
+            providerReference: error.externalPaymentId,
+            externalPaymentId: error.externalPaymentId,
+          },
+        });
+        await tx.orderEvent.create({
+          data: {
+            orderId: pendingOrder.id,
+            status: OrderStatus.PENDING_PAYMENT,
+            note: `Cobrança ${provider.code} criada; PIX aguardando reconciliação.`,
+          },
+        });
+      });
+    }
+    throw error;
+  }
   await prisma.$transaction(async (tx) => {
     if (
       provider.code === "asaas" &&

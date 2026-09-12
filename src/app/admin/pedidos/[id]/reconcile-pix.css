@@ -1,0 +1,25 @@
+.pix-reconcile-action {
+  margin: 14px 0;
+}
+
+.pix-reconcile-action button {
+  border: 0;
+  border-radius: 7px;
+  padding: 9px 12px;
+  background: #0876ed;
+  color: #fff;
+  font-size: 9px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.pix-reconcile-action button:disabled {
+  cursor: wait;
+  opacity: 0.7;
+}
+
+.pix-reconcile-action p {
+  margin: 8px 0 0;
+  color: #52667e;
+  font-size: 9px;
+}
