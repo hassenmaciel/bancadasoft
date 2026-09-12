@@ -1,5 +1,5 @@
 import { PaymentStatus } from "@prisma/client";
-import { AsaasClient, ASAAS_SANDBOX_BASE_URL } from "./asaas-client";
+import { AsaasClient, ASAAS_PRODUCTION_BASE_URL, ASAAS_SANDBOX_BASE_URL } from "./asaas-client";
 import type {
   ParsedPaymentWebhook,
   PaymentProvider,
@@ -140,10 +140,15 @@ export class AsaasPaymentProvider implements PaymentProvider {
   }
 }
 
-export function createConfiguredAsaasProvider() {
-  const key = process.env.ASAAS_API_KEY;
-  const environment = process.env.ASAAS_ENV ?? "sandbox";
-  if (!key || environment !== "sandbox") return new AsaasPaymentProvider();
-  const baseUrl = process.env.ASAAS_BASE_URL || ASAAS_SANDBOX_BASE_URL;
+export function createConfiguredAsaasProvider(env: NodeJS.ProcessEnv = process.env) {
+  const key = env.ASAAS_API_KEY?.trim();
+  const environment = env.ASAAS_ENV?.trim().toLowerCase() ?? "sandbox";
+  if (!key || (environment !== "sandbox" && environment !== "production"))
+    return new AsaasPaymentProvider();
+  const expectedBaseUrl = environment === "production"
+    ? ASAAS_PRODUCTION_BASE_URL
+    : ASAAS_SANDBOX_BASE_URL;
+  const baseUrl = (env.ASAAS_BASE_URL?.trim() || expectedBaseUrl).replace(/\/+$/, "");
+  if (baseUrl !== expectedBaseUrl) return new AsaasPaymentProvider();
   return new AsaasPaymentProvider(new AsaasClient(key, { baseUrl }));
 }

@@ -32,6 +32,10 @@ describe("registry de pagamentos", () => {
   });
   it("permite outro provider sem acoplamento ao Asaas", () => { const custom: PaymentProvider = new MockPaymentProvider(); expect(custom.code).toBe("mock"); expect(custom).not.toBeInstanceOf(AsaasPaymentProvider); });
   it("seleciona Asaas Sandbox quando configurado", () => expect(configuredPaymentProviderCode({ ASAAS_ENV: "sandbox", ASAAS_API_KEY: "test-key" })).toBe("asaas"));
+  it("seleciona Asaas Production somente quando configurado explicitamente", () => {
+    expect(configuredPaymentProviderCode({ PAYMENT_PROVIDER: "asaas", ASAAS_ENV: "production", ASAAS_API_KEY: "test-key" })).toBe("asaas");
+    expect(configuredPaymentProviderCode({ ASAAS_ENV: "production", ASAAS_API_KEY: "test-key" })).toBe("invalid");
+  });
   it("mantém Mock quando selecionado explicitamente", () => expect(configuredPaymentProviderCode({ PAYMENT_PROVIDER: "mock", ASAAS_ENV: "sandbox", ASAAS_API_KEY: "test-key" })).toBe("mock"));
   it("não converte configuração explícita inválida em Mock", () => expect(configuredPaymentProviderCode({ PAYMENT_PROVIDER: "invalid", ASAAS_ENV: "sandbox", ASAAS_API_KEY: "test-key" })).toBe("invalid"));
 });

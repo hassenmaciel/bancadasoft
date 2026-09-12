@@ -1,14 +1,14 @@
 import { PaymentStatus } from "@prisma/client";
 import { describe, expect, it, vi } from "vitest";
-import { AsaasClient, AsaasClientError, ASAAS_SANDBOX_BASE_URL } from "./asaas-client";
-import { AsaasPaymentProvider, mapAsaasEvent, mapAsaasStatus } from "./asaas";
+import { AsaasClient, AsaasClientError, ASAAS_PRODUCTION_BASE_URL, ASAAS_SANDBOX_BASE_URL } from "./asaas-client";
+import { AsaasPaymentProvider, createConfiguredAsaasProvider, mapAsaasEvent, mapAsaasStatus } from "./asaas";
 import { validateAsaasWebhookToken } from "./asaas-webhook";
 
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
 const input = { orderId: "order-test", amountCents: 2990, expiresAt: new Date("2026-09-15T12:00:00Z"), customer: { internalId: "user-test", name: "Cliente Sandbox", email: "sandbox@example.test", cpfCnpj: "52998224725", mobilePhone:"5511999999999" } };
 
-describe("AsaasClient Sandbox", () => {
-  it("usa somente a API Sandbox e envia os cabeçalhos exigidos", async () => {
+describe("AsaasClient", () => {
+  it("usa a API Sandbox por padrão e envia os cabeçalhos exigidos", async () => {
     const fetcher = vi.fn(async () => json({ ok: true }));
     const client = new AsaasClient("isolated-test-key", { fetcher });
     await client.request("/customers", { method: "POST", body: "{}" });
@@ -18,8 +18,16 @@ describe("AsaasClient Sandbox", () => {
     expect(request.headers).toMatchObject({ access_token: "isolated-test-key", "user-agent": "BancadaSoft-Sandbox/1.0" });
   });
 
-  it("bloqueia qualquer URL que não seja Sandbox", () => {
-    expect(() => new AsaasClient("isolated-test-key", { baseUrl: "https://api.asaas.com/v3" })).toThrowError("ASAAS_SANDBOX_ONLY");
+  it("bloqueia qualquer URL fora dos ambientes oficiais", () => {
+    expect(() => new AsaasClient("isolated-test-key", { baseUrl: "https://example.test/v3" })).toThrowError("ASAAS_BASE_URL_NOT_ALLOWED");
+  });
+
+  it("usa a API Production quando o ambiente real foi configurado", async () => {
+    const fetcher = vi.fn(async () => json({ ok: true }));
+    const client = new AsaasClient("isolated-production-key", { baseUrl: ASAAS_PRODUCTION_BASE_URL, fetcher });
+    await client.request("/customers");
+    expect(fetcher.mock.calls[0][0]).toBe(`${ASAAS_PRODUCTION_BASE_URL}/customers`);
+    expect(fetcher.mock.calls[0][1].headers).toMatchObject({ access_token: "isolated-production-key", "user-agent": "BancadaSoft-Production/1.0" });
   });
 
   it("normaliza erro HTTP sem expor corpo ou credencial", async () => {
@@ -29,6 +37,10 @@ describe("AsaasClient Sandbox", () => {
 });
 
 describe("AsaasPaymentProvider", () => {
+  it("conecta por configuração em Production sem aceitar URL divergente", () => {
+    expect(createConfiguredAsaasProvider({ ASAAS_ENV: "production", ASAAS_API_KEY: " isolated-production-key ", ASAAS_BASE_URL: `${ASAAS_PRODUCTION_BASE_URL}/` }).connected).toBe(true);
+    expect(createConfiguredAsaasProvider({ ASAAS_ENV: "production", ASAAS_API_KEY: "isolated-production-key", ASAAS_BASE_URL: ASAAS_SANDBOX_BASE_URL }).connected).toBe(false);
+  });
   it("cria cliente, cobrança PIX e consulta o QR Code", async () => {
     const fetcher = vi.fn()
       .mockResolvedValueOnce(json({ id: "cus_sandbox" }))
