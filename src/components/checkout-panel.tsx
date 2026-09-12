@@ -6,6 +6,11 @@ import { FormEvent, useEffect, useRef, useState } from "react";
 import type { OrderDTO, ProductDTO } from "@/lib/dto";
 import { createOrderPoller } from "@/lib/order-polling";
 import CredentialDelivery from "@/components/credential-delivery";
+import {
+  checkoutErrorMessage,
+  createCheckoutSubmissionGuard,
+  readCheckoutResponse,
+} from "@/lib/checkout-response";
 
 const money = (value: number) =>
   new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(
@@ -23,7 +28,7 @@ export default function CheckoutPanel({ product }: { product: ProductDTO }) {
     password?: string;
     instructions?: string;
   } | null>(null);
-  const lock = useRef(false);
+  const submitGuard = useRef(createCheckoutSubmissionGuard());
   const storageKey = `bancadasoft:checkout:${product.id}`;
   const paid = order?.payment?.status === "PAID";
   const delivered = order?.status === "DELIVERED" && !!delivery;
@@ -95,8 +100,7 @@ export default function CheckoutPanel({ product }: { product: ProductDTO }) {
 
   async function checkout(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (lock.current) return;
-    lock.current = true;
+    if (!submitGuard.current.acquire()) return;
     setSubmitting(true);
     setNotice("");
     const form = new FormData(event.currentTarget);
@@ -129,9 +133,9 @@ export default function CheckoutPanel({ product }: { product: ProductDTO }) {
           deliveryAccessToken,
         }),
       });
-      const payload = await response.json();
-      if (!response.ok)
-        throw new Error(payload.error || "Não foi possível criar o pedido.");
+      const payload = await readCheckoutResponse(response);
+      if (!response.ok || !payload?.data || !payload.deliveryAccessToken)
+        throw new Error(checkoutErrorMessage(response.status, payload));
       setOrder(payload.data);
       localStorage.setItem(
         storageKey,
@@ -152,7 +156,7 @@ export default function CheckoutPanel({ product }: { product: ProductDTO }) {
           : "Não foi possível criar o pedido.",
       );
     } finally {
-      lock.current = false;
+      submitGuard.current.release();
       setSubmitting(false);
     }
   }
