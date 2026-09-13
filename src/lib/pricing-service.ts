@@ -49,6 +49,11 @@ export const disabledPricingConfiguration: GlobalPricingRule = {
   minimumPriceCents: 0,
 };
 
+export const pricingRuleForSimulation = (global: GlobalPricingRule): GlobalPricingRule => ({
+  ...global,
+  automaticEnabled: true,
+});
+
 function globalRule(config: PricingConfiguration): GlobalPricingRule {
   return {
     automaticEnabled: config.automaticEnabled,
@@ -135,6 +140,7 @@ export async function recalculateProducts(ids: string[]) {
 
 export async function simulateProviderProductPricing() {
   const context = await loadPricingContext();
+  const simulationGlobal = pricingRuleForSimulation(context.global);
   const rows = await prisma.providerProduct.findMany({
     include: {
       provider: { select: { active: true, code: true } },
@@ -143,14 +149,14 @@ export async function simulateProviderProductPricing() {
   });
   const results = rows.filter(isPricingSimulationEligible).map((row) => {
     const product = row.product;
-    const pricingMode: PricingModeValue = product?.pricingMode ?? "AUTO_GLOBAL";
+    const pricingMode: PricingModeValue = product && context.groups.has(product.type) ? "AUTO_GROUP" : "AUTO_GLOBAL";
     const result = calculatePricing({
       pricingMode,
-      manualPriceCents: product?.manualPriceCents,
+      manualPriceCents: null,
       providerCostCents: row.providerCostCents,
       providerCurrency: row.currency,
       productType: product?.type ?? "UNLINKED",
-      global: context.global,
+      global: simulationGlobal,
       group: product ? context.groups.get(product.type) : null,
     });
     return { row, result, group: product?.type ?? "UNLINKED" };

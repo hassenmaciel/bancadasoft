@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { calculatePricing, roundCommercial, summarizePricingResults, type GlobalPricingRule } from "./pricing";
-import { isPricingSimulationEligible, pricingUpdateData, type PricingProductSource } from "./pricing-service";
+import { isPricingSimulationEligible, pricingRuleForSimulation, pricingUpdateData, type PricingProductSource } from "./pricing-service";
 
 const global: GlobalPricingRule = {
   automaticEnabled: true,
@@ -134,12 +134,20 @@ describe("pricing engine", () => {
       { result: valid, group: "RENTAL", automationClass: "AUTO_CREDENTIAL" },
       { result: missing, group: "UNLINKED", automationClass: "MANUAL_REVIEW" },
     ]);
-    expect(report).toMatchObject({ providerProducts: 2, validCosts: 1, suggested: 1, statuses: { NO_COST: 1 } });
+    expect(report).toMatchObject({ providerProducts: 2, validCosts: 1, suggested: 1, statuses: { AUTO_OK: 1, NO_COST: 1 } });
     expect(report.byGroup).toEqual({ RENTAL: 1, UNLINKED: 1 });
   });
 
   it("excludes inactive sandbox history from the commercial simulation", () => {
     expect(isPricingSimulationEligible({ active: false, mode: "TEST", provider: { active: false, code: "mock-sandbox" } })).toBe(false);
     expect(isPricingSimulationEligible({ active: true, mode: "REAL", provider: { active: true, code: "heartunlocks" } })).toBe(true);
+  });
+
+  it("simulates valid automatic pricing without enabling it operationally", () => {
+    const disabled = { ...global, automaticEnabled: false };
+    const simulation = pricingRuleForSimulation(disabled);
+    expect(simulation.automaticEnabled).toBe(true);
+    expect(disabled.automaticEnabled).toBe(false);
+    expect(price({ global: simulation }).pricingStatus).toBe("AUTO_OK");
   });
 });

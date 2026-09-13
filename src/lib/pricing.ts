@@ -188,6 +188,8 @@ export function summarizePricingResults(rows: Array<{ result: PricingResult; gro
     validCosts: rows.filter(({ result }) => (result.providerCostCents ?? 0) > 0).length,
     suggested: suggested.length,
     statuses: {
+      AUTO_OK: statusCount("AUTO_OK"),
+      MANUAL: statusCount("MANUAL"),
       NEEDS_REVIEW: statusCount("NEEDS_REVIEW"),
       NO_COST: statusCount("NO_COST"),
       INVALID_CONFIG: statusCount("INVALID_CONFIG"),
