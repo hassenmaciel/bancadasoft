@@ -14,6 +14,12 @@ describe("contrato do checkout guest", () => {
     expect(result.success).toBe(true);
     expect(result.success && "password" in result.data).toBe(false);
   });
+  it("aceita variantId opcional sem quebrar produtos legados", () => {
+    expect(checkoutSchema.safeParse(valid).success).toBe(true);
+    const result = checkoutSchema.safeParse({ ...valid, variantId: "variant-1" });
+    expect(result.success).toBe(true);
+    expect(result.success && result.data.variantId).toBe("variant-1");
+  });
   it.each([
     ["name", ""] as const,
     ["cpfCnpj", ""] as const,

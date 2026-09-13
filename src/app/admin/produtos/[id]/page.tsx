@@ -11,14 +11,18 @@ export default async function EditProductPage({ params }: { params: Promise<{ id
   const { id } = await params;
   const product = await prisma.product.findUnique({
     where: { id },
-    include: { category: true, brand: true, providerProducts: { include: { provider: true } } },
+    include: { category: true, brand: true, providerProducts: { include: { provider: true } }, variants: { include: { providerProduct: { include: { provider: true } } } } },
   });
   if (!product) notFound();
 
-  const [categories, brands, pricingContext] = await Promise.all([
+  const [categories, brands, pricingContext, providerProducts] = await Promise.all([
     prisma.category.findMany({ orderBy: { name: "asc" } }),
     prisma.brand.findMany({ orderBy: { name: "asc" } }),
     loadPricingContext(),
+    prisma.providerProduct.findMany({
+      where:{active:true,mode:"REAL",technicalEligibility:"READY",provider:{active:true},OR:[{variants:{none:{}}},{variants:{some:{productId:id}}}]},
+      include:{provider:true},orderBy:{label:"asc"},
+    }),
   ]);
 
   return (
@@ -34,6 +38,7 @@ export default async function EditProductPage({ params }: { params: Promise<{ id
         product={adminProductDto(product, calculateProductPricing(product, pricingContext))}
         categories={categories.map(({ id: categoryId, name }) => ({ id: categoryId, name }))}
         brands={brands.map(({ id: brandId, name }) => ({ id: brandId, name }))}
+        providerOptions={providerProducts.map(link=>({id:link.id,label:`${link.provider.name} · ${link.externalProductId} · ${link.label??"Sem nome"}`}))}
       />
     </>
   );

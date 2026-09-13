@@ -6,7 +6,7 @@ import ProductList from "./product-list";
 export const dynamic = "force-dynamic";
 export default async function ProductsPage() {
   const [products, categories, brands, pricingContext] = await Promise.all([
-    prisma.product.findMany({ include: { category: true, brand: true, providerProducts: { include: { provider: true } } }, orderBy: { updatedAt: "desc" } }),
+    prisma.product.findMany({ include: { category: true, brand: true, providerProducts: { include: { provider: true } }, variants: { include: { providerProduct: { include: { provider: true } } } } }, orderBy: { updatedAt: "desc" } }),
     prisma.category.findMany({ orderBy: { name: "asc" } }),
     prisma.brand.findMany({ orderBy: { name: "asc" } }),
     loadPricingContext(),

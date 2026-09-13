@@ -75,6 +75,19 @@ describe("contrato HTTP do checkout", () => {
   });
 
   it("retorna erro 400 em JSON para body inválido", async () => {
+    const variantCreate = vi.fn(async () => ({
+      order,
+      deliveryAccessToken: validInput.deliveryAccessToken,
+    }));
+    const variantResponse = await handleCheckoutRequest(
+      request({ ...validInput, variantId: "variant-2337" }),
+      variantCreate,
+    );
+    expect(variantResponse.status).toBe(201);
+    expect(variantCreate).toHaveBeenCalledWith(
+      expect.objectContaining({ variantId: "variant-2337" }),
+    );
+
     const create = vi.fn();
     const response = await handleCheckoutRequest(request({}), create);
     expect(response.status).toBe(400);

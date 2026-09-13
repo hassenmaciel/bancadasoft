@@ -23,6 +23,7 @@ import { PixPaymentReconciliationRequiredError } from "@/lib/payments/types";
 import { createDeliveryAccess } from "@/lib/guest-delivery";
 import { reconcilePendingPixPayment } from "@/lib/payment-reconciliation";
 import { resolveProviderProduct } from "@/lib/providers/selection";
+import { resolveCheckoutVariant } from "@/lib/product-variants";
 import { validateDynamicFieldValues, type DynamicField } from "@/lib/providers/automation";
 import {
   digitsOnly,
@@ -34,7 +35,7 @@ import {
 export const catalogue = () =>
   prisma.product.findMany({
     where: publicProductWhere,
-    include: { category: true, brand: true },
+    include: { category: true, brand: true, variants: { include: { providerProduct: { include: { provider: true } } } } },
     orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
   });
 export const productsForAdmin = () =>
@@ -47,6 +48,7 @@ export const setProductAvailability = (id: string, available: boolean) =>
 
 export async function createOrder(input: {
   productId: string;
+  variantId?: string;
   name: string;
   email: string;
   whatsapp: string;
@@ -72,7 +74,10 @@ export async function createOrder(input: {
   const [product, settings] = await Promise.all([
     prisma.product.findFirst({
       where: { id: input.productId, ...publicProductWhere },
-      include: { providerProducts: { include: { provider: true } } },
+      include: {
+        providerProducts: { include: { provider: true } },
+        variants: { include: { providerProduct: { include: { provider: true } } } },
+      },
     }),
     prisma.siteSettings.findUnique({
       where: { id: "default" },
@@ -80,10 +85,16 @@ export async function createOrder(input: {
     }),
   ]);
   if (!product) return undefined;
-  const providerResolution = resolveProviderProduct(
-    product.providerProducts,
-    settings?.providerMode ?? ProviderMode.TEST,
+  const providerMode = settings?.providerMode ?? ProviderMode.TEST;
+  const variantResolution = resolveCheckoutVariant(
+    product.variants,
+    input.variantId,
+    providerMode,
   );
+  if (variantResolution && variantResolution.status !== "SELECTED") return undefined;
+  const providerResolution = variantResolution
+    ? { status: "SELECTED" as const, providerProduct: variantResolution.providerProduct }
+    : resolveProviderProduct(product.providerProducts, providerMode);
   if (
     product.deliveryType === DeliveryType.AUTOMATIC &&
     providerResolution.status !== "SELECTED"
@@ -97,6 +108,7 @@ export async function createOrder(input: {
         input.providerFields,
       )
     : {};
+  const unitPriceCents = variantResolution?.priceCents ?? product.priceCents;
   const previousUser = await prisma.user.findUnique({
     where: { email: input.email },
     select: { cpfCnpj: true, asaasCustomerId: true },
@@ -131,15 +143,21 @@ export async function createOrder(input: {
       deliveryTokenExpiresAt: access.expiresAt,
       deliveryTokenEncrypted: access.encryptedToken,
       customerId: user.id,
-      totalCents: product.priceCents,
+      totalCents: unitPriceCents,
       items: {
-        create: { productId: product.id, unitPriceCents: product.priceCents, providerFields },
+        create: {
+          productId: product.id,
+          productVariantId: variantResolution?.variant.id,
+          providerProductId: providerResolution.providerProduct?.id,
+          unitPriceCents,
+          providerFields,
+        },
       },
       payment: {
         create: {
           provider: provider.code,
           providerReference: `pending:${publicToken}`,
-          amountCents: product.priceCents,
+          amountCents: unitPriceCents,
           status: PaymentStatus.PENDING,
           pixCode: "",
           expiresAt,
@@ -158,7 +176,7 @@ export async function createOrder(input: {
   try {
     payment = await provider.createPixPayment({
       orderId: publicToken,
-      amountCents: product.priceCents,
+      amountCents: unitPriceCents,
       expiresAt,
       customer: {
         internalId: user.id,
@@ -234,7 +252,10 @@ export const getOrder = (id: string) =>
     where: { id },
     include: {
       items: {
-        include: { product: { include: { category: true, brand: true } } },
+        include: {
+          product: { include: { category: true, brand: true } },
+          productVariant: { select: { id: true, name: true } },
+        },
       },
       payment: true,
       fulfillment: true,

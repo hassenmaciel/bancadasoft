@@ -3,7 +3,7 @@ import { prisma } from "../prisma";
 import type { ProviderCatalogItem } from "./types";
 import { resolveProviderAdapter } from "./registry";
 import { providerCatalogSyncData } from "./heartunlocks-catalog";
-import { recalculateProducts } from "../pricing-service";
+import { recalculateProducts, recalculateVariants } from "../pricing-service";
 
 export async function syncProviderCatalog(providerId: string, actorUserId: string) {
   const provider = await prisma.provider.findUnique({ where: { id: providerId }, select: { id: true, code: true } });
@@ -19,7 +19,7 @@ export async function syncProviderCatalog(providerId: string, actorUserId: strin
     throw new Error("PROVIDER_CATALOG_SYNC_FAILED");
   }
   const syncedAt = new Date();
-  const existing = await prisma.providerProduct.findMany({ where: { providerId }, select: { externalProductId: true, productId: true, homologationStatus: true } });
+  const existing = await prisma.providerProduct.findMany({ where: { providerId }, select: { id: true, externalProductId: true, productId: true, homologationStatus: true, variants: { select: { id: true } } } });
   const validated = await prisma.providerProduct.findMany({ where: { providerId, homologationStatus: "PRODUCT_VALIDATED", contractSignature: { not: null } }, select: { contractSignature: true } });
   const validatedSignatures = new Set(validated.flatMap((item) => item.contractSignature ? [item.contractSignature] : []));
   const byExternalId = new Map(existing.map((item) => [item.externalProductId, item]));
@@ -35,7 +35,7 @@ export async function syncProviderCatalog(providerId: string, actorUserId: strin
       : validatedSignatures.has(update.contractSignature) ? "CLASS_VALIDATED" as const : "UNTESTED" as const;
     if (current) {
       updated += 1;
-      if (!current.productId) unlinked += 1;
+      if (!current.productId && current.variants.length === 0) unlinked += 1;
       return prisma.providerProduct.update({ where: { providerId_externalProductId: { providerId, externalProductId: item.externalProductId } }, data: { ...update, homologationStatus } });
     }
     created += 1;
@@ -70,5 +70,6 @@ export async function syncProviderCatalog(providerId: string, actorUserId: strin
   } })]);
   const linkedProductIds = [...new Set(existing.flatMap((item) => item.productId ? [item.productId] : []))];
   await recalculateProducts(linkedProductIds);
+  await recalculateVariants(existing.map((item) => item.id));
   return { found: catalog.length, created, updated, unlinked, syncedAt: syncedAt.toISOString() };
 }

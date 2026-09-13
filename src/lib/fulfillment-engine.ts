@@ -6,7 +6,7 @@ import {
   ProviderOrderStatus,
 } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
-import { resolveProviderProduct } from "@/lib/providers/selection";
+import { resolvePurchasedProviderProduct } from "@/lib/product-variants";
 import { resolveProviderAdapter } from "@/lib/providers/registry";
 import { ProviderOrderUncertainError } from "@/lib/providers/heartunlocks";
 import { sendDeliveryEmail } from "@/lib/notifications/delivery-email";
@@ -41,6 +41,7 @@ export async function executeFulfillment(
         },
         items: {
           include: {
+            providerProduct: { include: { provider: true } },
             product: {
               include: { providerProducts: { include: { provider: true } } },
             },
@@ -54,8 +55,12 @@ export async function executeFulfillment(
     }),
   ]);
   if (!order) throw new FulfillmentEngineError("ORDER_NOT_FOUND");
-  const links = order.items.flatMap((item) => item.product.providerProducts);
-  const resolution = resolveProviderProduct(
+  const purchasedProviderProduct = order.items[0]?.providerProduct;
+  const links = purchasedProviderProduct
+    ? [purchasedProviderProduct]
+    : order.items.flatMap((item) => item.product.providerProducts);
+  const resolution = resolvePurchasedProviderProduct(
+    purchasedProviderProduct,
     links,
     settings?.providerMode ?? "TEST",
   );

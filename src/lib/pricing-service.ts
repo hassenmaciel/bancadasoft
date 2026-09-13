@@ -30,6 +30,18 @@ export type PricingProductSource = {
   }>;
 };
 
+export type PricingVariantSource = {
+  id: string;
+  priceCents: number | null;
+  pricingMode: PricingModeValue;
+  manualPriceCents: number | null;
+  providerProduct: {
+    providerCostCents: number | null;
+    currency: string;
+  };
+  product: { type: ProductType | string };
+};
+
 export const isPricingSimulationEligible = (row: {
   active: boolean;
   mode: string;
@@ -112,6 +124,21 @@ export function calculateProductPricing(product: PricingProductSource, context: 
   return result;
 }
 
+export function calculateVariantPricing(
+  variant: PricingVariantSource,
+  context: PricingContext,
+): PricingResult {
+  return calculatePricing({
+    pricingMode: variant.pricingMode,
+    manualPriceCents: variant.manualPriceCents,
+    providerCostCents: variant.providerProduct.providerCostCents,
+    providerCurrency: variant.providerProduct.currency,
+    productType: variant.product.type,
+    global: context.global,
+    group: context.groups.get(variant.product.type),
+  });
+}
+
 export function pricingUpdateData(product: PricingProductSource, result: PricingResult) {
   const data: Prisma.ProductUpdateInput = {
     suggestedPriceCents: result.suggestedPriceCents,
@@ -123,6 +150,26 @@ export function pricingUpdateData(product: PricingProductSource, result: Pricing
   }
   return data;
 }
+
+export function variantPricingUpdateData(
+  variant: PricingVariantSource,
+  result: PricingResult,
+) {
+  return {
+    suggestedPriceCents: result.suggestedPriceCents,
+    pricingStatus: result.pricingStatus,
+    pricingComputedAt: new Date(),
+    ...(variant.pricingMode === "MANUAL" && result.effectivePriceCents != null
+      ? { priceCents: result.effectivePriceCents }
+      : variant.pricingMode !== "MANUAL" &&
+          contextAllowsAutomaticPrice(result)
+        ? { priceCents: result.effectivePriceCents }
+        : {}),
+  };
+}
+
+const contextAllowsAutomaticPrice = (result: PricingResult) =>
+  result.pricingStatus === "AUTO_OK" && result.effectivePriceCents != null;
 
 export async function recalculateProducts(ids: string[]) {
   const context = await loadPricingContext();
@@ -136,6 +183,24 @@ export async function recalculateProducts(ids: string[]) {
   });
   if (updates.length) await prisma.$transaction(updates);
   return products.length;
+}
+
+export async function recalculateVariants(providerProductIds: string[]) {
+  if (!providerProductIds.length) return 0;
+  const context = await loadPricingContext();
+  const variants = await prisma.productVariant.findMany({
+    where: { providerProductId: { in: providerProductIds } },
+    include: { providerProduct: true, product: { select: { type: true } } },
+  });
+  const updates = variants.map((variant) => {
+    const result = calculateVariantPricing(variant, context);
+    return prisma.productVariant.update({
+      where: { id: variant.id },
+      data: variantPricingUpdateData(variant, result),
+    });
+  });
+  if (updates.length) await prisma.$transaction(updates);
+  return variants.length;
 }
 
 export async function simulateProviderProductPricing() {

@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import type { AdminProductDTO } from "@/lib/admin-catalog";
 import AdminImageUpload from "@/components/admin-image-upload";
 import AdminConfirmDialog from "@/components/admin-confirm-dialog";
+import VariantManager from "./variant-manager";
 type Option = { id: string; name: string };
 const brl = (cents: number | null | undefined) => cents == null ? "—" : new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(cents / 100);
 const slugify = (v: string) =>
@@ -33,10 +34,12 @@ export default function ProductForm({
   product,
   categories,
   brands,
+  providerOptions = [],
 }: {
   product?: AdminProductDTO;
   categories: Option[];
   brands: Option[];
+  providerOptions?: Array<{ id: string; label: string }>;
 }) {
   const router = useRouter(),
     [message, setMessage] = useState(""),
@@ -396,6 +399,7 @@ export default function ProductForm({
           </button>
         </div>
       </form>
+      {product ? <VariantManager productId={product.id} variants={product.variants} providerOptions={providerOptions}/> : null}
       <AdminConfirmDialog
         open={confirming}
         title={`Excluir ${product?.name}?`}

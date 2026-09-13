@@ -9,6 +9,8 @@ import type {
   User,
 } from "@prisma/client";
 import type { DynamicField } from "./providers/automation";
+import { publicVariantFields } from "./product-variants";
+import { isProductionProviderCode } from "./providers/selection";
 
 export type CategoryDTO = Pick<Category, "id" | "slug" | "name">;
 export type BrandDTO = Pick<Brand, "id" | "slug" | "name">;
@@ -28,9 +30,26 @@ export type ProductDTO = Pick<
   | "priceCents"
   | "status"
   | "available"
-> & { category: CategoryDTO | null; brand: BrandDTO | null; checkoutFields: DynamicField[] };
+> & {
+  category: CategoryDTO | null;
+  brand: BrandDTO | null;
+  checkoutFields: DynamicField[];
+  variants: ProductVariantDTO[];
+};
 
-export type OrderItemDTO = { id: string; product: ProductDTO; unitPriceCents: number };
+export type ProductVariantDTO = {
+  id: string;
+  name: string;
+  priceCents: number;
+  checkoutFields: DynamicField[];
+};
+
+export type OrderItemDTO = {
+  id: string;
+  product: ProductDTO;
+  variant: Pick<ProductVariantDTO, "id" | "name"> | null;
+  unitPriceCents: number;
+};
 export type PaymentDTO = Pick<Payment, "status" | "amountCents"> & {
   externalPaymentId: string | null;
   pixPayload: string;
@@ -55,7 +74,26 @@ export type OrderDTO = Pick<Order, "id" | "publicToken" | "status" | "totalCents
 };
 export type UserSessionDTO = Pick<User, "id" | "email" | "name" | "role">;
 
-type ProductWithCategory = Product & { category?: Category | null; brand?: Brand | null; providerProducts?: Array<{ active: boolean; mode: string; technicalEligibility?: string; fieldSchema?: unknown; provider?: { active: boolean; code: string } }> };
+type ProductWithCategory = Product & {
+  category?: Category | null;
+  brand?: Brand | null;
+  providerProducts?: Array<{ active: boolean; mode: string; technicalEligibility?: string; fieldSchema?: unknown; provider?: { active: boolean; code: string } }>;
+  variants?: Array<{
+    id: string;
+    name: string;
+    active: boolean;
+    sortOrder: number;
+    priceCents: number | null;
+    publicationBlocked: boolean;
+    providerProduct: {
+      active: boolean;
+      mode: string;
+      technicalEligibility?: string;
+      fieldSchema?: unknown;
+      provider: { active: boolean; code: string };
+    };
+  }>;
+};
 
 const publicCheckoutFields = (product: ProductWithCategory): DynamicField[] => {
   const link = product.providerProducts?.find((candidate) => candidate.active && candidate.mode === "REAL" && candidate.provider?.active && candidate.provider.code === "heartunlocks" && candidate.technicalEligibility === "READY");
@@ -68,7 +106,27 @@ export const normalizeQrCodeImage = (encodedImage: string | null | undefined) =>
   return encodedImage.startsWith("data:image/") ? encodedImage : `data:image/png;base64,${encodedImage}`;
 };
 
-export const productDto = (product: ProductWithCategory): ProductDTO => ({
+export const productDto = (product: ProductWithCategory): ProductDTO => {
+  const variants = (product.variants ?? [])
+    .filter((variant) =>
+      variant.active &&
+      !variant.publicationBlocked &&
+      Boolean(variant.priceCents && variant.priceCents > 0) &&
+      variant.providerProduct.active &&
+      variant.providerProduct.mode === "REAL" &&
+      variant.providerProduct.provider.active &&
+      isProductionProviderCode(variant.providerProduct.provider.code) &&
+      variant.providerProduct.technicalEligibility === "READY",
+    )
+    .sort((a, b) => a.sortOrder - b.sortOrder)
+    .map((variant) => ({
+      id: variant.id,
+      name: variant.name,
+      priceCents: variant.priceCents!,
+      checkoutFields: publicVariantFields(variant.providerProduct.fieldSchema),
+    }));
+  const variantPrices = variants.map((variant) => variant.priceCents);
+  return {
   id: product.id,
   slug: product.slug,
   name: product.name,
@@ -79,7 +137,7 @@ export const productDto = (product: ProductWithCategory): ProductDTO => ({
   deliveryEstimate: product.deliveryEstimate,
   duration: product.duration,
   imageUrl: product.imageUrl,
-  priceCents: product.priceCents,
+  priceCents: variantPrices.length ? Math.min(...variantPrices) : product.priceCents,
   status: product.status,
   available: product.available,
   category: product.category
@@ -87,7 +145,9 @@ export const productDto = (product: ProductWithCategory): ProductDTO => ({
     : null,
   brand: product.brand ? { id: product.brand.id, slug: product.brand.slug, name: product.brand.name } : null,
   checkoutFields: publicCheckoutFields(product),
-});
+  variants,
+  };
+};
 
 export const orderDto = (order: any, options: { includeDelivery?: boolean } = {}): OrderDTO => ({
   id: order.id,
@@ -95,9 +155,10 @@ export const orderDto = (order: any, options: { includeDelivery?: boolean } = {}
   status: order.status,
   totalCents: order.totalCents,
   createdAt: order.createdAt,
-  items: order.items.map((item: OrderItem & { product: ProductWithCategory }) => ({
+  items: order.items.map((item: OrderItem & { product: ProductWithCategory; productVariant?: { id: string; name: string } | null }) => ({
     id: item.id,
     product: productDto(item.product),
+    variant: item.productVariant ? { id: item.productVariant.id, name: item.productVariant.name } : null,
     unitPriceCents: item.unitPriceCents,
   })),
   payment: order.payment

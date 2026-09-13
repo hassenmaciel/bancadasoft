@@ -17,12 +17,32 @@ describe("DTO mappers", () => {
     expect(productDto({ ...product, category })).toEqual({
       id: "product-1", slug: "unlocktool-6h", name: "UnlockTool", description: "Aluguel de teste",
       type: ProductType.RENTAL, deliveryType: DeliveryType.AUTOMATIC, deliveryEstimate: "imediato", longDescription: null, duration: "6 horas", imageUrl: "https://cdn.example.test/unlocktool.png",
-      priceCents: 2900, status: ProductStatus.PUBLISHED, available: true, category: categoryDto, brand: null, checkoutFields: [],
+      priceCents: 2900, status: ProductStatus.PUBLISHED, available: true, category: categoryDto, brand: null, checkoutFields: [], variants: [],
     });
     expect(productDto({ ...product, category })).not.toHaveProperty("costCents");
     expect(productDto({ ...product, category })).not.toHaveProperty("manualPriceCents");
     expect(productDto({ ...product, category })).not.toHaveProperty("suggestedPriceCents");
     expect(productDto({ ...product, category })).not.toHaveProperty("pricingStatus");
+  });
+
+  it("expõe variantes comerciais sem provider, custo ou assinatura interna", () => {
+    const dto = productDto({
+      ...product,
+      category,
+      variants: [{
+        id: "variant-1", name: "A12", active: true, sortOrder: 1,
+        priceCents: 5790, publicationBlocked: false,
+        providerProduct: {
+          active: true, mode: "REAL", technicalEligibility: "READY",
+          fieldSchema: [{ key: "ecid", label: "ECID", type: "text", required: true, customerVisible: true, sensitive: false }],
+          provider: { active: true, code: "heartunlocks" },
+          providerCostCents: 380, contractSignature: "internal-signature",
+        },
+      }],
+    });
+    expect(dto.variants).toEqual([{ id: "variant-1", name: "A12", priceCents: 5790, checkoutFields: [expect.objectContaining({ key: "ecid", label: "ECID" })] }]);
+    expect(dto.priceCents).toBe(5790);
+    expect(JSON.stringify(dto)).not.toMatch(/providerCostCents|contractSignature|heartunlocks/);
   });
 
   it("mantém itens, pagamento, fulfillment e entrega no OrderDTO", () => {

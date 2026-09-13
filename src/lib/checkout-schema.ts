@@ -2,6 +2,7 @@ import { z } from "zod";
 import { isValidCpf, isValidWhatsapp } from "./checkout-validation";
 export const checkoutSchema = z.object({
   productId: z.string().min(1),
+  variantId: z.string().min(1).optional(),
   name: z.string().trim().min(2).max(100),
   email: z
     .string()

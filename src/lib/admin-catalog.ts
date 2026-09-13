@@ -41,6 +41,43 @@ export const categoryInputSchema = z.object({
   active: z.boolean().default(true),
 });
 
+export const productVariantInputSchema = z.object({
+  providerProductId: z.string().trim().min(1),
+  name: z.string().trim().min(1).max(160),
+  code: z.string().trim().min(1).max(140).regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/),
+  active: z.boolean().default(true),
+  sortOrder: z.number().int().min(0).default(0),
+  pricingMode: z.nativeEnum(PricingMode).default(PricingMode.AUTO_GLOBAL),
+  manualPriceCents: z.number().int().min(1).nullable().optional(),
+}).superRefine((value, context) => {
+  if (value.pricingMode === PricingMode.MANUAL && !value.manualPriceCents)
+    context.addIssue({ code: "custom", path: ["manualPriceCents"], message: "Informe o preço manual da variante." });
+});
+
+export type AdminVariantDTO = {
+  id: string;
+  name: string;
+  code: string;
+  active: boolean;
+  sortOrder: number;
+  priceCents: number | null;
+  pricingMode: string;
+  manualPriceCents: number | null;
+  suggestedPriceCents: number | null;
+  pricingStatus: string;
+  publicationBlocked: boolean;
+  holdReason: string | null;
+  providerProduct: {
+    id: string;
+    externalProductId: string;
+    label: string | null;
+    providerCostCents: number | null;
+    currency: string;
+    active: boolean;
+    provider: { id: string; name: string; active: boolean };
+  };
+};
+
 export type AdminProductDTO = Pick<Product, "id" | "slug" | "name" | "description" | "longDescription" | "type" | "deliveryType" | "deliveryEstimate" | "searchTerms" | "duration" | "priceCents" | "costCents" | "pricingMode" | "manualPriceCents" | "suggestedPriceCents" | "pricingStatus" | "featured" | "sortOrder" | "status" | "available" | "imageUrl"> & {
   category: Pick<Category, "id" | "name" | "slug">;
   brand: Pick<Brand, "id" | "name" | "slug"> | null;
@@ -48,9 +85,12 @@ export type AdminProductDTO = Pick<Product, "id" | "slug" | "name" | "descriptio
   pricingComputedAt: string | null;
   pricing: PricingResult | null;
   providerProducts: Array<{id:string;externalProductId:string;label:string|null;providerCostCents:number|null;currency:string;active:boolean;mode:string;metadata:unknown;lastSyncedAt:string|null;syncStatus:string|null;updatedAt:string;automationClass:string;technicalEligibility:string;homologationStatus:string;contractSignature:string|null;fieldSchema:unknown;expectedDeliveryType:string;provider:{id:string;name:string;code:string;active:boolean}}>;
+  variants: AdminVariantDTO[];
 };
 
-type AdminProductSource=Product & {category:Category;brand:Brand|null;providerProducts?:Array<{id:string;externalProductId:string;label:string|null;providerCostCents:number|null;currency:string;active:boolean;mode:string;metadata:unknown;lastSyncedAt:Date|null;syncStatus:string|null;updatedAt:Date;automationClass:string;technicalEligibility:string;homologationStatus:string;contractSignature:string|null;fieldSchema:unknown;expectedDeliveryType:string;provider:{id:string;name:string;code:string;active:boolean}}>};
+type AdminProductSource=Product & {category:Category;brand:Brand|null;providerProducts?:Array<{id:string;externalProductId:string;label:string|null;providerCostCents:number|null;currency:string;active:boolean;mode:string;metadata:unknown;lastSyncedAt:Date|null;syncStatus:string|null;updatedAt:Date;automationClass:string;technicalEligibility:string;homologationStatus:string;contractSignature:string|null;fieldSchema:unknown;expectedDeliveryType:string;provider:{id:string;name:string;code:string;active:boolean}}>;
+  variants?: Array<{id:string;name:string;code:string;active:boolean;sortOrder:number;priceCents:number|null;pricingMode:string;manualPriceCents:number|null;suggestedPriceCents:number|null;pricingStatus:string;publicationBlocked:boolean;holdReason:string|null;providerProduct:{id:string;externalProductId:string;label:string|null;providerCostCents:number|null;currency:string;active:boolean;provider:{id:string;name:string;active:boolean}}}>;
+};
 export const operationalProviderProducts = <T extends {active:boolean;mode:string;provider:{active:boolean;code:string}}>(links:T[]) =>
   links.filter(link => link.active && link.mode === "REAL" && link.provider.active && isProductionProviderCode(link.provider.code));
 
@@ -68,6 +108,13 @@ export const adminProductDto = (product: AdminProductSource, pricing: PricingRes
   brand: product.brand ? { id: product.brand.id, name: product.brand.name, slug: product.brand.slug } : null,
   updatedAt: product.updatedAt.toISOString(),
   providerProducts:operationalProviderProducts(product.providerProducts??[]).map(link=>({...link,mode:String(link.mode),lastSyncedAt:link.lastSyncedAt?.toISOString()??null,updatedAt:link.updatedAt.toISOString()})),
+  variants:(product.variants??[]).sort((a,b)=>a.sortOrder-b.sortOrder).map(variant=>({
+    id:variant.id,name:variant.name,code:variant.code,active:variant.active,sortOrder:variant.sortOrder,
+    priceCents:variant.priceCents,pricingMode:variant.pricingMode,manualPriceCents:variant.manualPriceCents,
+    suggestedPriceCents:variant.suggestedPriceCents,pricingStatus:variant.pricingStatus,
+    publicationBlocked:variant.publicationBlocked,holdReason:variant.holdReason,
+    providerProduct:variant.providerProduct,
+  })),
 });
 
 export const productStatuses = Object.values(ProductStatus);

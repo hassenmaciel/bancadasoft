@@ -28,11 +28,14 @@ export default function CheckoutPanel({ product }: { product: ProductDTO }) {
   const [submitting, setSubmitting] = useState(false);
   const [copied, setCopied] = useState(false);
   const [delivery, setDelivery] = useState<DeliveryDTO | null>(null);
+  const [variantId, setVariantId] = useState(product.variants.length === 1 ? product.variants[0].id : "");
   const submitGuard = useRef(createCheckoutSubmissionGuard());
   const storageKey = `bancadasoft:checkout:${product.id}`;
   const paid = order?.payment?.status === "PAID";
   const delivered = order?.status === "DELIVERED" && !!delivery;
   const failed = order?.status === "FAILED";
+  const selectedVariant = product.variants.find((variant) => variant.id === variantId);
+  const checkoutFields = selectedVariant?.checkoutFields ?? product.checkoutFields;
 
   async function loadDelivery(orderId: string) {
     const token = localStorage.getItem(`bancadasoft:delivery:${orderId}`);
@@ -156,13 +159,14 @@ export default function CheckoutPanel({ product }: { product: ProductDTO }) {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           productId: product.id,
+          variantId: product.variants.length ? variantId : undefined,
           name: form.get("name"),
           email: form.get("email"),
           whatsapp: form.get("whatsapp"),
           cpfCnpj: String(form.get("cpfCnpj") ?? "").replace(/\D/g, ""),
           deliveryAccessToken,
           providerFields: Object.fromEntries(
-            product.checkoutFields.map((field) => [field.key, String(form.get(`provider:${field.key}`) ?? "")]),
+            checkoutFields.map((field) => [field.key, String(form.get(`provider:${field.key}`) ?? "")]),
           ),
         }),
       });
@@ -252,6 +256,24 @@ export default function CheckoutPanel({ product }: { product: ProductDTO }) {
                     Não é necessário criar uma conta.
                   </p>
                   <div className="checkout-fields">
+                    {product.variants.length > 0 && (
+                      <label htmlFor="checkout-variant">
+                        Variante
+                        <select
+                          id="checkout-variant"
+                          value={variantId}
+                          onChange={(event) => setVariantId(event.target.value)}
+                          required
+                        >
+                          <option value="">Selecione a variante</option>
+                          {product.variants.map((variant) => (
+                            <option key={variant.id} value={variant.id}>
+                              {variant.name} — {money(variant.priceCents)}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                    )}
                     <label htmlFor="checkout-name">
                       Nome completo
                       <input
@@ -318,7 +340,7 @@ export default function CheckoutPanel({ product }: { product: ProductDTO }) {
                         required
                       />
                     </label>
-                    {product.checkoutFields.map((field) => (
+                    {checkoutFields.map((field) => (
                       <label key={field.key} htmlFor={`checkout-provider-${field.key}`}>
                         {field.label}
                         {field.type === "textarea" ? (
@@ -530,7 +552,7 @@ export default function CheckoutPanel({ product }: { product: ProductDTO }) {
               <div className="summary-total">
                 <span>TOTAL</span>
                 <strong>
-                  {money(order?.totalCents ?? product.priceCents)}
+                  {money(order?.totalCents ?? selectedVariant?.priceCents ?? product.priceCents)}
                 </strong>
               </div>
             </aside>

@@ -210,6 +210,7 @@ model Product {
   updatedAt           DateTime          @updatedAt
   orderItems          OrderItem[]
   providerProducts    ProviderProduct[]
+  variants            ProductVariant[]
 
   @@index([status, available, sortOrder])
   @@index([categoryId, status])
@@ -335,13 +336,20 @@ model DeliveryAccessAttempt {
 }
 
 model OrderItem {
-  id             String  @id @default(cuid())
-  orderId        String
-  order          Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  productId      String
-  product        Product @relation(fields: [productId], references: [id])
-  unitPriceCents Int
-  providerFields Json?
+  id                String           @id @default(cuid())
+  orderId           String
+  order             Order            @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  productId         String
+  product           Product          @relation(fields: [productId], references: [id])
+  unitPriceCents    Int
+  providerFields    Json?
+  productVariantId  String?
+  productVariant    ProductVariant?  @relation(fields: [productVariantId], references: [id], onDelete: Restrict)
+  providerProductId String?
+  providerProduct   ProviderProduct? @relation("PurchasedProviderProduct", fields: [providerProductId], references: [id], onDelete: Restrict)
+
+  @@index([productVariantId])
+  @@index([providerProductId])
 }
 
 model Payment {
@@ -427,11 +435,39 @@ model ProviderProduct {
   createdAt            DateTime             @default(now())
   updatedAt            DateTime             @updatedAt
   orders               ProviderOrder[]
+  variants             ProductVariant[]
+  purchasedItems       OrderItem[]          @relation("PurchasedProviderProduct")
 
   @@unique([providerId, externalProductId])
   @@index([productId, active])
   @@index([providerId, automationClass, technicalEligibility])
   @@index([contractSignature])
+}
+
+model ProductVariant {
+  id                  String          @id @default(cuid())
+  productId           String
+  product             Product         @relation(fields: [productId], references: [id], onDelete: Cascade)
+  providerProductId   String          @unique
+  providerProduct     ProviderProduct @relation(fields: [providerProductId], references: [id], onDelete: Restrict)
+  name                String
+  code                String
+  active              Boolean         @default(true)
+  sortOrder           Int             @default(0)
+  priceCents          Int?
+  pricingMode         PricingMode     @default(AUTO_GLOBAL)
+  manualPriceCents    Int?
+  suggestedPriceCents Int?
+  pricingStatus       PricingStatus   @default(INVALID_CONFIG)
+  pricingComputedAt   DateTime?
+  publicationBlocked  Boolean         @default(false)
+  holdReason          String?
+  createdAt           DateTime        @default(now())
+  updatedAt           DateTime        @updatedAt
+  orderItems          OrderItem[]
+
+  @@unique([productId, code])
+  @@index([productId, active, sortOrder])
 }
 
 model ProviderOrder {

@@ -5,7 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { audit } from "@/lib/audit";
 import { calculateProductPricing, loadPricingContext, pricingUpdateData } from "@/lib/pricing-service";
 
-const include = { category: true, brand: true, providerProducts: { include: { provider: true } } } as const;
+const include = { category: true, brand: true, providerProducts: { include: { provider: true } }, variants: { include: { providerProduct: { include: { provider: true } } } } } as const;
 
 export async function GET() {
   try { await requireAdmin(); }
