@@ -40,14 +40,22 @@ export function parseProviderDelivery(text: string | null, product: { name: stri
   }).filter((field) => field.value);
   const username = fields.find((field) => field.key === "username")?.value;
   const password = fields.find((field) => field.key === "password")?.value;
+  const expectedCredential = expected === "LICENSE" || expected === "CODE" ? expected : null;
   let deliveryType: NormalizedDelivery["deliveryType"];
   if (username && password) deliveryType = "CREDENTIALS";
   else if (fields.some((field) => field.key === "license")) deliveryType = "LICENSE";
   else if (fields.some((field) => field.key === "code")) deliveryType = "CODE";
   else if (fields.length > 1) deliveryType = "MULTI_FIELD";
-  else if (["LICENSE", "CODE"].includes(expected ?? "") && fields.length === 1) deliveryType = expected as "LICENSE" | "CODE";
+  else if (expectedCredential && fields.length <= 1) deliveryType = expectedCredential;
   else deliveryType = "TEXT";
-  const deliveryFields = fields.length ? fields : [{ key: "text", label: "Resultado", value: normalized, sensitive: deliveryType !== "TEXT" }];
+  const deliveryFields = fields.length
+    ? fields
+    : [{
+        key: deliveryType === "CODE" ? "code" : deliveryType === "LICENSE" ? "license" : "text",
+        label: deliveryType === "CODE" ? "Código" : deliveryType === "LICENSE" ? "Licença" : "Resultado",
+        value: normalized,
+        sensitive: deliveryType !== "TEXT",
+      }];
   return {
     kind: deliveryType === "CREDENTIALS" ? "credentials" : "provider-delivery",
     deliveryType,

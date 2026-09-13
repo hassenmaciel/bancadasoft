@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { HeartUnlocksProviderAdapter, ProviderOrderUncertainError } from "./heartunlocks";
 import { decodeReplay, parseCredentials, callbackEventKey, normalizeCredentialReplay } from "./heartunlocks-callback";
+import { parseProviderDelivery } from "./delivery";
 
 describe("HeartUnlocks adapter", () => {
   it("reads the catalog through the authenticated gateway without creating orders", async () => {
@@ -43,6 +44,19 @@ describe("HeartUnlocks adapter", () => {
 });
 
 describe("HeartUnlocks callback replay", () => {
+  it("decodes a pure CODE callback according to the provider contract", () => {
+    const replay = Buffer.from("SAFE-FRPFILE-CODE").toString("base64");
+    expect(
+      parseProviderDelivery(
+        decodeReplay(replay),
+        { name: "FRPFILE Premium" },
+        "CODE",
+      ),
+    ).toMatchObject({
+      deliveryType: "CODE",
+      credential: "SAFE-FRPFILE-CODE",
+    });
+  });
   it("decodes credentials using documented and tolerated labels", () => {
     expect(parseCredentials(decodeReplay(Buffer.from("USERNAME=> tech\nPASSWORD=> safe-pass").toString("base64")))).toEqual({ username: "tech", password: "safe-pass" });
     expect(parseCredentials(decodeReplay(Buffer.from("LOGIN: tech2\nPASS: pass2").toString("base64")))).toEqual({ username: "tech2", password: "pass2" });

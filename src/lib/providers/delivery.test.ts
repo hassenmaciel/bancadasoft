@@ -8,6 +8,19 @@ describe("generic provider delivery", () => {
     expect(parseProviderDelivery("License: ABC-123", product)?.deliveryType).toBe("LICENSE");
     expect(parseProviderDelivery("Code: 9988", product)?.deliveryType).toBe("CODE");
   });
+  it("keeps a raw replay as CODE when the contract expects CODE", () => {
+    expect(parseProviderDelivery("SAFE-CODE-ONLY", product, "CODE")).toMatchObject({
+      deliveryType: "CODE",
+      credential: "SAFE-CODE-ONLY",
+      deliveryFields: [{ key: "code", label: "Código", value: "SAFE-CODE-ONLY" }],
+    });
+  });
+  it("keeps a raw replay as TEXT for a TEXT contract", () => {
+    expect(parseProviderDelivery("Resultado concluído", product, "TEXT")).toMatchObject({
+      deliveryType: "TEXT",
+      deliveryFields: [{ key: "text", label: "Resultado" }],
+    });
+  });
   it("creates text delivery without executing HTML", () => {
     const delivery = parseProviderDelivery("Ready &amp; safe <script>alert(1)</script>", product);
     expect(delivery).toMatchObject({ deliveryType: "TEXT" });

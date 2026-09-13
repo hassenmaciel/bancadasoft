@@ -90,6 +90,18 @@ describe("notificação de entrega por e-mail", () => {
     expect(`${content.html}${content.text}`).not.toContain("private-user");
     expect(`${content.html}${content.text}`).not.toContain("private-password");
   });
+  it("não inclui CODE no e-mail e mantém somente o link seguro", () => {
+    const content = deliveryEmailContent({
+      customerName: "Cliente",
+      orderNumber: "PUBLIC",
+      productName: "FRPFILE Premium",
+      recipientEmail: "cliente@example.com",
+      secureUrl: "https://www.bancadasoft.com.br/acompanhar/order#token=safe",
+    });
+    const serialized = `${content.html}${content.text}`;
+    expect(serialized).toContain("/acompanhar/order#token=");
+    expect(serialized).not.toContain("SAFE-FRPFILE-CODE");
+  });
   it("falha do Resend registra FAILED sem alterar o pedido entregue", async () => {
     transport.send.mockRejectedValueOnce(new Error("provider details"));
     expect(
