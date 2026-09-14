@@ -18,6 +18,16 @@ export default function RegisterPage() {
     setError("");
     setDuplicateEmail(false);
     const form = new FormData(event.currentTarget);
+    const password = String(form.get("password") ?? "");
+    const passwordConfirmation = String(
+      form.get("passwordConfirmation") ?? "",
+    );
+
+    if (password !== passwordConfirmation) {
+      setError("As senhas não coincidem.");
+      setLoading(false);
+      return;
+    }
 
     try {
       const response = await fetch("/api/auth/register", {
@@ -28,8 +38,8 @@ export default function RegisterPage() {
           email: form.get("email"),
           whatsapp: form.get("whatsapp"),
           cpfCnpj: form.get("cpfCnpj"),
-          password: form.get("password"),
-          passwordConfirmation: form.get("passwordConfirmation"),
+          password,
+          passwordConfirmation,
         }),
       });
       const body = await response.json();
@@ -40,7 +50,10 @@ export default function RegisterPage() {
       }
 
       router.push(
-        safeNextPath(new URLSearchParams(window.location.search).get("next")),
+        safeNextPath(
+          new URLSearchParams(window.location.search).get("next"),
+          "/catalogo",
+        ),
       );
       router.refresh();
     } catch {
@@ -63,7 +76,10 @@ export default function RegisterPage() {
         <div className={styles.intro}>
           <small>ÁREA DO CLIENTE</small>
           <h1>Crie sua conta</h1>
-          <p>Consulte preços exclusivos e acompanhe seus pedidos.</p>
+          <p>
+            Cadastre-se para acessar preços exclusivos, acompanhar pedidos e suas
+            liberações.
+          </p>
         </div>
         <form onSubmit={submit} className={styles.form}>
           <label>

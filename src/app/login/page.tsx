@@ -95,7 +95,7 @@ export default function Login() {
           </button>
         </form>
         <div className={styles.newAccount}>
-          <span>Ainda não possui cadastro?</span>
+          <span>Ainda não tem cadastro?</span>
           <Link
             href="/cadastro"
             className={styles.secondaryAction}

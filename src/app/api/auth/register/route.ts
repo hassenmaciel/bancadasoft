@@ -10,7 +10,7 @@ import {
 
 const duplicateEmailResponse = () =>
   NextResponse.json(
-    { error: "Este e-mail já está cadastrado. Entre na sua conta." },
+    { error: "Já existe uma conta com este e-mail. Entre na sua conta." },
     { status: 409 },
   );
 

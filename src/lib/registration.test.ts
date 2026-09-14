@@ -54,6 +54,19 @@ describe("cadastro público", () => {
     ).toBe(false);
   });
 
+  it.each([
+    "name",
+    "email",
+    "whatsapp",
+    "cpfCnpj",
+    "password",
+    "passwordConfirmation",
+  ] as const)("exige o campo %s", (field) => {
+    const payload: Partial<typeof validRegistration> = { ...validRegistration };
+    delete payload[field];
+    expect(registrationSchema.safeParse(payload).success).toBe(false);
+  });
+
   it("contrato administrativo aceita apenas NORMAL e PREMIUM", () => {
     expect(
       adminUserUpdateSchema.safeParse({ customerTier: "PREMIUM" }).success,
