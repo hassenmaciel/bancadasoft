@@ -1,7 +1,117 @@
 "use client";
+
 import Link from "next/link";
 import { FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
 import { safeNextPath } from "@/lib/public-navigation";
 import styles from "./login.module.css";
-export default function Login(){const router=useRouter();const[error,setError]=useState("");const[loading,setLoading]=useState(false);async function submit(event:FormEvent<HTMLFormElement>){event.preventDefault();setError("");setLoading(true);const form=new FormData(event.currentTarget);try{const response=await fetch("/api/auth/login",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({email:form.get("email"),password:form.get("password")})});if(!response.ok){setError("E-mail ou senha inválidos.");return}router.push(safeNextPath(new URLSearchParams(window.location.search).get("next")));router.refresh()}catch{setError("Não foi possível entrar agora.")}finally{setLoading(false)}}return <main className={styles.page}><div className={styles.glow}/><section className={styles.card}><header className={styles.header}><Link href="/" className={styles.brand}>BANCADA<span>SOFT</span></Link><span className={styles.badge}>ACESSO SEGURO</span></header><div className={styles.intro}><small>ÁREA DO CLIENTE</small><h1>Entre na sua conta</h1><p>Acompanhe pedidos, pagamentos e entregas em um só lugar.</p></div><form onSubmit={submit} className={styles.form}><label>E-mail<input name="email" type="email" autoComplete="email" placeholder="seu@email.com" required/></label><label>Senha<input name="password" type="password" autoComplete="current-password" placeholder="Digite sua senha" minLength={8} required/></label>{error&&<p className={styles.error} role="alert">{error}</p>}<button disabled={loading} type="submit">{loading?"Entrando...":"Entrar na minha conta"}</button></form><footer><span>🔒</span> Sua sessão é protegida e seus pedidos são privados.</footer></section><p className={styles.back}><Link href="/catalogo">← Voltar ao catálogo</Link></p></main>}
+
+export default function Login() {
+  const router = useRouter();
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setError("");
+    setLoading(true);
+    const form = new FormData(event.currentTarget);
+
+    try {
+      const response = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          email: form.get("email"),
+          password: form.get("password"),
+        }),
+      });
+      if (!response.ok) {
+        setError("E-mail ou senha inválidos.");
+        return;
+      }
+      router.push(
+        safeNextPath(new URLSearchParams(window.location.search).get("next")),
+      );
+      router.refresh();
+    } catch {
+      setError("Não foi possível entrar agora.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  function openRegistration(event: React.MouseEvent<HTMLAnchorElement>) {
+    const next = new URLSearchParams(window.location.search).get("next");
+    if (!next) return;
+    event.preventDefault();
+    router.push(`/cadastro?next=${encodeURIComponent(safeNextPath(next))}`);
+  }
+
+  return (
+    <main className={styles.page}>
+      <div className={styles.glow} />
+      <section className={styles.card}>
+        <header className={styles.header}>
+          <Link href="/" className={styles.brand}>
+            BANCADA<span>SOFT</span>
+          </Link>
+          <span className={styles.badge}>ACESSO SEGURO</span>
+        </header>
+        <div className={styles.intro}>
+          <small>ÁREA DO CLIENTE</small>
+          <h1>Entre na sua conta</h1>
+          <p>Acompanhe pedidos, pagamentos e entregas em um só lugar.</p>
+        </div>
+        <form onSubmit={submit} className={styles.form}>
+          <label>
+            E-mail
+            <input
+              name="email"
+              type="email"
+              autoComplete="email"
+              placeholder="seu@email.com"
+              required
+            />
+          </label>
+          <label>
+            Senha
+            <input
+              name="password"
+              type="password"
+              autoComplete="current-password"
+              placeholder="Digite sua senha"
+              minLength={8}
+              required
+            />
+          </label>
+          {error && (
+            <p className={styles.error} role="alert">
+              {error}
+            </p>
+          )}
+          <button disabled={loading} type="submit">
+            {loading ? "Entrando..." : "Entrar na minha conta"}
+          </button>
+        </form>
+        <div className={styles.newAccount}>
+          <span>Ainda não possui cadastro?</span>
+          <Link
+            href="/cadastro"
+            className={styles.secondaryAction}
+            onClick={openRegistration}
+          >
+            Criar minha conta
+          </Link>
+        </div>
+        <footer>
+          <span aria-hidden="true">🔒</span> Sua sessão é protegida e seus pedidos
+          são privados.
+        </footer>
+      </section>
+      <p className={styles.back}>
+        <Link href="/">← Voltar ao site</Link>
+      </p>
+    </main>
+  );
+}
