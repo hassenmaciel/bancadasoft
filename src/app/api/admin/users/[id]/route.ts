@@ -18,7 +18,7 @@ export async function PUT(request: Request, { params }: Context) {
   const { id } = await params,
     current = await prisma.user.findUnique({
       where: { id },
-      select: { id: true, name: true, role: true, active: true },
+      select: { id: true, name: true, role: true, customerTier: true, active: true },
     });
   if (!current)
     return NextResponse.json(
@@ -54,6 +54,7 @@ export async function PUT(request: Request, { params }: Context) {
       name: true,
       email: true,
       role: true,
+      customerTier: true,
       active: true,
       createdAt: true,
     },

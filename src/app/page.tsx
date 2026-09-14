@@ -4,10 +4,13 @@ import PublicFooter from "@/components/public-footer";
 import ProductCard from "@/components/product-card";
 import { prisma } from "@/lib/prisma";
 import { optionalHomeQuery, popularPublicProducts, recentPublicProducts } from "@/lib/catalog-search";
-import { productDto } from "@/lib/dto";
+import { productDto as mapProductDto } from "@/lib/dto";
+import { session } from "@/lib/auth";
 
 export const dynamic="force-dynamic";
 export default async function Home(){
+  const viewer = await session();
+  const productDto = (product: Parameters<typeof mapProductDto>[0]) => mapProductDto(product, viewer);
   const popular=await popularPublicProducts(5);const recentRaw=await optionalHomeQuery("produtos recentes",()=>recentPublicProducts(8),[]);const popularIds=new Set(popular.products.map(p=>p.id));const recent=recentRaw.filter(p=>!popularIds.has(p.id)).slice(0,5);const categories=await optionalHomeQuery("categorias",()=>prisma.category.findMany({where:{active:true,products:{some:{status:"PUBLISHED",available:true}}},select:{id:true,name:true,slug:true},orderBy:{name:"asc"}}),[]);
   return <main><PublicHeader/><section className="hero" id="inicio"><div className="wrap hero-grid"><div className="hero-copy"><span className="eyebrow">Plataforma para assistência técnica</span><h1>Encontrou.<br/>Pagou.<br/><em>Liberou.</em></h1><p>Ferramentas e serviços para o técnico, com compra simples e pagamento via PIX.</p><div className="hero-actions"><Link className="primary-cta" href="/catalogo">Ver catálogo</Link><Link className="secondary-cta" href="#como-funciona">Como funciona</Link></div><div className="trust-row"><span><b>↯</b>Fluxo<br/>automatizado</span><span><b>▣</b>Pagamento<br/>seguro</span><span><b>◉</b>Suporte<br/>em português</span></div></div><div className="hero-visual" aria-hidden="true"><div className="device-glow"/><div className="phone"><div className="phone-notch"/><div className="phone-message">Soluções para quem<br/>faz mais com técnica.</div><div className="phone-brand">BANCADA<span>SOFT</span></div></div></div><aside className="hero-list"><strong>Catálogo técnico</strong><small>soluções em um só lugar</small><ul><li>Aluguéis de ferramentas</li><li>Licenças e ativações</li><li>Serviços remotos</li><li>Créditos e consultas</li><li>Compra segura</li></ul></aside></div></section>
   <section className="wrap quick-links" aria-label="Categorias">{categories.map((item,index)=><Link key={item.id} href={`/catalogo?categoria=${item.slug}`}><span className="category-icon">{["⚙","↯","◆","◉","▰"][index%5]}</span><span><b>{item.name}</b><small>Explorar categoria</small></span></Link>)}</section>

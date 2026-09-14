@@ -142,18 +142,29 @@ enum PricingRoundingMode {
   NEAREST_5
 }
 
+enum CustomerTier {
+  NORMAL
+  PREMIUM
+}
+
+enum PriceVisibility {
+  PUBLIC
+  LOGIN_REQUIRED
+}
+
 model User {
-  id              String     @id @default(cuid())
-  email           String     @unique
+  id              String       @id @default(cuid())
+  email           String       @unique
   name            String
-  role            String     @default("CUSTOMER")
+  role            String       @default("CUSTOMER")
+  customerTier    CustomerTier @default(NORMAL)
   passwordHash    String
-  asaasCustomerId String?    @unique
+  asaasCustomerId String?      @unique
   cpfCnpj         String?
   whatsapp        String?
-  active          Boolean    @default(true)
-  createdAt       DateTime   @default(now())
-  updatedAt       DateTime   @updatedAt
+  active          Boolean      @default(true)
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
   orders          Order[]
   auditLogs       AuditLog[]
 }
@@ -192,6 +203,9 @@ model Product {
   duration            String?
   imageUrl            String?
   priceCents          Int
+  priceVisibility     PriceVisibility   @default(PUBLIC)
+  normalPriceCents    Int?
+  premiumPriceCents   Int?
   costCents           Int?
   pricingMode         PricingMode       @default(MANUAL)
   manualPriceCents    Int?
@@ -455,6 +469,8 @@ model ProductVariant {
   active              Boolean         @default(true)
   sortOrder           Int             @default(0)
   priceCents          Int?
+  normalPriceCents    Int?
+  premiumPriceCents   Int?
   pricingMode         PricingMode     @default(AUTO_GLOBAL)
   manualPriceCents    Int?
   suggestedPriceCents Int?

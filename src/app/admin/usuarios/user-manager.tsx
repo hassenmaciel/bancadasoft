@@ -7,6 +7,7 @@ type Row = {
   name: string;
   email: string;
   role: string;
+  customerTier: "NORMAL" | "PREMIUM";
   active: boolean;
   createdAt: string;
   orderCount: number;
@@ -36,6 +37,7 @@ export default function UserManager({
           email: f.get("email"),
           password: f.get("password"),
           role: f.get("role"),
+          customerTier: f.get("customerTier"),
         }),
       }),
       body = await response.json();
@@ -108,6 +110,13 @@ export default function UserManager({
               <option value="ADMIN">ADMIN</option>
             </select>
           </label>
+          <label>
+            Nível comercial
+            <select name="customerTier" defaultValue="NORMAL">
+              <option value="NORMAL">Técnico Normal</option>
+              <option value="PREMIUM">Técnico Premium</option>
+            </select>
+          </label>
           <button className="admin-primary" disabled={busy}>
             Criar usuário
           </button>
@@ -118,6 +127,7 @@ export default function UserManager({
               <tr>
                 <th>Usuário</th>
                 <th>Role</th>
+                <th>Nível comercial</th>
                 <th>Status</th>
                 <th>Pedidos</th>
                 <th>Ações</th>
@@ -140,6 +150,7 @@ export default function UserManager({
                       <option>ADMIN</option>
                     </select>
                   </td>
+                  <td><select value={row.customerTier} disabled={busy} onChange={(e) => save(row, { customerTier: e.target.value })}><option value="NORMAL">NORMAL</option><option value="PREMIUM">PREMIUM</option></select></td>
                   <td>{row.active ? "Ativo" : "Inativo"}</td>
                   <td>{row.orderCount}</td>
                   <td>

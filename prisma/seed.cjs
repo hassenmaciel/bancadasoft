@@ -40,7 +40,7 @@ const products = [
   { slug: "consulta-imei-sn", name: "Consulta IMEI / SN", type: ProductType.IMEI_SN, description: "Serviço de homologação para validar consultas por IMEI ou número de série.", priceCents: 2500, sortOrder: 14, searchTerms: "imei sn serial consulta serviço mobile" },
   { slug: "suporte-remoto-android", name: "Suporte remoto Android", type: ProductType.REMOTE_SERVICE, description: "Atendimento técnico remoto de homologação, sujeito à análise antes da execução.", priceCents: 7900, sortOrder: 13, searchTerms: "android suporte remoto assistência tecnica" },
   { slug: "diagnostico-remoto-mobile", name: "Diagnóstico remoto mobile", type: ProductType.REMOTE_SERVICE, description: "Diagnóstico remoto de homologação, sem garantia antecipada de resultado.", priceCents: 5900, sortOrder: 12, searchTerms: "diagnostico remoto mobile android suporte" },
-  { slug: "adclean", name: "AdClean", brand: "adclean", type: ProductType.TOOL, description: "Solução profissional para diagnóstico e remoção de adwares, aplicativos indesejados e problemas relacionados a anúncios em dispositivos Android.", priceCents: 3990, featured: true, sortOrder: 65, searchTerms: "adclean anúncios anuncios adware limpeza android produto próprio" },
+  { slug: "adclean", name: "Repair AdClean — Ticket de Acesso", brand: "adclean", type: ProductType.TOOL, duration: "7 dias (168 horas)", description: "Limpeza eficiente de anúncios e adware em aparelhos Android.", priceCents: 2000, normalPriceCents: 2000, premiumPriceCents: 1000, priceVisibility: "LOGIN_REQUIRED", status: ProductStatus.DRAFT, available: false, featured: false, sortOrder: 65, searchTerms: "adclean anúncios adware limpeza android ticket" },
 ];
 
 async function main() {
@@ -91,13 +91,16 @@ async function main() {
       duration: item.duration ?? null,
       imageUrl: null,
       priceCents: item.priceCents,
+      priceVisibility: item.priceVisibility ?? "PUBLIC",
+      normalPriceCents: item.normalPriceCents ?? null,
+      premiumPriceCents: item.premiumPriceCents ?? null,
       pricingMode: "MANUAL",
       manualPriceCents: item.priceCents,
       pricingStatus: "MANUAL",
       featured: item.featured ?? false,
       sortOrder: item.sortOrder,
-      status: ProductStatus.PUBLISHED,
-      available: true,
+      status: item.status ?? ProductStatus.PUBLISHED,
+      available: item.available ?? true,
       categoryId: category.id,
       brandId: item.brand ? brandIds.get(item.brand) : null,
       searchTerms: `${item.searchTerms} homologação`,

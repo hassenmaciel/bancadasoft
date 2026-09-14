@@ -48,6 +48,8 @@ export default function ProductForm({
     [slug, setSlug] = useState(product?.slug ?? ""),
     [pricingMode, setPricingMode] = useState(product?.pricingMode ?? "MANUAL"),
     [price, setPrice] = useState(product ? (product.manualPriceCents ?? product.priceCents) / 100 : 0),
+    [normalPrice, setNormalPrice] = useState(product ? (product.normalPriceCents ?? product.priceCents) / 100 : 0),
+    [premiumPrice, setPremiumPrice] = useState(product?.premiumPriceCents == null ? "" : String(product.premiumPriceCents / 100)),
     [cost, setCost] = useState(
       product?.costCents == null ? "" : String(product.costCents / 100),
     ),
@@ -69,6 +71,9 @@ export default function ProductForm({
       searchTerms: f.get("searchTerms") || "",
       duration: f.get("duration") || null,
       priceCents: product?.priceCents ?? Math.round(price * 100),
+      priceVisibility: f.get("priceVisibility"),
+      normalPriceCents: Math.round(normalPrice * 100),
+      premiumPriceCents: premiumPrice === "" ? null : Math.round(Number(premiumPrice) * 100),
       costCents: cost === "" ? null : Math.round(Number(cost) * 100),
       pricingMode,
       manualPriceCents: pricingMode === "MANUAL" ? Math.round(price * 100) : null,
@@ -283,6 +288,11 @@ export default function ProductForm({
         ) : null}
         <fieldset>
           <legend>Precificação BancadaSoft</legend>
+          <div className="form-grid">
+            <label>Visibilidade do preço<select name="priceVisibility" defaultValue={product?.priceVisibility ?? "PUBLIC"}><option value="PUBLIC">Público</option><option value="LOGIN_REQUIRED">Somente cadastrados</option></select></label>
+            <label>Preço Técnico Normal (R$)<input type="number" min="0.01" step=".01" value={normalPrice} onChange={(event)=>setNormalPrice(Number(event.target.value))}/></label>
+            <label>Preço Técnico Premium (R$)<input type="number" min="0.01" step=".01" value={premiumPrice} placeholder="Usa preço Normal" onChange={(event)=>setPremiumPrice(event.target.value)}/></label>
+          </div>
           <div className="form-grid">
             <label>
               Modo de preço

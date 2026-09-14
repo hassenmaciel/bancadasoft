@@ -266,9 +266,9 @@ export default function CheckoutPanel({ product }: { product: ProductDTO }) {
                           required
                         >
                           <option value="">Selecione a variante</option>
-                          {product.variants.map((variant) => (
+                          {product.variants.filter((variant) => variant.priceCents !== null).map((variant) => (
                             <option key={variant.id} value={variant.id}>
-                              {variant.name} — {money(variant.priceCents)}
+                              {variant.name} — {money(variant.priceCents!)}
                             </option>
                           ))}
                         </select>
@@ -552,7 +552,7 @@ export default function CheckoutPanel({ product }: { product: ProductDTO }) {
               <div className="summary-total">
                 <span>TOTAL</span>
                 <strong>
-                  {money(order?.totalCents ?? selectedVariant?.priceCents ?? product.priceCents)}
+                  {money(order?.totalCents ?? selectedVariant?.priceCents ?? product.priceCents ?? 0)}
                 </strong>
               </div>
             </aside>

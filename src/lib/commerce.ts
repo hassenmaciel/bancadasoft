@@ -31,6 +31,7 @@ import {
   isValidWhatsapp,
   normalizeWhatsapp,
 } from "@/lib/checkout-validation";
+import { assertCheckoutPrice } from "@/lib/commercial-pricing";
 
 export const catalogue = () =>
   prisma.product.findMany({
@@ -55,7 +56,7 @@ export async function createOrder(input: {
   cpfCnpj: string;
   deliveryAccessToken: string;
   providerFields?: Record<string, string>;
-}) {
+}, authenticatedUserId?: string) {
   const cpfCnpj = digitsOnly(input.cpfCnpj);
   const whatsapp = normalizeWhatsapp(input.whatsapp);
   if (!isValidCpf(cpfCnpj) || !isValidWhatsapp(whatsapp))
@@ -71,7 +72,7 @@ export async function createOrder(input: {
       deliveryAccessToken: access.token,
     };
   }
-  const [product, settings] = await Promise.all([
+  const [product, settings, authenticatedUser] = await Promise.all([
     prisma.product.findFirst({
       where: { id: input.productId, ...publicProductWhere },
       include: {
@@ -83,6 +84,7 @@ export async function createOrder(input: {
       where: { id: "default" },
       select: { providerMode: true },
     }),
+    authenticatedUserId ? prisma.user.findFirst({ where: { id: authenticatedUserId, active: true } }) : null,
   ]);
   if (!product) return undefined;
   const providerMode = settings?.providerMode ?? ProviderMode.TEST;
@@ -108,15 +110,17 @@ export async function createOrder(input: {
         input.providerFields,
       )
     : {};
-  const unitPriceCents = variantResolution?.priceCents ?? product.priceCents;
+  const viewer = authenticatedUser ? { customerTier: authenticatedUser.customerTier } : null;
+  const unitPriceCents = assertCheckoutPrice(product, variantResolution?.variant ?? null, viewer);
+  const customerEmail = authenticatedUser?.email ?? input.email;
   const previousUser = await prisma.user.findUnique({
-    where: { email: input.email },
+    where: { email: customerEmail },
     select: { cpfCnpj: true, asaasCustomerId: true },
   });
   const reusableAsaasCustomerId =
     previousUser?.cpfCnpj === cpfCnpj ? previousUser.asaasCustomerId : null;
   const user = await prisma.user.upsert({
-    where: { email: input.email },
+    where: { email: customerEmail },
     update: {
       name: input.name,
       cpfCnpj,
@@ -124,7 +128,7 @@ export async function createOrder(input: {
       asaasCustomerId: reusableAsaasCustomerId,
     },
     create: {
-      email: input.email,
+      email: customerEmail,
       name: input.name,
       cpfCnpj,
       whatsapp,

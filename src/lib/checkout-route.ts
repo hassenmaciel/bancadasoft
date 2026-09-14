@@ -70,6 +70,8 @@ export async function handleCheckoutRequest(
       { status: 201 },
     );
   } catch (error) {
+    if (error instanceof Error && error.message === "LOGIN_REQUIRED_FOR_PRICE")
+      return NextResponse.json({ ok: false, error: "Entre para consultar o preço e concluir a compra.", code: "LOGIN_REQUIRED" }, { status: 401 });
     log("[checkout] Falha ao gerar PIX.", {
       stage: "create_order",
       ...safeCheckoutError(error),

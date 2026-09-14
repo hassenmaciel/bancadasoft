@@ -7,6 +7,7 @@ import PublicFooter from "@/components/public-footer";
 import CheckoutPanel from "@/components/checkout-panel";
 import { prisma } from "@/lib/prisma";
 import { productDto } from "@/lib/dto";
+import { session } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
@@ -33,13 +34,13 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
 }
 
 export default async function ProductPage({ params }: { params: Promise<{ slug: string }> }) {
+  const viewer = await session();
   const found = await product((await params).slug);
   if (!found) notFound();
-  const dto = productDto(found);
-  const displayPrice = dto.variants.length
-    ? Math.min(...dto.variants.map((variant) => variant.priceCents))
-    : dto.priceCents;
-  const money = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(displayPrice / 100);
+  const dto = productDto(found, viewer);
+  const variantPrices = dto.variants.flatMap((variant) => variant.priceCents === null ? [] : [variant.priceCents]);
+  const displayPrice = variantPrices.length ? Math.min(...variantPrices) : dto.priceCents;
+  const money = displayPrice === null ? null : new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(displayPrice / 100);
   const unlockTool = dto.slug === "unlocktool-6h";
   return <main><PublicHeader/><section className="product-page wrap">
     <nav className="breadcrumbs"><Link href="/">Início</Link><span>›</span><Link href="/catalogo">Catálogo</Link><span>›</span><b>{dto.name}</b></nav>
@@ -48,8 +49,8 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
         {unlockTool&&<ul className="product-guidance"><li>Produto digital com acesso temporário por 6 horas.</li><li>Liberação automática após a confirmação do pagamento e do fornecedor.</li><li>As credenciais ficam disponíveis com segurança em Meus Pedidos.</li><li>Não compartilhe as credenciais de acesso.</li></ul>}
         {dto.duration&&<div className="detail-line"><b>Modalidade</b><span>{dto.duration}</span></div>}
         <div className="detail-line"><b>Entrega</b><span>{dto.deliveryType==="ON_REQUEST"?"Sob consulta":dto.deliveryType==="AUTOMATIC"?"Automática":dto.deliveryType==="IMMEDIATE"?"Imediata":"Manual"}{dto.deliveryEstimate?` · ${dto.deliveryEstimate}`:""}</span></div>
-        <div className="detail-availability">✓ Disponível para compra</div><strong className="detail-price">{dto.variants.length ? "A partir de " : ""}{money}</strong>
-        <CheckoutPanel product={dto}/><small className="checkout-note">Pagamento processado em ambiente seguro. Confira as condições exibidas antes de concluir.</small>
+        <div className="detail-availability">✓ Disponível para compra</div>{money ? <strong className="detail-price">{dto.variants.length ? "A partir de " : ""}{dto.priceTier === "PREMIUM" ? "Preço Premium · " : ""}{money}</strong> : <strong className="detail-price">Preço exclusivo para cadastrados</strong>}
+        {dto.priceVisible && money ? <CheckoutPanel product={dto}/> : <div className="login-price-gate"><p>Entre ou cadastre-se para ver o preço e contratar este serviço.</p><Link className="product-cta" href={`/login?next=${encodeURIComponent(`/produto/${dto.slug}`)}`}>Entrar</Link><Link href={`/cadastro?next=${encodeURIComponent(`/produto/${dto.slug}`)}`}>Criar conta</Link></div>}<small className="checkout-note">Pagamento processado em ambiente seguro. Confira as condições exibidas antes de concluir.</small>
       </div>
     </div>
   </section><PublicFooter/></main>;

@@ -17,6 +17,8 @@ export type CheckoutVariantCandidate = {
   active: boolean;
   sortOrder: number;
   priceCents: number | null;
+  normalPriceCents?: number | null;
+  premiumPriceCents?: number | null;
   publicationBlocked: boolean;
   providerProduct: VariantProviderProduct;
 };
@@ -76,7 +78,8 @@ export function resolveCheckoutVariant(
       providerProduct: null,
       priceCents: null,
     };
-  if (!variant.priceCents || variant.priceCents < 1)
+  const basePrice = variant.normalPriceCents ?? variant.priceCents;
+  if (!basePrice || basePrice < 1)
     return {
       status: "VARIANT_PRICE_UNAVAILABLE",
       variant: null,
@@ -95,7 +98,7 @@ export function resolveCheckoutVariant(
     status: "SELECTED",
     variant,
     providerProduct: provider.providerProduct,
-    priceCents: variant.priceCents,
+    priceCents: basePrice,
   };
 }
 
@@ -111,6 +114,7 @@ export const canPublishVariantProduct = (
     active: boolean;
     publicationBlocked: boolean;
     priceCents: number | null;
+    normalPriceCents?: number | null;
   }>,
 ) =>
   variants.length === 0 ||
@@ -118,8 +122,8 @@ export const canPublishVariantProduct = (
     (variant) =>
       variant.active &&
       !variant.publicationBlocked &&
-      variant.priceCents !== null &&
-      variant.priceCents > 0,
+      (variant.normalPriceCents ?? variant.priceCents) !== null &&
+      (variant.normalPriceCents ?? variant.priceCents)! > 0,
   );
 
 export function resolvePurchasedProviderProduct<T extends ProviderProductCandidate>(

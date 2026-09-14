@@ -47,6 +47,8 @@ export async function POST(request: Request, context: Context) {
         sortOrder: parsed.data.sortOrder,
         pricingMode: parsed.data.pricingMode,
         manualPriceCents: parsed.data.pricingMode === "MANUAL" ? parsed.data.manualPriceCents : null,
+        normalPriceCents: parsed.data.normalPriceCents,
+        premiumPriceCents: parsed.data.premiumPriceCents,
       },
       include: { product: { select: { type: true } }, providerProduct: true },
     });

@@ -145,4 +145,11 @@ describe("contrato HTTP do checkout", () => {
       code: "PRODUCT_UNAVAILABLE",
     });
   });
+
+  it("bloqueia checkout protegido antes de criar cobrança", async () => {
+    const create = vi.fn(async () => { throw new Error("LOGIN_REQUIRED_FOR_PRICE"); });
+    const response = await handleCheckoutRequest(request(validInput), create);
+    expect(response.status).toBe(401);
+    await expect(response.json()).resolves.toMatchObject({ code: "LOGIN_REQUIRED" });
+  });
 });

@@ -29,6 +29,8 @@ export default function VariantManager({
     const form = new FormData(event.currentTarget);
     const pricingMode = String(form.get("pricingMode"));
     const manual = String(form.get("manualPrice") ?? "");
+    const normal = String(form.get("normalPrice") ?? "");
+    const premium = String(form.get("premiumPrice") ?? "");
     const payload = {
       providerProductId: form.get("providerProductId"),
       name: form.get("name"),
@@ -37,6 +39,8 @@ export default function VariantManager({
       sortOrder: Number(form.get("sortOrder")),
       pricingMode,
       manualPriceCents: pricingMode === "MANUAL" && manual ? Math.round(Number(manual) * 100) : null,
+      normalPriceCents: normal ? Math.round(Number(normal) * 100) : null,
+      premiumPriceCents: premium ? Math.round(Number(premium) * 100) : null,
     };
     const response = await fetch(
       variantId
@@ -65,6 +69,8 @@ export default function VariantManager({
       <div className="form-grid">
         <label>Preço<select name="pricingMode" defaultValue={variant.pricingMode}><option value="AUTO_GLOBAL">Automático global</option><option value="AUTO_GROUP">Automático do grupo</option><option value="MANUAL">Manual</option></select></label>
         <label>Preço manual (R$)<input name="manualPrice" type="number" min="0.01" step=".01" defaultValue={reais(variant.manualPriceCents)}/></label>
+        <label>Preço Normal (R$)<input name="normalPrice" type="number" min="0.01" step=".01" defaultValue={reais(variant.normalPriceCents)}/></label>
+        <label>Preço Premium (R$)<input name="premiumPrice" type="number" min="0.01" step=".01" defaultValue={reais(variant.premiumPriceCents)} placeholder="Usa Normal"/></label>
         <label>Ordem<input name="sortOrder" type="number" min="0" defaultValue={variant.sortOrder}/></label>
       </div>
       <label className="check-field"><input name="active" type="checkbox" defaultChecked={variant.active}/> Variante ativa</label>
@@ -82,6 +88,8 @@ export default function VariantManager({
       <div className="form-grid">
         <label>Preço<select name="pricingMode" defaultValue="AUTO_GLOBAL"><option value="AUTO_GLOBAL">Automático global</option><option value="AUTO_GROUP">Automático do grupo</option><option value="MANUAL">Manual</option></select></label>
         <label>Preço manual (R$)<input name="manualPrice" type="number" min="0.01" step=".01"/></label>
+        <label>Preço Normal (R$)<input name="normalPrice" type="number" min="0.01" step=".01"/></label>
+        <label>Preço Premium (R$)<input name="premiumPrice" type="number" min="0.01" step=".01" placeholder="Usa Normal"/></label>
         <label>Ordem<input name="sortOrder" type="number" min="0" defaultValue="0"/></label>
       </div>
       <label className="check-field"><input name="active" type="checkbox" defaultChecked/> Variante ativa</label>

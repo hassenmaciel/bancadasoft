@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { DeliveryType, FulfillmentStatus, OrderStatus, PaymentStatus, ProductStatus, ProductType, type Category, type Product } from "@prisma/client";
+import { DeliveryType, FulfillmentStatus, OrderStatus, PaymentStatus, PriceVisibility, PricingMode, PricingStatus, ProductStatus, ProductType, type Category, type Product } from "@prisma/client";
 import { isPublicProduct, publicProductWhere } from "./catalog";
 import { normalizeQrCodeImage, orderDto, productDto } from "./dto";
 
@@ -8,7 +8,7 @@ const categoryDto = { id: category.id, slug: category.slug, name: category.name 
 const product: Product = {
   id: "product-1", slug: "unlocktool-6h", name: "UnlockTool", description: "Aluguel de teste",
   type: ProductType.RENTAL, deliveryType: DeliveryType.AUTOMATIC, deliveryEstimate: "imediato", searchTerms: "unlocktool aluguel", longDescription: null, duration: "6 horas", imageUrl: "https://cdn.example.test/unlocktool.png",
-  priceCents: 2900, costCents: 1000, featured: false, sortOrder: 0, status: ProductStatus.PUBLISHED, available: true, categoryId: category.id, brandId: null,
+  priceCents: 2900, priceVisibility: PriceVisibility.PUBLIC, normalPriceCents: null, premiumPriceCents: null, costCents: 1000, pricingMode: PricingMode.MANUAL, manualPriceCents: 2900, suggestedPriceCents: null, pricingStatus: PricingStatus.MANUAL, pricingComputedAt: null, featured: false, sortOrder: 0, status: ProductStatus.PUBLISHED, available: true, categoryId: category.id, brandId: null,
   createdAt: new Date("2026-09-10T10:00:00Z"), updatedAt: new Date("2026-09-10T10:00:00Z"),
 };
 
@@ -17,7 +17,7 @@ describe("DTO mappers", () => {
     expect(productDto({ ...product, category })).toEqual({
       id: "product-1", slug: "unlocktool-6h", name: "UnlockTool", description: "Aluguel de teste",
       type: ProductType.RENTAL, deliveryType: DeliveryType.AUTOMATIC, deliveryEstimate: "imediato", longDescription: null, duration: "6 horas", imageUrl: "https://cdn.example.test/unlocktool.png",
-      priceCents: 2900, status: ProductStatus.PUBLISHED, available: true, category: categoryDto, brand: null, checkoutFields: [], variants: [],
+      priceCents: 2900, priceVisible: true, priceTier: null, status: ProductStatus.PUBLISHED, available: true, category: categoryDto, brand: null, checkoutFields: [], variants: [],
     });
     expect(productDto({ ...product, category })).not.toHaveProperty("costCents");
     expect(productDto({ ...product, category })).not.toHaveProperty("manualPriceCents");
@@ -43,6 +43,17 @@ describe("DTO mappers", () => {
     expect(dto.variants).toEqual([{ id: "variant-1", name: "A12", priceCents: 5790, checkoutFields: [expect.objectContaining({ key: "ecid", label: "ECID" })] }]);
     expect(dto.priceCents).toBe(5790);
     expect(JSON.stringify(dto)).not.toMatch(/providerCostCents|contractSignature|heartunlocks/);
+  });
+
+  it("remove preços protegidos do DTO público e libera somente para o nível autenticado", () => {
+    const protectedProduct = { ...product, category, priceVisibility: PriceVisibility.LOGIN_REQUIRED, normalPriceCents: 2000, premiumPriceCents: 1000 };
+    const visitor = productDto(protectedProduct);
+    expect(visitor.priceVisible).toBe(false);
+    expect(visitor.priceCents).toBeNull();
+    expect(JSON.stringify(visitor)).not.toContain("2000");
+    expect(JSON.stringify(visitor)).not.toContain("1000");
+    expect(productDto(protectedProduct, { customerTier: "NORMAL" }).priceCents).toBe(2000);
+    expect(productDto(protectedProduct, { customerTier: "PREMIUM" }).priceCents).toBe(1000);
   });
 
   it("mantém itens, pagamento, fulfillment e entrega no OrderDTO", () => {

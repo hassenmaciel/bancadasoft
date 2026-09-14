@@ -11,6 +11,7 @@ import type {
 import type { DynamicField } from "./providers/automation";
 import { publicVariantFields } from "./product-variants";
 import { isProductionProviderCode } from "./providers/selection";
+import { resolveTierPrice, resolveVisiblePrice, type PriceViewer } from "./commercial-pricing";
 
 export type CategoryDTO = Pick<Category, "id" | "slug" | "name">;
 export type BrandDTO = Pick<Brand, "id" | "slug" | "name">;
@@ -27,10 +28,12 @@ export type ProductDTO = Pick<
   | "deliveryEstimate"
   | "duration"
   | "imageUrl"
-  | "priceCents"
   | "status"
   | "available"
 > & {
+  priceCents: number | null;
+  priceVisible: boolean;
+  priceTier: "NORMAL" | "PREMIUM" | null;
   category: CategoryDTO | null;
   brand: BrandDTO | null;
   checkoutFields: DynamicField[];
@@ -40,7 +43,7 @@ export type ProductDTO = Pick<
 export type ProductVariantDTO = {
   id: string;
   name: string;
-  priceCents: number;
+  priceCents: number | null;
   checkoutFields: DynamicField[];
 };
 
@@ -72,7 +75,7 @@ export type OrderDTO = Pick<Order, "id" | "publicToken" | "status" | "totalCents
   fulfillment: FulfillmentDTO | null;
   events: Array<{ status: string; note: string; createdAt: Date }>;
 };
-export type UserSessionDTO = Pick<User, "id" | "email" | "name" | "role">;
+export type UserSessionDTO = Pick<User, "id" | "email" | "name" | "role" | "customerTier">;
 
 type ProductWithCategory = Product & {
   category?: Category | null;
@@ -84,6 +87,8 @@ type ProductWithCategory = Product & {
     active: boolean;
     sortOrder: number;
     priceCents: number | null;
+    normalPriceCents?: number | null;
+    premiumPriceCents?: number | null;
     publicationBlocked: boolean;
     providerProduct: {
       active: boolean;
@@ -106,12 +111,13 @@ export const normalizeQrCodeImage = (encodedImage: string | null | undefined) =>
   return encodedImage.startsWith("data:image/") ? encodedImage : `data:image/png;base64,${encodedImage}`;
 };
 
-export const productDto = (product: ProductWithCategory): ProductDTO => {
+export const productDto = (product: ProductWithCategory, viewer: PriceViewer = null): ProductDTO => {
+  const productPrice = resolveVisiblePrice(product, viewer);
   const variants = (product.variants ?? [])
     .filter((variant) =>
       variant.active &&
       !variant.publicationBlocked &&
-      Boolean(variant.priceCents && variant.priceCents > 0) &&
+      Boolean(resolveTierPrice(variant, viewer)) &&
       variant.providerProduct.active &&
       variant.providerProduct.mode === "REAL" &&
       variant.providerProduct.provider.active &&
@@ -122,10 +128,10 @@ export const productDto = (product: ProductWithCategory): ProductDTO => {
     .map((variant) => ({
       id: variant.id,
       name: variant.name,
-      priceCents: variant.priceCents!,
+      priceCents: productPrice.visible ? resolveTierPrice(variant, viewer) : null,
       checkoutFields: publicVariantFields(variant.providerProduct.fieldSchema),
     }));
-  const variantPrices = variants.map((variant) => variant.priceCents);
+  const variantPrices = variants.map((variant) => variant.priceCents).filter((price): price is number => price !== null);
   return {
   id: product.id,
   slug: product.slug,
@@ -137,7 +143,9 @@ export const productDto = (product: ProductWithCategory): ProductDTO => {
   deliveryEstimate: product.deliveryEstimate,
   duration: product.duration,
   imageUrl: product.imageUrl,
-  priceCents: variantPrices.length ? Math.min(...variantPrices) : product.priceCents,
+  priceCents: productPrice.visible ? (variantPrices.length ? Math.min(...variantPrices) : productPrice.priceCents) : null,
+  priceVisible: productPrice.visible,
+  priceTier: productPrice.tier,
   status: product.status,
   available: product.available,
   category: product.category
