@@ -86,7 +86,7 @@ async function main() {
       description: item.description,
       longDescription: null,
       type: item.type,
-      deliveryType: item.slug === "unlocktool-6h" ? DeliveryType.AUTOMATIC : DeliveryType.ON_REQUEST,
+      deliveryType: ["unlocktool-6h", "adclean"].includes(item.slug) ? DeliveryType.AUTOMATIC : DeliveryType.ON_REQUEST,
       deliveryEstimate: item.slug === "unlocktool-6h" ? "Liberação automática após o pagamento" : "Prazo informado após análise",
       duration: item.duration ?? null,
       imageUrl: null,
@@ -128,6 +128,11 @@ async function main() {
     update: { name: "Sandbox BancadaSoft", active: false, integrationStatus: ProviderIntegrationStatus.NOT_CONNECTED },
     create: { name: "Sandbox BancadaSoft", code: "mock-sandbox", active: false, integrationStatus: ProviderIntegrationStatus.NOT_CONNECTED },
   });
+  const adclean = await prisma.provider.upsert({
+    where: { code: "adclean" },
+    update: { name: "AdClean", apiBaseUrl: "https://repair-adclean-licenca.adclean-ha100.workers.dev" },
+    create: { name: "AdClean", code: "adclean", apiBaseUrl: "https://repair-adclean-licenca.adclean-ha100.workers.dev", active: false, integrationStatus: ProviderIntegrationStatus.NOT_CONNECTED },
+  });
   const unlockTool = persistedProducts.get("unlocktool-6h");
   await prisma.providerProduct.upsert({
     where: { providerId_externalProductId: { providerId: heartUnlocks.id, externalProductId: "2194" } },
@@ -138,6 +143,12 @@ async function main() {
     where: { providerId_externalProductId: { providerId: sandbox.id, externalProductId: "unlocktool-sandbox" } },
     update: { productId: null, active: false, mode: "TEST" },
     create: { providerId: sandbox.id, productId: null, externalProductId: "unlocktool-sandbox", label: "UnlockTool Sandbox", providerCostCents: 1000, currency: "BRL", active: false, mode: "TEST" },
+  });
+  const adcleanProduct = persistedProducts.get("adclean");
+  await prisma.providerProduct.upsert({
+    where: { providerId_externalProductId: { providerId: adclean.id, externalProductId: "ticket-168h" } },
+    update: { productId: adcleanProduct.id, label: "Repair AdClean — Ticket de Acesso", expectedDeliveryType: "CODE" },
+    create: { providerId: adclean.id, productId: adcleanProduct.id, externalProductId: "ticket-168h", label: "Repair AdClean — Ticket de Acesso", currency: "BRL", active: true, mode: "REAL", automationClass: "AUTO_FIELD_BASED", technicalEligibility: "READY", homologationStatus: "CLASS_VALIDATED", expectedDeliveryType: "CODE", metadata: { durationHours: 168, model: "DEVICE_TICKET_V2" } },
   });
 }
 

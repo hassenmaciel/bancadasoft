@@ -8,9 +8,11 @@ import {
 import { prisma } from "@/lib/prisma";
 import { resolvePurchasedProviderProduct } from "@/lib/product-variants";
 import { resolveProviderAdapter } from "@/lib/providers/registry";
-import { ProviderOrderUncertainError } from "@/lib/providers/heartunlocks";
+import { ProviderOrderUncertainError } from "@/lib/providers/types";
+import { adcleanConfigured } from "@/lib/providers/adclean";
 import { sendDeliveryEmail } from "@/lib/notifications/delivery-email";
 import {
+  buildProviderExecutionPayload,
   MAX_PROVIDER_ATTEMPTS,
   providerOutcome,
   validateProviderExecution,
@@ -74,8 +76,10 @@ export async function executeFulfillment(
       hasProviderProduct: !!selected,
       providerActive: !!selected?.provider.active,
       providerConnected:
-        selected?.provider.integrationStatus ===
-        ProviderIntegrationStatus.CONNECTED,
+        selected?.provider.code === "adclean"
+          ? adcleanConfigured()
+          : selected?.provider.integrationStatus ===
+            ProviderIntegrationStatus.CONNECTED,
       providerOrderStatus: existing?.status,
       attempts: existing?.attempts ?? 0,
       hasDelivery: !!order.fulfillment?.delivery,
@@ -163,11 +167,11 @@ export async function executeFulfillment(
     const result = await adapter.createOrder({
       providerProductId: selected.externalProductId,
       reference: prepared.id,
-      payload: {
+      payload: buildProviderExecutionPayload(
         orderId,
-        Quantity: 1,
-        fields: (order.items[0]?.providerFields as Record<string, string | number> | null) ?? {},
-      },
+        order.items[0]?.unitPriceCents,
+        (order.items[0]?.providerFields as Record<string, string | number> | null) ?? {},
+      ),
     });
     const outcome = providerOutcome(result.status, result.delivery);
     if (outcome.deliver) {

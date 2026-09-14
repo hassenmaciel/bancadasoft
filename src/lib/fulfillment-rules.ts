@@ -6,3 +6,18 @@ export function validateProviderExecution(state:ExecutionSnapshot,retry=false){
   return null;
 }
 export function providerOutcome(status:"COMPLETED"|"PROCESSING"|"FAILED",delivery?:Record<string,unknown>){if(status==="COMPLETED"&&!delivery)return{fulfillment:"FAILED",deliver:false};return{fulfillment:status==="COMPLETED"?"FULFILLED":status,deliver:status==="COMPLETED"};}
+
+export function buildProviderExecutionPayload(
+  orderId: string,
+  paidAmountCents: number | undefined,
+  fields: Record<string, string | number>,
+) {
+  if (!orderId.trim()) throw new Error("ORDER_ID_REQUIRED");
+  if (
+    typeof paidAmountCents !== "number" ||
+    !Number.isInteger(paidAmountCents) ||
+    paidAmountCents <= 0
+  )
+    throw new Error("PAID_AMOUNT_REQUIRED");
+  return { orderId, paidAmountCents, Quantity: 1, fields };
+}

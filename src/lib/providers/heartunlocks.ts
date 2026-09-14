@@ -1,13 +1,11 @@
 import type { ProviderAdapter, ProviderBalance, ProviderCatalogItem, ProviderHealth, ProviderOrderInput, ProviderOrderResult } from "./types";
-import { ProviderNotConnectedError } from "./types";
+import { ProviderNotConnectedError, ProviderOrderUncertainError } from "./types";
 import { parseHeartUnlocksCatalogResponse } from "./heartunlocks-catalog";
 
 export const HEARTUNLOCKS_CODE = "heartunlocks";
 export const HEARTUNLOCKS_API_BASE_URL = "https://api.heartunlocks.com";
 
-export class ProviderOrderUncertainError extends Error {
-  constructor(){super("PROVIDER_RESULT_UNCERTAIN");this.name="ProviderOrderUncertainError"}
-}
+export { ProviderOrderUncertainError } from "./types";
 
 type GatewayFetcher=(input:string,init?:RequestInit)=>Promise<Response>;
 export class HeartUnlocksProviderAdapter implements ProviderAdapter {
