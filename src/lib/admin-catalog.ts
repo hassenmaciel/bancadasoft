@@ -5,6 +5,22 @@ import type { PricingResult } from "./pricing";
 
 const optionalUrl = z.union([z.string().url("Informe uma URL válida."), z.literal("")]).transform((value) => value || null);
 
+const optionalHttpUrl = z
+  .union([
+    z
+      .string()
+      .trim()
+      .refine((value) => {
+        try {
+          return ["http:", "https:"].includes(new URL(value).protocol);
+        } catch {
+          return false;
+        }
+      }, "Informe uma URL http:// ou https:// válida."),
+    z.literal(""),
+  ])
+  .transform((value) => value || null);
+
 export const productInputSchema = z.object({
   name: z.string().trim().min(1, "Nome é obrigatório.").max(120),
   slug: z.string().trim().min(1, "Slug é obrigatório.").max(140).regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, "Use letras minúsculas, números e hífens."),
@@ -27,6 +43,8 @@ export const productInputSchema = z.object({
   categoryId: z.string().trim().min(1, "Categoria é obrigatória."),
   brandId: z.string().trim().nullable().optional(),
   imageUrl: optionalUrl.nullable().optional(),
+  downloadUrl: optionalHttpUrl.nullable().optional(),
+  downloadLabel: z.string().trim().max(60).nullable().optional().transform((value) => value || null),
   status: z.nativeEnum(ProductStatus),
   available: z.boolean().default(true),
 }).transform((value) => ({
@@ -85,7 +103,7 @@ export type AdminVariantDTO = {
   };
 };
 
-export type AdminProductDTO = Pick<Product, "id" | "slug" | "name" | "description" | "longDescription" | "type" | "deliveryType" | "deliveryEstimate" | "searchTerms" | "duration" | "priceCents" | "priceVisibility" | "normalPriceCents" | "premiumPriceCents" | "costCents" | "pricingMode" | "manualPriceCents" | "suggestedPriceCents" | "pricingStatus" | "featured" | "sortOrder" | "status" | "available" | "imageUrl"> & {
+export type AdminProductDTO = Pick<Product, "id" | "slug" | "name" | "description" | "longDescription" | "type" | "deliveryType" | "deliveryEstimate" | "searchTerms" | "duration" | "priceCents" | "priceVisibility" | "normalPriceCents" | "premiumPriceCents" | "costCents" | "pricingMode" | "manualPriceCents" | "suggestedPriceCents" | "pricingStatus" | "featured" | "sortOrder" | "status" | "available" | "imageUrl" | "downloadUrl" | "downloadLabel"> & {
   category: Pick<Category, "id" | "name" | "slug">;
   brand: Pick<Brand, "id" | "name" | "slug"> | null;
   updatedAt: string;
@@ -112,6 +130,7 @@ export const adminProductDto = (product: AdminProductSource, pricing: PricingRes
   pricingComputedAt: product.pricingComputedAt?.toISOString() ?? null, pricing,
   featured: product.featured, sortOrder: product.sortOrder,
   status: product.status, available: product.available, imageUrl: product.imageUrl,
+  downloadUrl: product.downloadUrl, downloadLabel: product.downloadLabel,
   category: { id: product.category.id, name: product.category.name, slug: product.category.slug },
   brand: product.brand ? { id: product.brand.id, name: product.brand.name, slug: product.brand.slug } : null,
   updatedAt: product.updatedAt.toISOString(),

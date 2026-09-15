@@ -2,13 +2,18 @@ import type { OrderDTO } from "./dto";
 
 export const ORDER_POLL_INTERVAL_MS = 3000;
 
-const finalOrderStatuses = new Set(["DELIVERED", "FAILED", "CANCELLED"]);
+export const TERMINAL_ORDER_STATUSES = new Set(["DELIVERED", "FAILED", "CANCELLED"]);
 const finalPaymentStatuses = new Set(["EXPIRED", "FAILED", "REFUNDED"]);
 
 export function shouldPollOrder(order: OrderDTO) {
-  if (finalOrderStatuses.has(order.status)) return false;
+  if (TERMINAL_ORDER_STATUSES.has(order.status)) return false;
   return Boolean(order.payment && !finalPaymentStatuses.has(order.payment.status));
 }
+
+// Grupo A (spec PARTE 1): PENDING_PAYMENT / PAID / PROCESSING podem auto-restaurar
+// o checkout na página do produto. Grupo B (terminal, ou pagamento expirado/falho/
+// reembolsado) não pode — mesma regra usada para decidir se o polling continua.
+export const isActiveCheckoutOrder = (order: OrderDTO) => shouldPollOrder(order);
 
 type PollerOptions = {
   initialOrder: OrderDTO;

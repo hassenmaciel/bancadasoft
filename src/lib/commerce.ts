@@ -32,6 +32,7 @@ import {
   normalizeWhatsapp,
 } from "@/lib/checkout-validation";
 import { assertCheckoutPrice } from "@/lib/commercial-pricing";
+import { TERMINAL_ORDER_STATUSES } from "@/lib/order-polling";
 
 export const catalogue = () =>
   prisma.product.findMany({
@@ -65,7 +66,10 @@ export async function createOrder(input: {
   const recovered = await prisma.order.findUnique({
     where: { deliveryTokenHash: access.tokenHash },
   });
-  if (recovered) {
+  // Um pedido TERMINAL (DELIVERED/FAILED/CANCELLED) nunca deve bloquear uma nova
+  // compra: apenas pedidos ainda ativos reutilizam o token para evitar cobrança
+  // duplicada (ver PARTE 1/7 do checklist de recovery).
+  if (recovered && !TERMINAL_ORDER_STATUSES.has(recovered.status)) {
     await reconcilePendingPixPayment(recovered.id);
     return {
       order: await getOrder(recovered.id),

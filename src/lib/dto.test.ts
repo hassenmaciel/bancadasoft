@@ -7,7 +7,7 @@ const category: Category = { id: "category-1", slug: "ferramentas", name: "Ferra
 const categoryDto = { id: category.id, slug: category.slug, name: category.name };
 const product: Product = {
   id: "product-1", slug: "unlocktool-6h", name: "UnlockTool", description: "Aluguel de teste",
-  type: ProductType.RENTAL, deliveryType: DeliveryType.AUTOMATIC, deliveryEstimate: "imediato", searchTerms: "unlocktool aluguel", longDescription: null, duration: "6 horas", imageUrl: "https://cdn.example.test/unlocktool.png",
+  type: ProductType.RENTAL, deliveryType: DeliveryType.AUTOMATIC, deliveryEstimate: "imediato", searchTerms: "unlocktool aluguel", longDescription: null, duration: "6 horas", imageUrl: "https://cdn.example.test/unlocktool.png", downloadUrl: null, downloadLabel: null,
   priceCents: 2900, priceVisibility: PriceVisibility.PUBLIC, normalPriceCents: null, premiumPriceCents: null, costCents: 1000, pricingMode: PricingMode.MANUAL, manualPriceCents: 2900, suggestedPriceCents: null, pricingStatus: PricingStatus.MANUAL, pricingComputedAt: null, featured: false, sortOrder: 0, status: ProductStatus.PUBLISHED, available: true, categoryId: category.id, brandId: null,
   createdAt: new Date("2026-09-10T10:00:00Z"), updatedAt: new Date("2026-09-10T10:00:00Z"),
 };
@@ -16,7 +16,7 @@ describe("DTO mappers", () => {
   it("mapeia os campos públicos, a categoria e a imagem do produto", () => {
     expect(productDto({ ...product, category })).toEqual({
       id: "product-1", slug: "unlocktool-6h", name: "UnlockTool", description: "Aluguel de teste",
-      type: ProductType.RENTAL, deliveryType: DeliveryType.AUTOMATIC, deliveryEstimate: "imediato", longDescription: null, duration: "6 horas", imageUrl: "https://cdn.example.test/unlocktool.png",
+      type: ProductType.RENTAL, deliveryType: DeliveryType.AUTOMATIC, deliveryEstimate: "imediato", longDescription: null, duration: "6 horas", imageUrl: "https://cdn.example.test/unlocktool.png", downloadUrl: null, downloadLabel: null,
       priceCents: 2900, priceVisible: true, priceTier: null, status: ProductStatus.PUBLISHED, available: true, category: categoryDto, brand: null, checkoutFields: [], variants: [],
     });
     expect(productDto({ ...product, category })).not.toHaveProperty("costCents");

@@ -44,6 +44,7 @@ export default function PublicHeader({ initialQuery = "" }: { initialQuery?: str
         <div className="account">
           {user ? <><Link href="/meus-pedidos">Olá, {user.name.split(" ")[0]}</Link><button type="button" onClick={signOut}>Sair</button></> : <Link href="/login">Entrar</Link>}
           <Link href="/meus-pedidos">Meus pedidos</Link>
+          {user?.role === "ADMIN" && <Link href="/admin">Painel Admin</Link>}
         </div>
       </div>
       <nav className="nav-bar" aria-label="Navegação principal">

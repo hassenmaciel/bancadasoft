@@ -202,6 +202,8 @@ model Product {
   searchTerms         String            @default("")
   duration            String?
   imageUrl            String?
+  downloadUrl         String?
+  downloadLabel       String?
   priceCents          Int
   priceVisibility     PriceVisibility   @default(PUBLIC)
   normalPriceCents    Int?

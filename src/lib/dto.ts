@@ -28,6 +28,8 @@ export type ProductDTO = Pick<
   | "deliveryEstimate"
   | "duration"
   | "imageUrl"
+  | "downloadUrl"
+  | "downloadLabel"
   | "status"
   | "available"
 > & {
@@ -143,6 +145,8 @@ export const productDto = (product: ProductWithCategory, viewer: PriceViewer = n
   deliveryEstimate: product.deliveryEstimate,
   duration: product.duration,
   imageUrl: product.imageUrl,
+  downloadUrl: product.downloadUrl,
+  downloadLabel: product.downloadLabel,
   priceCents: productPrice.visible ? (variantPrices.length ? Math.min(...variantPrices) : productPrice.priceCents) : null,
   priceVisible: productPrice.visible,
   priceTier: productPrice.tier,

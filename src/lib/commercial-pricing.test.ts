@@ -4,7 +4,9 @@ import { assertCheckoutPrice, resolveTierPrice, resolveVisiblePrice } from "./co
 const protectedProduct = { priceCents: 2990, normalPriceCents: 2000, premiumPriceCents: 1000, priceVisibility: "LOGIN_REQUIRED" as const };
 
 describe("preços comerciais por nível", () => {
-  it("mantém preço público para visitante", () => expect(resolveVisiblePrice({ ...protectedProduct, priceVisibility: "PUBLIC" }, null)).toMatchObject({ visible: true, priceCents: 2000 }));
+  it("mantém preço público (distinto do técnico) para visitante", () => expect(resolveVisiblePrice({ ...protectedProduct, priceVisibility: "PUBLIC" }, null)).toMatchObject({ visible: true, priceCents: 2990 }));
+  it("faz fallback para o preço público quando o técnico normal não está configurado", () => expect(resolveTierPrice({ ...protectedProduct, normalPriceCents: null }, { customerTier: "NORMAL" })).toBe(2990));
+  it("não exibe preço público quando ele não está configurado", () => expect(resolveTierPrice({ priceCents: null, normalPriceCents: 2000, premiumPriceCents: 1000 }, null)).toBeNull());
   it("não expõe preço protegido para visitante", () => expect(resolveVisiblePrice(protectedProduct, null)).toEqual({ visible: false, priceCents: null, tier: null }));
   it("entrega preço normal ao técnico normal", () => expect(resolveVisiblePrice(protectedProduct, { customerTier: "NORMAL" })).toMatchObject({ visible: true, priceCents: 2000, tier: "NORMAL" }));
   it("entrega preço premium configurado", () => expect(resolveVisiblePrice(protectedProduct, { customerTier: "PREMIUM" })).toMatchObject({ visible: true, priceCents: 1000, tier: "PREMIUM" }));

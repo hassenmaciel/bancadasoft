@@ -2,9 +2,9 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { FormEvent, useEffect, useRef, useState } from "react";
+import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import type { DeliveryDTO, OrderDTO, ProductDTO } from "@/lib/dto";
-import { createOrderPoller } from "@/lib/order-polling";
+import { createOrderPoller, isActiveCheckoutOrder } from "@/lib/order-polling";
 import CredentialDelivery from "@/components/credential-delivery";
 import {
   checkoutErrorMessage,
@@ -30,7 +30,12 @@ export default function CheckoutPanel({ product }: { product: ProductDTO }) {
   const [delivery, setDelivery] = useState<DeliveryDTO | null>(null);
   const [variantId, setVariantId] = useState(product.variants.length === 1 ? product.variants[0].id : "");
   const submitGuard = useRef(createCheckoutSubmissionGuard());
+  const modalRef = useRef<HTMLDialogElement | null>(null);
   const storageKey = `bancadasoft:checkout:${product.id}`;
+  const clearActiveCheckout = useCallback(
+    () => localStorage.removeItem(storageKey),
+    [storageKey],
+  );
   const paid = order?.payment?.status === "PAID";
   const delivered = order?.status === "DELIVERED" && !!delivery;
   const failed = order?.status === "FAILED";
@@ -78,6 +83,13 @@ export default function CheckoutPanel({ product }: { product: ProductDTO }) {
             localStorage.removeItem(storageKey);
           return;
         }
+        // Fonte da verdade é o estado do pedido no banco: um pedido terminal
+        // (DELIVERED/FAILED/CANCELLED) nunca reabre o checkout automaticamente
+        // nesta página — apenas o recovery explícito (link/e-mail) faz isso.
+        if (!isActiveCheckoutOrder(payload.data)) {
+          clearActiveCheckout();
+          return;
+        }
         const deliveryAccessToken =
           ref.deliveryAccessToken ?? payload.deliveryAccessToken;
         setOrder(payload.data);
@@ -95,8 +107,6 @@ export default function CheckoutPanel({ product }: { product: ProductDTO }) {
             `bancadasoft:delivery:${payload.data.id}`,
             deliveryAccessToken,
           );
-        if (payload.data.status === "DELIVERED")
-          await loadDelivery(payload.data.id);
       } catch {
         if (active) setOpen(true);
       }
@@ -105,7 +115,7 @@ export default function CheckoutPanel({ product }: { product: ProductDTO }) {
     return () => {
       active = false;
     };
-  }, [storageKey]);
+  }, [storageKey, clearActiveCheckout]);
   useEffect(() => {
     if (!order) return;
     const poller = createOrderPoller({
@@ -125,11 +135,15 @@ export default function CheckoutPanel({ product }: { product: ProductDTO }) {
       onUpdate: (updated) => {
         setOrder(updated);
         if (updated.status === "DELIVERED") void loadDelivery(updated.id);
+        // Assim que o fulfillment chega a um estado terminal, o pedido deixa de
+        // ser o "checkout ativo" deste produto — a tela aberta continua mostrando
+        // o resultado normalmente, mas uma nova visita à página não deve reabri-la.
+        if (!isActiveCheckoutOrder(updated)) clearActiveCheckout();
       },
     });
     poller.start();
     return poller.stop;
-  }, [order]);
+  }, [order, clearActiveCheckout]);
 
   async function checkout(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -197,6 +211,14 @@ export default function CheckoutPanel({ product }: { product: ProductDTO }) {
       setSubmitting(false);
     }
   }
+  useEffect(() => {
+    if (!open) return;
+    // Garante que o topo do checkout (primeiro campo) fique visível ao abrir,
+    // mesmo com a página rolada — necessário porque o modal usa position:absolute
+    // no mobile (para evitar bugs de teclado do Safari com position:fixed) e por
+    // isso herda a posição de rolagem do documento em vez do viewport.
+    modalRef.current?.scrollIntoView({ behavior: "auto", block: "start" });
+  }, [open]);
   async function copyPix() {
     if (!order?.payment?.pixPayload) return;
     await navigator.clipboard.writeText(order.payment.pixPayload);
@@ -205,6 +227,10 @@ export default function CheckoutPanel({ product }: { product: ProductDTO }) {
   }
   function close() {
     if (submitting) return;
+    // X fecha apenas a experiência atual. Se o pedido já é terminal, também limpa
+    // a referência de "checkout ativo" para liberar uma nova compra deste produto;
+    // pedidos PENDING_PAYMENT/PROCESSING preservam a referência para recovery.
+    if (order && !isActiveCheckoutOrder(order)) clearActiveCheckout();
     setOpen(false);
     setOrder(null);
     setNotice("");
@@ -223,6 +249,7 @@ export default function CheckoutPanel({ product }: { product: ProductDTO }) {
       </button>
       {open && (
         <dialog
+          ref={modalRef}
           className="checkout-modal"
           open
           aria-labelledby="checkout-title"

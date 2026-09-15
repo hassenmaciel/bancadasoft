@@ -30,7 +30,7 @@ export async function POST(request: Request) {
     const input = {
       ...parsed.data,
       manualPriceCents: parsed.data.pricingMode === "MANUAL" ? parsed.data.manualPriceCents : null,
-      priceCents: parsed.data.pricingMode === "MANUAL" ? parsed.data.manualPriceCents! : parsed.data.priceCents,
+      priceCents: parsed.data.priceCents,
     };
     const created = await prisma.product.create({ data: input, include });
     const pricing = calculateProductPricing(created, context);

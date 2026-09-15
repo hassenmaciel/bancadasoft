@@ -13,11 +13,15 @@ const positive = (value: number | null | undefined) =>
   typeof value === "number" && Number.isInteger(value) && value > 0 ? value : null;
 
 export function resolveTierPrice(source: TieredPriceSource, viewer: PriceViewer) {
-  const base = positive(source.normalPriceCents) ?? positive(source.priceCents);
-  if (!viewer) return base;
+  const publicPrice = positive(source.priceCents);
+  if (!viewer) return publicPrice;
   if (viewer.customerTier === "PREMIUM")
-    return positive(source.premiumPriceCents) ?? base;
-  return base;
+    return (
+      positive(source.premiumPriceCents) ??
+      positive(source.normalPriceCents) ??
+      publicPrice
+    );
+  return positive(source.normalPriceCents) ?? publicPrice;
 }
 
 export function resolveVisiblePrice(

@@ -50,7 +50,9 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
         {dto.duration&&<div className="detail-line"><b>Modalidade</b><span>{dto.duration}</span></div>}
         <div className="detail-line"><b>Entrega</b><span>{dto.deliveryType==="ON_REQUEST"?"Sob consulta":dto.deliveryType==="AUTOMATIC"?"Automática":dto.deliveryType==="IMMEDIATE"?"Imediata":"Manual"}{dto.deliveryEstimate?` · ${dto.deliveryEstimate}`:""}</span></div>
         <div className="detail-availability">✓ Disponível para compra</div>{money ? <strong className="detail-price">{dto.variants.length ? "A partir de " : ""}{dto.priceTier === "PREMIUM" ? "Preço Premium · " : ""}{money}</strong> : <strong className="detail-price">Preço exclusivo para cadastrados</strong>}
-        {dto.priceVisible && money ? <CheckoutPanel product={dto}/> : <div className="login-price-gate"><p>Entre ou cadastre-se para ver o preço e contratar este serviço.</p><Link className="product-cta" href={`/login?next=${encodeURIComponent(`/produto/${dto.slug}`)}`}>Entrar</Link><Link href={`/cadastro?next=${encodeURIComponent(`/produto/${dto.slug}`)}`}>Criar conta</Link></div>}<small className="checkout-note">Pagamento processado em ambiente seguro. Confira as condições exibidas antes de concluir.</small>
+        {dto.priceVisible && money ? <CheckoutPanel product={dto}/> : <div className="login-price-gate"><p>Entre ou cadastre-se para ver o preço e contratar este serviço.</p><Link className="product-cta" href={`/login?next=${encodeURIComponent(`/produto/${dto.slug}`)}`}>Entrar</Link><Link href={`/cadastro?next=${encodeURIComponent(`/produto/${dto.slug}`)}`}>Criar conta</Link></div>}
+        {dto.downloadUrl && <a className="product-cta product-download-link" href={dto.downloadUrl} target="_blank" rel="noopener noreferrer">{dto.downloadLabel || "Baixar ferramenta"}</a>}
+        <small className="checkout-note">Pagamento processado em ambiente seguro. Confira as condições exibidas antes de concluir.</small>
       </div>
     </div>
   </section><PublicFooter/></main>;

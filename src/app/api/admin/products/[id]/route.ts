@@ -57,7 +57,7 @@ export async function PUT(request: Request, context: Context) {
     const input = {
       ...parsed.data,
       manualPriceCents: parsed.data.pricingMode === "MANUAL" ? parsed.data.manualPriceCents : null,
-      priceCents: parsed.data.pricingMode === "MANUAL" ? parsed.data.manualPriceCents! : previous.priceCents,
+      priceCents: parsed.data.priceCents,
     };
     const intermediate = await prisma.product.update({
       where: { id },

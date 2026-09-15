@@ -48,6 +48,7 @@ export default function ProductForm({
     [slug, setSlug] = useState(product?.slug ?? ""),
     [pricingMode, setPricingMode] = useState(product?.pricingMode ?? "MANUAL"),
     [price, setPrice] = useState(product ? (product.manualPriceCents ?? product.priceCents) / 100 : 0),
+    [publicPrice, setPublicPrice] = useState(product ? product.priceCents / 100 : 0),
     [normalPrice, setNormalPrice] = useState(product ? (product.normalPriceCents ?? product.priceCents) / 100 : 0),
     [premiumPrice, setPremiumPrice] = useState(product?.premiumPriceCents == null ? "" : String(product.premiumPriceCents / 100)),
     [cost, setCost] = useState(
@@ -70,7 +71,7 @@ export default function ProductForm({
       deliveryEstimate: f.get("deliveryEstimate") || null,
       searchTerms: f.get("searchTerms") || "",
       duration: f.get("duration") || null,
-      priceCents: product?.priceCents ?? Math.round(price * 100),
+      priceCents: Math.round(publicPrice * 100),
       priceVisibility: f.get("priceVisibility"),
       normalPriceCents: Math.round(normalPrice * 100),
       premiumPriceCents: premiumPrice === "" ? null : Math.round(Number(premiumPrice) * 100),
@@ -80,6 +81,8 @@ export default function ProductForm({
       categoryId: f.get("categoryId"),
       brandId: f.get("brandId") || null,
       imageUrl: image || null,
+      downloadUrl: f.get("downloadUrl") || null,
+      downloadLabel: f.get("downloadLabel") || null,
       status: f.get("status"),
       available: f.get("available") === "on",
       featured: f.get("featured") === "on",
@@ -289,9 +292,12 @@ export default function ProductForm({
         <fieldset>
           <legend>Precificação BancadaSoft</legend>
           <div className="form-grid">
-            <label>Visibilidade do preço<select name="priceVisibility" defaultValue={product?.priceVisibility ?? "PUBLIC"}><option value="PUBLIC">Público</option><option value="LOGIN_REQUIRED">Somente cadastrados</option></select></label>
-            <label>Preço Técnico Normal (R$)<input type="number" min="0.01" step=".01" value={normalPrice} onChange={(event)=>setNormalPrice(Number(event.target.value))}/></label>
-            <label>Preço Técnico Premium (R$)<input type="number" min="0.01" step=".01" value={premiumPrice} placeholder="Usa preço Normal" onChange={(event)=>setPremiumPrice(event.target.value)}/></label>
+            <label>Preço Público (R$)<input type="number" min="0.01" step=".01" value={publicPrice} onChange={(event)=>setPublicPrice(Number(event.target.value))} required/></label>
+            <label>Preço Técnico (R$)<input type="number" min="0.01" step=".01" value={normalPrice} placeholder="Usa preço Público" onChange={(event)=>setNormalPrice(Number(event.target.value))}/></label>
+            <label>Preço Premium (R$)<input type="number" min="0.01" step=".01" value={premiumPrice} placeholder="Usa preço Técnico" onChange={(event)=>setPremiumPrice(event.target.value)}/></label>
+          </div>
+          <div className="form-grid">
+            <label>Exibir preço publicamente<select name="priceVisibility" defaultValue={product?.priceVisibility ?? "PUBLIC"}><option value="PUBLIC">Sim</option><option value="LOGIN_REQUIRED">Não · somente cadastrados</option></select></label>
           </div>
           <div className="form-grid">
             <label>
@@ -380,6 +386,33 @@ export default function ProductForm({
               Destaque editorial
             </label>
           </div>
+        </fieldset>
+        <fieldset>
+          <legend>Download</legend>
+          <div className="form-grid">
+            <label>
+              Link oficial para download
+              <input
+                name="downloadUrl"
+                type="url"
+                placeholder="https://..."
+                defaultValue={product?.downloadUrl ?? ""}
+              />
+            </label>
+            <label>
+              Texto do botão
+              <input
+                name="downloadLabel"
+                placeholder="Baixar ferramenta"
+                maxLength={60}
+                defaultValue={product?.downloadLabel ?? ""}
+              />
+            </label>
+          </div>
+          <small className="pricing-help">
+            Link público apenas para baixar o instalador/software. Não faz parte
+            da entrega comercial e não depende de pagamento ou fulfillment.
+          </small>
         </fieldset>
         <fieldset>
           <legend>Imagem</legend>
