@@ -3,6 +3,8 @@ import { notFound } from "next/navigation";
 import { getAdminOrder } from "@/lib/admin-orders";
 import RetryButton from "./retry-button";
 import ReconcilePixButton from "./reconcile-pix-button";
+import RevealDelivery from "./reveal-delivery";
+import ResendAccessButton from "./resend-access-button";
 
 export const dynamic = "force-dynamic";
 const money = (value: number, currency = "BRL") =>
@@ -14,8 +16,6 @@ const date = (value: string) =>
     dateStyle: "medium",
     timeStyle: "short",
   }).format(new Date(value));
-const deliveryText = (delivery: unknown) =>
-  delivery ? JSON.stringify(delivery, null, 2) : "Nenhuma entrega disponível.";
 
 export default async function OrderDetailPage({
   params,
@@ -62,8 +62,8 @@ export default async function OrderDetailPage({
               <dd>{money(order.totalCents)}</dd>
             </div>
             <div>
-              <dt>Tipo</dt>
-              <dd>{order.customer.guest ? "VISITANTE" : "CONTA"}</dd>
+              <dt>Origem</dt>
+              <dd>{order.customer.guest ? "AVULSO (GUEST)" : "CADASTRADO"}</dd>
             </div>
             <div>
               <dt>CPF</dt>
@@ -85,7 +85,10 @@ export default async function OrderDetailPage({
             <article className="detail-item" key={item.id}>
               <div>
                 <b>{item.product.name}</b>
-                <small>{item.product.slug}</small>
+                <small>
+                  {item.product.slug}
+                  {item.variant ? ` · ${item.variant}` : ""}
+                </small>
               </div>
               <span>{money(item.unitPriceCents)}</span>
             </article>
@@ -260,9 +263,19 @@ export default async function OrderDetailPage({
         </section>
         <section className="detail-card">
           <h2>Entrega</h2>
-          <pre className="delivery-data">
-            {deliveryText(order.fulfillment?.delivery)}
-          </pre>
+          <dl>
+            <div>
+              <dt>Status</dt>
+              <dd>{order.fulfillment?.status ?? "Ainda não criada"}</dd>
+            </div>
+          </dl>
+          <RevealDelivery
+            orderId={order.id}
+            hasDelivery={Boolean(order.fulfillment?.delivery)}
+          />
+          {order.status === "DELIVERED" && (
+            <ResendAccessButton orderId={order.id} />
+          )}
         </section>
         <section className="detail-card">
           <h2>E-mail de entrega</h2>

@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { adminCallbackDto, adminOrderDto, sanitizeProviderError, type AdminOrderRecord } from "./admin-order";
+import {
+  adminCallbackDto,
+  adminOrderDto,
+  adminOrderListDto,
+  sanitizeProviderError,
+  type AdminOrderListRecord,
+  type AdminOrderRecord,
+} from "./admin-order";
 
 describe("mapper administrativo de pedido", () => {
   it("mantém pagamento, eventos, fulfillment, entrega e histórico separados", () => {
@@ -31,5 +38,42 @@ describe("mapper administrativo de pedido", () => {
 
   it("sanitiza credenciais acidentalmente presentes no último erro", () => {
     expect(sanitizeProviderError("HTTP 401 Bearer abc123 password=unsafe token:also-unsafe")).toBe("HTTP 401 Bearer [REDACTED] password=[REDACTED] token=[REDACTED]");
+  });
+
+  it("DTO de listagem (PARTE 8/16) mascara CPF e nunca inclui entrega/pix/senha", () => {
+    const record = {
+      id: "order-1",
+      publicToken: "public",
+      status: "DELIVERED",
+      totalCents: 2900,
+      createdAt: new Date("2026-09-15T12:00:00Z"),
+      customer: {
+        name: "Cliente Guest",
+        email: "guest@example.test",
+        whatsapp: "5511987654321",
+        cpfCnpj: "52998224725",
+        passwordHash: "PENDING_INVITE",
+      },
+      items: [
+        {
+          product: { name: "UnlockTool" },
+          productVariant: { name: "A12" },
+        },
+      ],
+      payment: { status: "PAID" },
+      fulfillment: { status: "FULFILLED" },
+    } as unknown as AdminOrderListRecord;
+    const dto = adminOrderListDto(record);
+    expect(dto.customer.cpfMasked).toBe("***.***.***-25");
+    expect(dto.customer.guest).toBe(true);
+    expect(dto.items[0]).toEqual({ productName: "UnlockTool", variant: "A12" });
+    expect(dto.paymentStatus).toBe("PAID");
+    expect(dto.fulfillmentStatus).toBe("FULFILLED");
+    const serialized = JSON.stringify(dto);
+    expect(serialized).not.toContain("52998224725");
+    expect(serialized).not.toContain("PENDING_INVITE");
+    expect(dto).not.toHaveProperty("customer.cpfCnpj");
+    expect(dto).not.toHaveProperty("fulfillment");
+    expect(dto).not.toHaveProperty("delivery");
   });
 });

@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { handleCheckoutRequest } from "./checkout-route";
 import { AsaasClientError } from "./payments/asaas-client";
+import { IncompleteCheckoutIdentityError } from "./checkout-identity";
 
 const validInput = {
   productId: "product-test",
@@ -151,5 +152,30 @@ describe("contrato HTTP do checkout", () => {
     const response = await handleCheckoutRequest(request(validInput), create);
     expect(response.status).toBe(401);
     await expect(response.json()).resolves.toMatchObject({ code: "LOGIN_REQUIRED" });
+  });
+
+  it("pede os campos faltantes do cadastro sem criar cobrança (cliente logado incompleto)", async () => {
+    const create = vi.fn(async () => {
+      throw new IncompleteCheckoutIdentityError(["whatsapp"]);
+    });
+    const response = await handleCheckoutRequest(request(validInput), create);
+    expect(response.status).toBe(422);
+    await expect(response.json()).resolves.toMatchObject({
+      ok: false,
+      code: "MISSING_CUSTOMER_FIELDS",
+      missing: ["whatsapp"],
+    });
+  });
+
+  it("retorna 400 para dados de identidade de guest inválidos", async () => {
+    const create = vi.fn(async () => {
+      throw new Error("INVALID_CUSTOMER_DATA");
+    });
+    const response = await handleCheckoutRequest(request(validInput), create);
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toMatchObject({
+      ok: false,
+      code: "INVALID_CUSTOMER_DATA",
+    });
   });
 });

@@ -32,8 +32,10 @@ export function checkoutErrorMessage(
   status: number,
   payload: CheckoutApiResponse | null,
 ) {
-  if (status === 400 || payload?.code === "INVALID_CHECKOUT")
+  if (status === 400 || payload?.code === "INVALID_CHECKOUT" || payload?.code === "INVALID_CUSTOMER_DATA")
     return "Revise os dados informados e tente novamente.";
+  if (payload?.code === "MISSING_CUSTOMER_FIELDS")
+    return "Complete os dados faltantes do seu cadastro para continuar.";
   if (status === 409 || payload?.code === "PRODUCT_UNAVAILABLE")
     return "Este produto está temporariamente indisponível.";
   return CHECKOUT_FALLBACK_ERROR;

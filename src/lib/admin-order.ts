@@ -1,4 +1,5 @@
 import type { Prisma } from "@prisma/client";
+import { maskCpf } from "./masking";
 
 export const adminOrderInclude = {
   customer: {
@@ -12,7 +13,10 @@ export const adminOrderInclude = {
     },
   },
   items: {
-    include: { product: { select: { id: true, name: true, slug: true } } },
+    include: {
+      product: { select: { id: true, name: true, slug: true } },
+      productVariant: { select: { name: true } },
+    },
   },
   payment: { include: { events: { orderBy: { createdAt: "asc" as const } } } },
   fulfillment: {
@@ -82,6 +86,7 @@ export type AdminOrderDTO = {
     id: string;
     unitPriceCents: number;
     product: { id: string; name: string; slug: string };
+    variant: string | null;
   }>;
   payment: null | {
     id: string;
@@ -186,6 +191,7 @@ export const adminOrderDto = (order: AdminOrderRecord): AdminOrderDTO => ({
     id: item.id,
     unitPriceCents: item.unitPriceCents,
     product: item.product,
+    variant: item.productVariant?.name ?? null,
   })),
   payment: order.payment
     ? {
@@ -243,4 +249,78 @@ export const adminOrderDto = (order: AdminOrderRecord): AdminOrderDTO => ({
     lastAttemptAt: item.lastAttemptAt?.toISOString() ?? null,
     sentAt: item.sentAt?.toISOString() ?? null,
   })),
+});
+
+// DTO seguro para a LISTAGEM (PARTE 8/16): nunca inclui CPF completo,
+// pixCode, delivery ou qualquer segredo — só o suficiente para localizar e
+// triar um pedido no Admin. O detalhe completo continua em adminOrderDto,
+// que é lido inteiramente no servidor pela página (Server Component).
+export const adminOrderListSelect = {
+  id: true,
+  publicToken: true,
+  status: true,
+  totalCents: true,
+  createdAt: true,
+  customer: {
+    select: {
+      name: true,
+      email: true,
+      whatsapp: true,
+      cpfCnpj: true,
+      passwordHash: true,
+    },
+  },
+  items: {
+    select: {
+      product: { select: { name: true } },
+      productVariant: { select: { name: true } },
+    },
+  },
+  payment: { select: { status: true } },
+  fulfillment: { select: { status: true } },
+} satisfies Prisma.OrderSelect;
+
+export type AdminOrderListRecord = Prisma.OrderGetPayload<{
+  select: typeof adminOrderListSelect;
+}>;
+
+export type AdminOrderListDTO = {
+  id: string;
+  publicToken: string;
+  status: string;
+  totalCents: number;
+  createdAt: string;
+  customer: {
+    name: string;
+    email: string;
+    whatsapp: string | null;
+    cpfMasked: string | null;
+    guest: boolean;
+  };
+  items: Array<{ productName: string; variant: string | null }>;
+  paymentStatus: string | null;
+  fulfillmentStatus: string | null;
+};
+
+export const adminOrderListDto = (
+  order: AdminOrderListRecord,
+): AdminOrderListDTO => ({
+  id: order.id,
+  publicToken: order.publicToken,
+  status: order.status,
+  totalCents: order.totalCents,
+  createdAt: order.createdAt.toISOString(),
+  customer: {
+    name: order.customer.name,
+    email: order.customer.email,
+    whatsapp: order.customer.whatsapp,
+    cpfMasked: maskCpf(order.customer.cpfCnpj),
+    guest: order.customer.passwordHash === "PENDING_INVITE",
+  },
+  items: order.items.map((item) => ({
+    productName: item.product.name,
+    variant: item.productVariant?.name ?? null,
+  })),
+  paymentStatus: order.payment?.status ?? null,
+  fulfillmentStatus: order.fulfillment?.status ?? null,
 });

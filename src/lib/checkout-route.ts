@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { checkoutSchema } from "./checkout-schema";
 import { orderDto } from "./dto";
 import { AsaasClientError } from "./payments/asaas-client";
+import { IncompleteCheckoutIdentityError } from "./checkout-identity";
 
 type CreateOrder = (
   input: ReturnType<typeof checkoutSchema.parse>,
@@ -72,6 +73,21 @@ export async function handleCheckoutRequest(
   } catch (error) {
     if (error instanceof Error && error.message === "LOGIN_REQUIRED_FOR_PRICE")
       return NextResponse.json({ ok: false, error: "Entre para consultar o preço e concluir a compra.", code: "LOGIN_REQUIRED" }, { status: 401 });
+    if (error instanceof IncompleteCheckoutIdentityError)
+      return NextResponse.json(
+        {
+          ok: false,
+          error: "Complete os dados faltantes do seu cadastro para continuar.",
+          code: "MISSING_CUSTOMER_FIELDS",
+          missing: error.missing,
+        },
+        { status: 422 },
+      );
+    if (error instanceof Error && error.message === "INVALID_CUSTOMER_DATA")
+      return NextResponse.json(
+        { ok: false, error: "Revise os dados informados e tente novamente.", code: "INVALID_CUSTOMER_DATA" },
+        { status: 400 },
+      );
     log("[checkout] Falha ao gerar PIX.", {
       stage: "create_order",
       ...safeCheckoutError(error),

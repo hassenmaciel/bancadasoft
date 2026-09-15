@@ -33,6 +33,7 @@ import {
 } from "@/lib/checkout-validation";
 import { assertCheckoutPrice } from "@/lib/commercial-pricing";
 import { TERMINAL_ORDER_STATUSES } from "@/lib/order-polling";
+import { resolveAuthenticatedCheckoutIdentity } from "@/lib/checkout-identity";
 
 export const catalogue = () =>
   prisma.product.findMany({
@@ -51,17 +52,13 @@ export const setProductAvailability = (id: string, available: boolean) =>
 export async function createOrder(input: {
   productId: string;
   variantId?: string;
-  name: string;
-  email: string;
-  whatsapp: string;
-  cpfCnpj: string;
+  name?: string;
+  email?: string;
+  whatsapp?: string;
+  cpfCnpj?: string;
   deliveryAccessToken: string;
   providerFields?: Record<string, string>;
 }, authenticatedUserId?: string) {
-  const cpfCnpj = digitsOnly(input.cpfCnpj);
-  const whatsapp = normalizeWhatsapp(input.whatsapp);
-  if (!isValidCpf(cpfCnpj) || !isValidWhatsapp(whatsapp))
-    throw new Error("INVALID_CUSTOMER_DATA");
   const access = createDeliveryAccess(new Date(), input.deliveryAccessToken);
   const recovered = await prisma.order.findUnique({
     where: { deliveryTokenHash: access.tokenHash },
@@ -116,29 +113,58 @@ export async function createOrder(input: {
     : {};
   const viewer = authenticatedUser ? { customerTier: authenticatedUser.customerTier } : null;
   const unitPriceCents = assertCheckoutPrice(product, variantResolution?.variant ?? null, viewer);
-  const customerEmail = authenticatedUser?.email ?? input.email;
-  const previousUser = await prisma.user.findUnique({
-    where: { email: customerEmail },
-    select: { cpfCnpj: true, asaasCustomerId: true },
-  });
-  const reusableAsaasCustomerId =
-    previousUser?.cpfCnpj === cpfCnpj ? previousUser.asaasCustomerId : null;
-  const user = await prisma.user.upsert({
-    where: { email: customerEmail },
-    update: {
-      name: input.name,
-      cpfCnpj,
-      whatsapp,
-      asaasCustomerId: reusableAsaasCustomerId,
-    },
-    create: {
-      email: customerEmail,
-      name: input.name,
-      cpfCnpj,
-      whatsapp,
-      passwordHash: "PENDING_INVITE",
-    },
-  });
+
+  // PARTE 3/4: cliente autenticado usa a própria conta como fonte da
+  // identidade (nome/e-mail nunca vêm do client); só os campos realmente
+  // ausentes (CPF/WhatsApp) podem ser completados por este request, e só
+  // esses campos são gravados no cadastro. Guest preserva o fluxo atual.
+  let user: { id: string; name: string; email: string; asaasCustomerId: string | null };
+  let cpfCnpj: string;
+  let whatsapp: string;
+  if (authenticatedUser) {
+    const resolved = resolveAuthenticatedCheckoutIdentity(authenticatedUser, {
+      cpfCnpj: input.cpfCnpj,
+      whatsapp: input.whatsapp,
+    });
+    cpfCnpj = resolved.cpfCnpj;
+    whatsapp = resolved.whatsapp;
+    user = Object.keys(resolved.accountUpdates).length
+      ? await prisma.user.update({
+          where: { id: authenticatedUser.id },
+          data: resolved.accountUpdates,
+        })
+      : authenticatedUser;
+  } else {
+    if (!input.name || !input.email || !input.cpfCnpj || !input.whatsapp)
+      throw new Error("INVALID_CUSTOMER_DATA");
+    cpfCnpj = digitsOnly(input.cpfCnpj);
+    whatsapp = normalizeWhatsapp(input.whatsapp);
+    if (!isValidCpf(cpfCnpj) || !isValidWhatsapp(whatsapp))
+      throw new Error("INVALID_CUSTOMER_DATA");
+    const customerEmail = input.email;
+    const previousUser = await prisma.user.findUnique({
+      where: { email: customerEmail },
+      select: { cpfCnpj: true, asaasCustomerId: true },
+    });
+    const reusableAsaasCustomerId =
+      previousUser?.cpfCnpj === cpfCnpj ? previousUser.asaasCustomerId : null;
+    user = await prisma.user.upsert({
+      where: { email: customerEmail },
+      update: {
+        name: input.name,
+        cpfCnpj,
+        whatsapp,
+        asaasCustomerId: reusableAsaasCustomerId,
+      },
+      create: {
+        email: customerEmail,
+        name: input.name,
+        cpfCnpj,
+        whatsapp,
+        passwordHash: "PENDING_INVITE",
+      },
+    });
+  }
   const providerCode = configuredPaymentProviderCode();
   const provider = getPaymentProvider(providerCode);
   if (!provider) throw new Error("PAYMENT_PROVIDER_UNAVAILABLE");
@@ -192,7 +218,7 @@ export async function createOrder(input: {
         email: user.email,
         cpfCnpj,
         mobilePhone: whatsapp,
-        externalCustomerId: reusableAsaasCustomerId ?? undefined,
+        externalCustomerId: user.asaasCustomerId ?? undefined,
       },
     });
   } catch (error) {

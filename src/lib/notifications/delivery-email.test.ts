@@ -4,6 +4,7 @@ const db = vi.hoisted(() => ({
   order: { findUnique: vi.fn(), update: vi.fn() },
   deliveryNotification: {
     create: vi.fn(),
+    upsert: vi.fn(),
     updateMany: vi.fn(),
     update: vi.fn(),
   },
@@ -12,7 +13,11 @@ const db = vi.hoisted(() => ({
 }));
 vi.mock("../prisma", () => ({ prisma: db }));
 import { createDeliveryAccess } from "../guest-delivery";
-import { deliveryEmailContent, sendDeliveryEmail } from "./delivery-email";
+import {
+  deliveryEmailContent,
+  resendDeliveryEmail,
+  sendDeliveryEmail,
+} from "./delivery-email";
 
 describe("notificação de entrega por e-mail", () => {
   const transport = { send: vi.fn() };
@@ -27,7 +32,10 @@ describe("notificação de entrega por e-mail", () => {
       id: "order-1",
       publicToken: "publictoken",
       status: "DELIVERED",
+      deliveryTokenHash: access.tokenHash,
       deliveryTokenEncrypted: access.encryptedToken,
+      deliveryTokenExpiresAt: access.expiresAt,
+      deliveryTokenRevokedAt: null,
       deliveryNotifiedAt: null,
       customer: { name: "Cliente", email: "CLIENTE@example.com" },
       items: [{ product: { name: "UnlockTool 6 horas" } }],
@@ -36,6 +44,7 @@ describe("notificação de entrega por e-mail", () => {
       },
     });
     db.deliveryNotification.create.mockResolvedValue({ id: "notification-1" });
+    db.deliveryNotification.upsert.mockResolvedValue({ id: "notification-1" });
     db.deliveryNotification.updateMany.mockResolvedValue({ count: 1 });
     db.deliveryNotification.update.mockResolvedValue({});
     db.order.update.mockResolvedValue({});
@@ -141,6 +150,108 @@ describe("notificação de entrega por e-mail", () => {
         transport,
       }),
     ).toEqual({ status: "DUPLICATE" });
+    expect(transport.send).not.toHaveBeenCalled();
+  });
+});
+
+describe("reenvio administrativo de acesso (Admin > Reenviar acesso)", () => {
+  const transport = { send: vi.fn() };
+  const now = new Date("2026-09-15T12:00:00Z");
+  beforeEach(() => {
+    vi.clearAllMocks();
+    process.env.AUTH_SECRET = "isolated-email-test-secret-with-32-bytes";
+    const access = createDeliveryAccess(
+      new Date(now.getTime() - 60_000),
+      "delivery-token-for-resend-tests-12345",
+    );
+    db.order.findUnique.mockResolvedValue({
+      id: "order-1",
+      publicToken: "publictoken",
+      status: "DELIVERED",
+      deliveryTokenHash: access.tokenHash,
+      deliveryTokenEncrypted: access.encryptedToken,
+      deliveryTokenExpiresAt: access.expiresAt,
+      deliveryTokenRevokedAt: null,
+      customer: { name: "Cliente", email: "CLIENTE@example.com" },
+      items: [{ product: { name: "UnlockTool 6 horas" } }],
+      fulfillment: {
+        delivery: { username: "private-user", password: "private-password" },
+      },
+    });
+    db.deliveryNotification.upsert.mockResolvedValue({ id: "notification-1" });
+    db.deliveryNotification.updateMany.mockResolvedValue({ count: 1 });
+    db.deliveryNotification.update.mockResolvedValue({});
+    db.order.update.mockResolvedValue({});
+    db.siteSettings.findUnique.mockResolvedValue({
+      domain: "www.bancadasoft.com.br",
+    });
+    db.$transaction.mockImplementation((items: unknown[]) =>
+      Promise.all(items),
+    );
+    transport.send.mockResolvedValue({ messageId: "resend-message-1" });
+  });
+
+  it("reenvia usando o link seguro existente, sem recriar Order/Payment/Fulfillment", async () => {
+    const result = await resendDeliveryEmail("order-1", {
+      apiKey: "key",
+      from: "from@example.com",
+      transport,
+      now,
+    });
+    expect(result).toEqual({ status: "SENT" });
+    expect(transport.send).toHaveBeenCalledOnce();
+    expect(db.order.update).not.toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ deliveryTokenHash: expect.anything() }) }),
+    );
+  });
+
+  it("reemite o token quando o link atual está expirado", async () => {
+    db.order.findUnique.mockResolvedValueOnce({
+      ...(await db.order.findUnique()),
+      deliveryTokenExpiresAt: new Date(now.getTime() - 1000),
+    });
+    await resendDeliveryEmail("order-1", {
+      apiKey: "key",
+      from: "from@example.com",
+      transport,
+      now,
+    });
+    expect(db.order.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          deliveryTokenHash: expect.any(String),
+          deliveryTokenEncrypted: expect.any(String),
+        }),
+      }),
+    );
+  });
+
+  it("clique duplicado dentro do intervalo de proteção não dispara novo e-mail", async () => {
+    db.deliveryNotification.updateMany.mockResolvedValueOnce({ count: 0 });
+    expect(
+      await resendDeliveryEmail("order-1", {
+        apiKey: "key",
+        from: "from@example.com",
+        transport,
+        now,
+      }),
+    ).toEqual({ status: "DUPLICATE" });
+    expect(transport.send).not.toHaveBeenCalled();
+  });
+
+  it("não reenvia pedido sem entrega concluída", async () => {
+    db.order.findUnique.mockResolvedValueOnce({
+      ...(await db.order.findUnique()),
+      status: "PROCESSING",
+    });
+    expect(
+      await resendDeliveryEmail("order-1", {
+        apiKey: "key",
+        from: "from@example.com",
+        transport,
+        now,
+      }),
+    ).toEqual({ status: "SKIPPED" });
     expect(transport.send).not.toHaveBeenCalled();
   });
 });

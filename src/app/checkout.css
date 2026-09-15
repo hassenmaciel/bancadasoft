@@ -180,6 +180,31 @@ body:has(.checkout-modal)::before {
   color: #243d5d;
   font-size: 9px;
 }
+.checkout-identity-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 8px 0 18px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: #f4f8ff;
+  border: 1px solid #e3edff;
+}
+.checkout-identity-summary span {
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  color: #0878f9;
+}
+.checkout-identity-summary b {
+  color: #071a35;
+  font-size: 15px;
+}
+.checkout-identity-summary small {
+  color: #657994;
+  font-size: 12px;
+}
 .checkout-close {
   position: absolute;
   z-index: 4;

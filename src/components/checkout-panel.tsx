@@ -4,6 +4,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import type { DeliveryDTO, OrderDTO, ProductDTO } from "@/lib/dto";
+import type { CheckoutIdentitySummary } from "@/lib/checkout-identity";
 import { createOrderPoller, isActiveCheckoutOrder } from "@/lib/order-polling";
 import CredentialDelivery from "@/components/credential-delivery";
 import {
@@ -21,7 +22,13 @@ const money = (value: number) =>
     value / 100,
   );
 
-export default function CheckoutPanel({ product }: { product: ProductDTO }) {
+export default function CheckoutPanel({
+  product,
+  identity = null,
+}: {
+  product: ProductDTO;
+  identity?: CheckoutIdentitySummary | null;
+}) {
   const [open, setOpen] = useState(false);
   const [order, setOrder] = useState<OrderDTO | null>(null);
   const [notice, setNotice] = useState("");
@@ -41,6 +48,10 @@ export default function CheckoutPanel({ product }: { product: ProductDTO }) {
   const failed = order?.status === "FAILED";
   const selectedVariant = product.variants.find((variant) => variant.id === variantId);
   const checkoutFields = selectedVariant?.checkoutFields ?? product.checkoutFields;
+  // PARTE 1/3/4: cliente logado com cadastro completo pula o formulário;
+  // com cadastro incompleto, só os campos realmente ausentes são pedidos.
+  const needsCpf = identity?.missing.includes("cpfCnpj") ?? false;
+  const needsWhatsapp = identity?.missing.includes("whatsapp") ?? false;
 
   async function loadDelivery(orderId: string) {
     const token = localStorage.getItem(`bancadasoft:delivery:${orderId}`);
@@ -168,16 +179,28 @@ export default function CheckoutPanel({ product }: { product: ProductDTO }) {
           JSON.stringify({ deliveryAccessToken }),
         );
       }
+      // Cliente logado: nome/e-mail nunca são enviados (a conta autenticada é
+      // a fonte); CPF/WhatsApp só são enviados quando ainda faltam na conta.
+      const identityFields = identity
+        ? {
+            ...(needsCpf
+              ? { cpfCnpj: String(form.get("cpfCnpj") ?? "").replace(/\D/g, "") }
+              : {}),
+            ...(needsWhatsapp ? { whatsapp: form.get("whatsapp") } : {}),
+          }
+        : {
+            name: form.get("name"),
+            email: form.get("email"),
+            whatsapp: form.get("whatsapp"),
+            cpfCnpj: String(form.get("cpfCnpj") ?? "").replace(/\D/g, ""),
+          };
       const response = await fetch("/api/checkout", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           productId: product.id,
           variantId: product.variants.length ? variantId : undefined,
-          name: form.get("name"),
-          email: form.get("email"),
-          whatsapp: form.get("whatsapp"),
-          cpfCnpj: String(form.get("cpfCnpj") ?? "").replace(/\D/g, ""),
+          ...identityFields,
           deliveryAccessToken,
           providerFields: Object.fromEntries(
             checkoutFields.map((field) => [field.key, String(form.get(`provider:${field.key}`) ?? "")]),
@@ -277,11 +300,28 @@ export default function CheckoutPanel({ product }: { product: ProductDTO }) {
                 >
                   <span className="checkout-kicker">✓ Checkout seguro</span>
                   <h2 id="checkout-title">Finalize sua compra</h2>
-                  <p className="checkout-lead">
-                    Preencha seus dados para gerar o PIX.
-                    <br />
-                    Não é necessário criar uma conta.
-                  </p>
+                  {identity ? (
+                    <>
+                      <p className="checkout-lead">
+                        {identity.complete
+                          ? "Confirme seus dados e gere o PIX."
+                          : "Complete os dados abaixo para continuar."}
+                      </p>
+                      <div className="checkout-identity-summary">
+                        <span>Comprando como</span>
+                        <b>{identity.name}</b>
+                        <small>{identity.maskedEmail}</small>
+                        {identity.maskedCpf && <small>CPF {identity.maskedCpf}</small>}
+                        {identity.maskedWhatsapp && <small>WhatsApp {identity.maskedWhatsapp}</small>}
+                      </div>
+                    </>
+                  ) : (
+                    <p className="checkout-lead">
+                      Preencha seus dados para gerar o PIX.
+                      <br />
+                      Não é necessário criar uma conta.
+                    </p>
+                  )}
                   <div className="checkout-fields">
                     {product.variants.length > 0 && (
                       <label htmlFor="checkout-variant">
@@ -301,72 +341,80 @@ export default function CheckoutPanel({ product }: { product: ProductDTO }) {
                         </select>
                       </label>
                     )}
-                    <label htmlFor="checkout-name">
-                      Nome completo
-                      <input
-                        id="checkout-name"
-                        name="name"
-                        autoComplete="name"
-                        placeholder="Seu nome completo"
-                        required
-                      />
-                    </label>
-                    <label htmlFor="checkout-cpf">
-                      CPF <em>obrigatório</em>
-                      <input
-                        id="checkout-cpf"
-                        name="cpfCnpj"
-                        inputMode="numeric"
-                        autoComplete="off"
-                        placeholder="000.000.000-00"
-                        minLength={11}
-                        maxLength={14}
-                        onInput={(event) => {
-                          const input = event.currentTarget;
-                          const digits = input.value
-                            .replace(/\D/g, "")
-                            .slice(0, 11);
-                          input.value = digits
-                            .replace(/(\d{3})(\d)/, "$1.$2")
-                            .replace(/(\d{3})(\d)/, "$1.$2")
-                            .replace(/(\d{3})(\d{1,2})$/, "$1-$2");
-                        }}
-                        required
-                      />
-                    </label>
-                    <label htmlFor="checkout-email">
-                      E-mail
-                      <input
-                        id="checkout-email"
-                        name="email"
-                        type="email"
-                        autoComplete="email"
-                        placeholder="seu@email.com"
-                        required
-                      />
-                    </label>
-                    <label htmlFor="checkout-whatsapp">
-                      WhatsApp
-                      <input
-                        id="checkout-whatsapp"
-                        name="whatsapp"
-                        inputMode="tel"
-                        autoComplete="tel"
-                        placeholder="(00) 00000-0000"
-                        minLength={10}
-                        maxLength={16}
-                        onInput={(event) => {
-                          const input = event.currentTarget;
-                          const digits = input.value
-                            .replace(/\D/g, "")
-                            .slice(0, 11);
-                          input.value = digits
-                            .replace(/^(\d{2})(\d)/, "($1) $2")
-                            .replace(/(\d{5})(\d{4})$/, "$1-$2");
-                        }}
-                        required
-                      />
-                    </label>
+                    {!identity && (
+                      <label htmlFor="checkout-name">
+                        Nome completo
+                        <input
+                          id="checkout-name"
+                          name="name"
+                          autoComplete="name"
+                          placeholder="Seu nome completo"
+                          required
+                        />
+                      </label>
+                    )}
+                    {(!identity || needsCpf) && (
+                      <label htmlFor="checkout-cpf">
+                        CPF <em>obrigatório</em>
+                        <input
+                          id="checkout-cpf"
+                          name="cpfCnpj"
+                          inputMode="numeric"
+                          autoComplete="off"
+                          placeholder="000.000.000-00"
+                          minLength={11}
+                          maxLength={14}
+                          onInput={(event) => {
+                            const input = event.currentTarget;
+                            const digits = input.value
+                              .replace(/\D/g, "")
+                              .slice(0, 11);
+                            input.value = digits
+                              .replace(/(\d{3})(\d)/, "$1.$2")
+                              .replace(/(\d{3})(\d)/, "$1.$2")
+                              .replace(/(\d{3})(\d{1,2})$/, "$1-$2");
+                          }}
+                          required
+                        />
+                      </label>
+                    )}
+                    {!identity && (
+                      <label htmlFor="checkout-email">
+                        E-mail
+                        <input
+                          id="checkout-email"
+                          name="email"
+                          type="email"
+                          autoComplete="email"
+                          placeholder="seu@email.com"
+                          required
+                        />
+                      </label>
+                    )}
+                    {(!identity || needsWhatsapp) && (
+                      <label htmlFor="checkout-whatsapp">
+                        WhatsApp
+                        <input
+                          id="checkout-whatsapp"
+                          name="whatsapp"
+                          inputMode="tel"
+                          autoComplete="tel"
+                          placeholder="(00) 00000-0000"
+                          minLength={10}
+                          maxLength={16}
+                          onInput={(event) => {
+                            const input = event.currentTarget;
+                            const digits = input.value
+                              .replace(/\D/g, "")
+                              .slice(0, 11);
+                            input.value = digits
+                              .replace(/^(\d{2})(\d)/, "($1) $2")
+                              .replace(/(\d{5})(\d{4})$/, "$1-$2");
+                          }}
+                          required
+                        />
+                      </label>
+                    )}
                     {checkoutFields.map((field) => (
                       <label key={field.key} htmlFor={`checkout-provider-${field.key}`}>
                         {field.label}
