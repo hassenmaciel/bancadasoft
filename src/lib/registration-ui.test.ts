@@ -36,12 +36,25 @@ describe("jornada pública de cadastro", () => {
   });
 
   it("mantém a resposta segura e clara para e-mail já existente", () => {
-    const route = source("src/app/api/auth/register/route.ts");
+    // As mensagens de conflito vivem em registration-route.ts (PARTE 1-6 —
+    // ativação de guest/PENDING_INVITE); route.ts é só a fiação com Prisma.
+    const handler = source("src/lib/registration-route.ts");
 
-    expect(route).toContain(
+    expect(handler).toContain(
       "Já existe uma conta com este e-mail. Entre na sua conta.",
     );
-    expect(route).toContain("status: 409");
-    expect(route).not.toContain("passwordHash: true");
+    expect(handler).toContain(
+      "Não foi possível concluir o cadastro com os dados informados.",
+    );
+    expect(handler).toContain("status: 409");
+
+    // passwordHash agora é lido (para checar PENDING_INVITE), mas nunca pode
+    // sair na resposta/sessão: a seleção usada para a sessão não o inclui.
+    const route = source("src/app/api/auth/register/route.ts");
+    const sessionSelectBlock = route.slice(
+      route.indexOf("sessionSelect = {"),
+      route.indexOf("} as const;"),
+    );
+    expect(sessionSelectBlock).not.toContain("passwordHash");
   });
 });

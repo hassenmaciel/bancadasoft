@@ -76,4 +76,27 @@ describe("mapper administrativo de pedido", () => {
     expect(dto).not.toHaveProperty("fulfillment");
     expect(dto).not.toHaveProperty("delivery");
   });
+
+  it("PARTE 11: após ativação (passwordHash real), o pedido para de aparecer como AVULSO — sem flag redundante", () => {
+    const base = {
+      id: "order-1",
+      publicToken: "public",
+      status: "DELIVERED",
+      totalCents: 2900,
+      createdAt: new Date("2026-09-15T12:00:00Z"),
+      items: [{ product: { name: "UnlockTool" }, productVariant: null }],
+      payment: { status: "PAID" },
+      fulfillment: { status: "FULFILLED" },
+    };
+    const guestRecord = {
+      ...base,
+      customer: { name: "Cliente", email: "cliente@example.test", whatsapp: null, cpfCnpj: "52998224725", passwordHash: "PENDING_INVITE" },
+    } as unknown as AdminOrderListRecord;
+    const activatedRecord = {
+      ...base,
+      customer: { ...guestRecord.customer, passwordHash: "$2b$12$aRealBcryptHashAfterActivation1234567890" },
+    } as unknown as AdminOrderListRecord;
+    expect(adminOrderListDto(guestRecord).customer.guest).toBe(true);
+    expect(adminOrderListDto(activatedRecord).customer.guest).toBe(false);
+  });
 });
