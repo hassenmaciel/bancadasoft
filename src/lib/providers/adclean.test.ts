@@ -148,9 +148,9 @@ describe("AdClean v2 adapter", () => {
     [400, "body_invalido", "ADCLEAN_BODY_INVALID"],
   ])("mapeia HTTP %i sem vazar resposta", async (status, erro, expected) => {
     const fetcher = vi.fn().mockResolvedValue(json(status, { ok: false, erro }));
-    await expect(adapter(fetcher).createOrder(input())).rejects.toMatchObject<AdcleanProviderError>({
-      code: expected,
-    });
+    await expect(adapter(fetcher).createOrder(input())).rejects.toMatchObject(
+      { code: expected } satisfies Partial<AdcleanProviderError>,
+    );
   });
 
   it("mantém resultado incerto após falhas de transporte repetidas", async () => {

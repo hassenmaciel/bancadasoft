@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { processHeartUnlocksCallback } from "@/lib/providers/heartunlocks-callback";
+import { validateHeartUnlocksCallbackSecret } from "@/lib/providers/heartunlocks-callback-auth";
 import { sendDeliveryEmail } from "@/lib/notifications/delivery-email";
 const schema = z.object({
   reference_id: z.string().min(1).max(200),
@@ -9,9 +10,7 @@ const schema = z.object({
   replay: z.string().max(20000).optional(),
 });
 export async function POST(request: Request) {
-  const expected = process.env.BANCADASOFT_INTERNAL_SECRET;
-  const supplied = request.headers.get("x-internal-secret");
-  if (!expected || !supplied || supplied !== expected)
+  if (!validateHeartUnlocksCallbackSecret(request.headers.get("x-internal-secret")))
     return NextResponse.json({ error: "Não autorizado." }, { status: 401 });
   const parsed = schema.safeParse(await request.json().catch(() => null));
   if (!parsed.success)

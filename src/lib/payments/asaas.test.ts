@@ -10,13 +10,13 @@ const input = { orderId: "order-test", amountCents: 2990, expiresAt: new Date("2
 
 describe("AsaasClient", () => {
   it("usa a API Sandbox por padrão e envia os cabeçalhos exigidos", async () => {
-    const fetcher = vi.fn(async () => json({ ok: true }));
+    const fetcher = vi.fn<typeof fetch>(async () => json({ ok: true }));
     const client = new AsaasClient("isolated-test-key", { fetcher });
     await client.request("/customers", { method: "POST", body: "{}" });
     expect(fetcher).toHaveBeenCalledOnce();
     const [url, request] = fetcher.mock.calls[0];
     expect(url).toBe(`${ASAAS_SANDBOX_BASE_URL}/customers`);
-    expect(request.headers).toMatchObject({ access_token: "isolated-test-key", "user-agent": "BancadaSoft-Sandbox/1.0" });
+    expect(request!.headers).toMatchObject({ access_token: "isolated-test-key", "user-agent": "BancadaSoft-Sandbox/1.0" });
   });
 
   it("bloqueia qualquer URL fora dos ambientes oficiais", () => {
@@ -24,11 +24,11 @@ describe("AsaasClient", () => {
   });
 
   it("usa a API Production quando o ambiente real foi configurado", async () => {
-    const fetcher = vi.fn(async () => json({ ok: true }));
+    const fetcher = vi.fn<typeof fetch>(async () => json({ ok: true }));
     const client = new AsaasClient("isolated-production-key", { baseUrl: ASAAS_PRODUCTION_BASE_URL, fetcher });
     await client.request("/customers");
     expect(fetcher.mock.calls[0][0]).toBe(`${ASAAS_PRODUCTION_BASE_URL}/customers`);
-    expect(fetcher.mock.calls[0][1].headers).toMatchObject({ access_token: "isolated-production-key", "user-agent": "BancadaSoft-Production/1.0" });
+    expect(fetcher.mock.calls[0][1]!.headers).toMatchObject({ access_token: "isolated-production-key", "user-agent": "BancadaSoft-Production/1.0" });
   });
 
   it("normaliza erro HTTP sem expor corpo ou credencial", async () => {
@@ -44,8 +44,8 @@ describe("AsaasClient", () => {
 
 describe("AsaasPaymentProvider", () => {
   it("conecta por configuração em Production sem aceitar URL divergente", () => {
-    expect(createConfiguredAsaasProvider({ ASAAS_ENV: "production", ASAAS_API_KEY: " isolated-production-key ", ASAAS_BASE_URL: `${ASAAS_PRODUCTION_BASE_URL}/` }).connected).toBe(true);
-    expect(createConfiguredAsaasProvider({ ASAAS_ENV: "production", ASAAS_API_KEY: "isolated-production-key", ASAAS_BASE_URL: ASAAS_SANDBOX_BASE_URL }).connected).toBe(false);
+    expect(createConfiguredAsaasProvider({ NODE_ENV: "test", ASAAS_ENV: "production", ASAAS_API_KEY: " isolated-production-key ", ASAAS_BASE_URL: `${ASAAS_PRODUCTION_BASE_URL}/` }).connected).toBe(true);
+    expect(createConfiguredAsaasProvider({ NODE_ENV: "test", ASAAS_ENV: "production", ASAAS_API_KEY: "isolated-production-key", ASAAS_BASE_URL: ASAAS_SANDBOX_BASE_URL }).connected).toBe(false);
   });
   it("cria cliente, cobrança PIX e consulta o QR Code", async () => {
     const fetcher = vi.fn()
@@ -101,7 +101,7 @@ describe("AsaasPaymentProvider", () => {
   });
 
   it("recupera os dados PIX usando somente o ID da cobrança existente", async () => {
-    const fetcher = vi.fn(async () => json({ payload: "existing-pix", encodedImage: "existing-qr", expirationDate: "2026-09-15T23:59:59Z" }));
+    const fetcher = vi.fn<typeof fetch>(async () => json({ payload: "existing-pix", encodedImage: "existing-qr", expirationDate: "2026-09-15T23:59:59Z" }));
     const provider = new AsaasPaymentProvider(new AsaasClient("isolated-test-key", { fetcher }));
     await expect(provider.getPixPaymentDetails("pay_existing")).resolves.toMatchObject({ externalPaymentId: "pay_existing", pixCode: "existing-pix", qrCode: "existing-qr" });
     expect(fetcher).toHaveBeenCalledOnce();

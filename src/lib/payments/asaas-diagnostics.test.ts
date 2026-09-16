@@ -3,7 +3,7 @@ import { isAdminRole } from "../authorization";
 import { ASAAS_SANDBOX_URL, publicAsaasDiagnostic, readAsaasRuntimeConfig, testAsaasConnection } from "./asaas-diagnostics";
 import { handleAdminAsaasConnectionTest } from "./asaas-admin-route";
 
-const validEnv = { PAYMENT_PROVIDER:"asaas", ASAAS_ENV:"sandbox", ASAAS_BASE_URL:ASAAS_SANDBOX_URL, ASAAS_API_KEY:"test-only-key", ASAAS_WEBHOOK_TOKEN:"test-only-webhook" };
+const validEnv: NodeJS.ProcessEnv = { NODE_ENV:"test", PAYMENT_PROVIDER:"asaas", ASAAS_ENV:"sandbox", ASAAS_BASE_URL:ASAAS_SANDBOX_URL, ASAAS_API_KEY:"test-only-key", ASAAS_WEBHOOK_TOKEN:"test-only-webhook" };
 
 describe("Asaas admin diagnostic", () => {
   it("recognizes ADMIN and blocks USER through the shared authorization rule", () => { expect(isAdminRole("ADMIN")).toBe(true); expect(isAdminRole("USER")).toBe(false); });

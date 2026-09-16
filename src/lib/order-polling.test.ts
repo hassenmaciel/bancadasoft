@@ -4,7 +4,7 @@ import type { OrderDTO } from "./dto";
 
 const order = (orderStatus: string, paymentStatus: string): OrderDTO => ({
   id: "order-1", publicToken: "token", status: orderStatus as OrderDTO["status"], totalCents: 2900, createdAt: new Date(), items: [],
-  payment: { provider: "asaas", status: paymentStatus as NonNullable<OrderDTO["payment"]>["status"], amountCents: 2900, externalPaymentId: "pay-1", pixPayload: "pix", qrCodeImage: null, expirationDate: new Date() },
+  payment: { status: paymentStatus as NonNullable<OrderDTO["payment"]>["status"], amountCents: 2900, externalPaymentId: "pay-1", pixPayload: "pix", qrCodeImage: null, expirationDate: new Date() },
   fulfillment: null, events: [],
 });
 

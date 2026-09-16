@@ -98,6 +98,8 @@ type ProductWithCategory = Product & {
       technicalEligibility?: string;
       fieldSchema?: unknown;
       provider: { active: boolean; code: string };
+      providerCostCents?: number | null;
+      contractSignature?: string | null;
     };
   }>;
 };
