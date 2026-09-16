@@ -15,6 +15,7 @@ import {
   buildProviderExecutionPayload,
   MAX_PROVIDER_ATTEMPTS,
   providerOutcome,
+  shouldRecordPaidFulfillmentFailure,
   validateProviderExecution,
 } from "@/lib/fulfillment-rules";
 
@@ -90,12 +91,44 @@ export async function executeFulfillment(
     },
     retry,
   );
-  if (error)
-    throw new FulfillmentEngineError(
+  if (error) {
+    const code =
       resolution.status === "AMBIGUOUS"
         ? "PROVIDER_CONFIGURATION_AMBIGUOUS"
-        : error,
-    );
+        : error;
+    if (
+      !retry &&
+      !order.fulfillment &&
+      shouldRecordPaidFulfillmentFailure(code, order.payment?.status)
+    ) {
+      // Pagamento confirmado, mas a execução foi bloqueada antes de chamar o
+      // provider (ex.: produto/provider ficou indisponível nesse intervalo).
+      // Registrar Fulfillment+Order FAILED para que o Admin veja o pedido —
+      // sem isso o pedido ficava PAID silenciosamente, sem nenhum sinal.
+      await prisma.$transaction([
+        prisma.fulfillment.create({
+          data: {
+            orderId,
+            provider: purchasedProviderProduct?.provider.code ?? "unknown",
+            status: FulfillmentStatus.FAILED,
+          },
+        }),
+        prisma.order.update({
+          where: { id: orderId },
+          data: {
+            status: OrderStatus.FAILED,
+            events: {
+              create: {
+                status: OrderStatus.FAILED,
+                note: "Não foi possível iniciar a liberação automática. Nossa equipe pode revisar o pedido.",
+              },
+            },
+          },
+        }),
+      ]);
+    }
+    throw new FulfillmentEngineError(code);
+  }
   if (!selected) throw new FulfillmentEngineError("PROVIDER_PRODUCT_NOT_FOUND");
   const adapter = resolveProviderAdapter(selected.provider.code);
   if (!adapter)

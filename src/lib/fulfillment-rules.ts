@@ -7,6 +7,16 @@ export function validateProviderExecution(state:ExecutionSnapshot,retry=false){
 }
 export function providerOutcome(status:"COMPLETED"|"PROCESSING"|"FAILED",delivery?:Record<string,unknown>){if(status==="COMPLETED"&&!delivery)return{fulfillment:"FAILED",deliver:false};return{fulfillment:status==="COMPLETED"?"FULFILLED":status,deliver:status==="COMPLETED"};}
 
+// Um pagamento já confirmado nunca pode ficar sem nenhum registro de Fulfillment
+// visível no Admin, mesmo quando a pré-validação bloqueia a execução antes de o
+// provider ser chamado (ex.: provider/produto ficou indisponível entre o
+// pagamento e a tentativa de entrega). PAYMENT_NOT_PAID/ORDER_NOT_FOUND nunca
+// chegam aqui com pagamento PAID; ALREADY_DELIVERED significa que a entrega já
+// existe, então não há falha nova a registrar.
+export function shouldRecordPaidFulfillmentFailure(error:string|null,paymentStatus?:string){
+  return paymentStatus==="PAID"&&error!==null&&error!=="ALREADY_DELIVERED";
+}
+
 export function buildProviderExecutionPayload(
   orderId: string,
   paidAmountCents: number | undefined,
