@@ -256,9 +256,15 @@ export default async function OrderDetailPage({
               </article>
             ))
           ) : (
-            <p className="detail-empty">
-              Nenhuma execução de provider registrada.
-            </p>
+            <>
+              <p className="detail-empty">
+                Nenhuma execução de provider registrada.
+              </p>
+              {order.payment?.status === "PAID" &&
+                order.status !== "DELIVERED" && (
+                  <RetryButton orderId={order.id} />
+                )}
+            </>
           )}
         </section>
         <section className="detail-card">
