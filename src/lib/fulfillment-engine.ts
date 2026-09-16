@@ -26,6 +26,40 @@ export class FulfillmentEngineError extends Error {
   }
 }
 
+// Um pagamento já confirmado nunca pode ficar sem nenhum registro de Fulfillment
+// visível no Admin — nem quando a pré-validação bloqueia a execução antes do
+// provider, nem quando a própria transação que criaria o Fulfillment/ProviderOrder
+// falha e sofre rollback (ex.: erro de banco durante a reserva do slot). upsert()
+// torna a escrita idempotente-segura mesmo se chamada mais de uma vez.
+async function recordPaidFulfillmentFailure(
+  orderId: string,
+  providerCode: string | undefined,
+) {
+  await prisma.$transaction([
+    prisma.fulfillment.upsert({
+      where: { orderId },
+      update: {},
+      create: {
+        orderId,
+        provider: providerCode ?? "unknown",
+        status: FulfillmentStatus.FAILED,
+      },
+    }),
+    prisma.order.update({
+      where: { id: orderId },
+      data: {
+        status: OrderStatus.FAILED,
+        events: {
+          create: {
+            status: OrderStatus.FAILED,
+            note: "Não foi possível iniciar a liberação automática. Nossa equipe pode revisar o pedido.",
+          },
+        },
+      },
+    }),
+  ]);
+}
+
 export async function executeFulfillment(
   orderId: string,
   { retry = false }: { retry?: boolean } = {},
@@ -103,29 +137,10 @@ export async function executeFulfillment(
     ) {
       // Pagamento confirmado, mas a execução foi bloqueada antes de chamar o
       // provider (ex.: produto/provider ficou indisponível nesse intervalo).
-      // Registrar Fulfillment+Order FAILED para que o Admin veja o pedido —
-      // sem isso o pedido ficava PAID silenciosamente, sem nenhum sinal.
-      await prisma.$transaction([
-        prisma.fulfillment.create({
-          data: {
-            orderId,
-            provider: purchasedProviderProduct?.provider.code ?? "unknown",
-            status: FulfillmentStatus.FAILED,
-          },
-        }),
-        prisma.order.update({
-          where: { id: orderId },
-          data: {
-            status: OrderStatus.FAILED,
-            events: {
-              create: {
-                status: OrderStatus.FAILED,
-                note: "Não foi possível iniciar a liberação automática. Nossa equipe pode revisar o pedido.",
-              },
-            },
-          },
-        }),
-      ]);
+      await recordPaidFulfillmentFailure(
+        orderId,
+        purchasedProviderProduct?.provider.code,
+      );
     }
     throw new FulfillmentEngineError(code);
   }
@@ -133,63 +148,82 @@ export async function executeFulfillment(
   const adapter = resolveProviderAdapter(selected.provider.code);
   if (!adapter)
     throw new FulfillmentEngineError("PROVIDER_ADAPTER_UNAVAILABLE");
-  const prepared = await prisma.$transaction(async (tx) => {
-    const fulfillment = await tx.fulfillment.upsert({
-      where: { orderId },
-      update: {},
-      create: {
-        orderId,
-        provider: selected.provider.code,
-        status: FulfillmentStatus.QUEUED,
-      },
-    });
-    const providerOrder = await tx.providerOrder.upsert({
-      where: { fulfillmentId: fulfillment.id },
-      update: {},
-      create: {
-        providerId: selected.providerId,
-        providerProductId: selected.id,
-        orderId,
-        fulfillmentId: fulfillment.id,
-        costCents: selected.providerCostCents,
-        currency: selected.currency,
-      },
-    });
-    const claim = await tx.providerOrder.updateMany({
-      where: {
-        id: providerOrder.id,
-        status: retry ? ProviderOrderStatus.FAILED : ProviderOrderStatus.QUEUED,
-        attempts: { lt: MAX_PROVIDER_ATTEMPTS },
-      },
-      data: {
-        status: ProviderOrderStatus.PROCESSING,
-        attempts: { increment: 1 },
-        lastError: null,
-        requestReference: providerOrder.id,
-      },
-    });
-    if (claim.count !== 1)
-      throw new FulfillmentEngineError("CONCURRENT_OR_INVALID_EXECUTION");
-    await tx.fulfillment.update({
-      where: { id: fulfillment.id },
-      data: { status: FulfillmentStatus.PROCESSING },
-    });
-    await tx.order.update({
-      where: { id: orderId },
-      data: {
-        status: OrderStatus.PROCESSING,
-        events: {
-          create: {
-            status: OrderStatus.PROCESSING,
-            note: retry
-              ? "Retry manual de provider iniciado."
-              : "Execução do provider iniciada.",
+  let prepared;
+  try {
+    prepared = await prisma.$transaction(async (tx) => {
+      const fulfillment = await tx.fulfillment.upsert({
+        where: { orderId },
+        update: {},
+        create: {
+          orderId,
+          provider: selected.provider.code,
+          status: FulfillmentStatus.QUEUED,
+        },
+      });
+      const providerOrder = await tx.providerOrder.upsert({
+        where: { fulfillmentId: fulfillment.id },
+        update: {},
+        create: {
+          providerId: selected.providerId,
+          providerProductId: selected.id,
+          orderId,
+          fulfillmentId: fulfillment.id,
+          costCents: selected.providerCostCents,
+          currency: selected.currency,
+        },
+      });
+      const claim = await tx.providerOrder.updateMany({
+        where: {
+          id: providerOrder.id,
+          status: retry ? ProviderOrderStatus.FAILED : ProviderOrderStatus.QUEUED,
+          attempts: { lt: MAX_PROVIDER_ATTEMPTS },
+        },
+        data: {
+          status: ProviderOrderStatus.PROCESSING,
+          attempts: { increment: 1 },
+          lastError: null,
+          requestReference: providerOrder.id,
+        },
+      });
+      if (claim.count !== 1)
+        throw new FulfillmentEngineError("CONCURRENT_OR_INVALID_EXECUTION");
+      await tx.fulfillment.update({
+        where: { id: fulfillment.id },
+        data: { status: FulfillmentStatus.PROCESSING },
+      });
+      await tx.order.update({
+        where: { id: orderId },
+        data: {
+          status: OrderStatus.PROCESSING,
+          events: {
+            create: {
+              status: OrderStatus.PROCESSING,
+              note: retry
+                ? "Retry manual de provider iniciado."
+                : "Execução do provider iniciada.",
+            },
           },
         },
-      },
+      });
+      return providerOrder;
     });
-    return providerOrder;
-  });
+  } catch (prepareError) {
+    // Qualquer falha aqui (inclusive um erro de banco inesperado) desfaz por
+    // inteiro o upsert de Fulfillment/ProviderOrder feito acima nesta mesma
+    // transação — sem este catch, um Payment PAID podia ficar sem NENHUM
+    // registro de Fulfillment e sem nenhum log (ver commerce.ts). CONCURRENT_
+    // OR_INVALID_EXECUTION é o único caso que não é uma falha real: outra
+    // execução já reivindicou/está processando este ProviderOrder.
+    if (
+      !(
+        prepareError instanceof FulfillmentEngineError &&
+        prepareError.code === "CONCURRENT_OR_INVALID_EXECUTION"
+      )
+    ) {
+      await recordPaidFulfillmentFailure(orderId, selected.provider.code);
+    }
+    throw prepareError;
+  }
   try {
     const operationalProvider = await prisma.provider.findUnique({
       where: { id: selected.providerId },

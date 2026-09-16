@@ -36,6 +36,12 @@ export default function CheckoutPanel({
   const [copied, setCopied] = useState(false);
   const [delivery, setDelivery] = useState<DeliveryDTO | null>(null);
   const [variantId, setVariantId] = useState(product.variants.length === 1 ? product.variants[0].id : "");
+  const [pollTimedOut, setPollTimedOut] = useState(false);
+  const [lastPolledOrderId, setLastPolledOrderId] = useState<string | null>(null);
+  if ((order?.id ?? null) !== lastPolledOrderId) {
+    setLastPolledOrderId(order?.id ?? null);
+    setPollTimedOut(false);
+  }
   const submitGuard = useRef(createCheckoutSubmissionGuard());
   const modalRef = useRef<HTMLDialogElement | null>(null);
   const storageKey = `bancadasoft:checkout:${product.id}`;
@@ -127,13 +133,21 @@ export default function CheckoutPanel({
       active = false;
     };
   }, [storageKey, clearActiveCheckout]);
+  // fetchOrder lê sempre o order/token mais recentes via ref: o efeito abaixo
+  // depende só de order?.id, não do objeto inteiro, para que o poller NÃO seja
+  // recriado (e seu cronômetro de timeout reiniciado) a cada atualização.
+  const orderRef = useRef(order);
+  useEffect(() => {
+    orderRef.current = order;
+  }, [order]);
   useEffect(() => {
     if (!order) return;
     const poller = createOrderPoller({
       initialOrder: order,
       fetchOrder: async () => {
+        const current = orderRef.current!;
         const response = await fetch(
-          `/api/orders/${order.id}?token=${encodeURIComponent(order.publicToken)}`,
+          `/api/orders/${current.id}?token=${encodeURIComponent(current.publicToken)}`,
           { cache: "no-store" },
         );
         const payload = await response.json();
@@ -151,10 +165,12 @@ export default function CheckoutPanel({
         // o resultado normalmente, mas uma nova visita à página não deve reabri-la.
         if (!isActiveCheckoutOrder(updated)) clearActiveCheckout();
       },
+      onTimeout: () => setPollTimedOut(true),
     });
     poller.start();
     return poller.stop;
-  }, [order, clearActiveCheckout]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [order?.id, clearActiveCheckout]);
 
   async function checkout(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -500,6 +516,27 @@ export default function CheckoutPanel({
                       <p>
                         Aguarde alguns instantes. Se necessário, nossa equipe
                         acompanhará o pedido.
+                      </p>
+                    </>
+                  ) : paid && pollTimedOut ? (
+                    <>
+                      <span className="state-icon state-success">✓</span>
+                      <span className="checkout-kicker">
+                        Pagamento confirmado
+                      </span>
+                      <h2 id="checkout-title">
+                        Estamos concluindo a liberação do seu acesso
+                      </h2>
+                      <p>
+                        Seu pagamento foi confirmado. A liberação automática
+                        está demorando mais do que o normal, mas seu pedido
+                        continua sendo processado — não é necessário pagar
+                        novamente.
+                      </p>
+                      <p className="checkout-guidance">
+                        Você pode atualizar esta página em alguns instantes ou
+                        acompanhar o andamento pela página de pedido abaixo.
+                        Se precisar, fale com o suporte.
                       </p>
                     </>
                   ) : paid ? (

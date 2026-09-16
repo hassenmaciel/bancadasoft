@@ -7,7 +7,7 @@ import {
 } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { publicProductWhere } from "@/lib/catalog";
-import { executeFulfillment } from "@/lib/fulfillment-engine";
+import { executeFulfillment, FulfillmentEngineError } from "@/lib/fulfillment-engine";
 import {
   configuredPaymentProviderCode,
   getPaymentProvider,
@@ -297,7 +297,21 @@ export const getOrder = (id: string) =>
     },
   });
 
-export async function processPayment(event: ParsedPaymentWebhook) {
+function safeFulfillmentError(error: unknown) {
+  if (error instanceof FulfillmentEngineError)
+    return { name: error.name, code: error.code };
+  if (error instanceof Error)
+    return { name: error.name, code: "FULFILLMENT_INTERNAL_ERROR" };
+  return { name: "UnknownError", code: "FULFILLMENT_INTERNAL_ERROR" };
+}
+
+export async function processPayment(
+  event: ParsedPaymentWebhook,
+  log: (message: string, context: Record<string, unknown>) => void = (
+    message,
+    context,
+  ) => console.error(message, context),
+) {
   const lookup = paymentWebhookLookup(event);
   let payment = lookup.external
     ? await prisma.payment.findFirst({
@@ -375,8 +389,14 @@ export async function processPayment(event: ParsedPaymentWebhook) {
   if (startFulfillment) {
     try {
       await executeFulfillment(payment.orderId);
-    } catch {
-      /* PAID remains committed; fulfillment failure is persisted by the engine */
+    } catch (error) {
+      // PAID permanece confirmado; a falha (com evidência FAILED persistida
+      // pelo engine) precisa ficar visível em log para correlação com o
+      // orderId — nunca deve ser descartada em silêncio.
+      log("[fulfillment] Execução falhou após pagamento confirmado.", {
+        orderId: payment.orderId,
+        ...safeFulfillmentError(error),
+      });
     }
   }
   return { duplicate: false, order: await getOrder(payment.orderId) };

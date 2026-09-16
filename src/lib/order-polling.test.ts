@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createOrderPoller, ORDER_POLL_INTERVAL_MS, shouldPollOrder } from "./order-polling";
+import { createOrderPoller, ORDER_POLL_INTERVAL_MS, ORDER_POLL_MAX_DURATION_MS, shouldPollOrder } from "./order-polling";
 import type { OrderDTO } from "./dto";
 
 const order = (orderStatus: string, paymentStatus: string): OrderDTO => ({
@@ -33,5 +33,20 @@ describe("polling do pedido", () => {
   it("cleanup interrompe consultas futuras", async () => {
     vi.useFakeTimers(); const fetchOrder = vi.fn(async () => order("PENDING_PAYMENT", "PENDING")); const poller = createOrderPoller({ initialOrder: order("PENDING_PAYMENT", "PENDING"), fetchOrder, onUpdate: vi.fn() });
     poller.start(); poller.stop(); await vi.advanceTimersByTimeAsync(ORDER_POLL_INTERVAL_MS * 2); expect(fetchOrder).not.toHaveBeenCalled();
+  });
+  it("[teste 9] não fica preso indefinidamente em PAID: para de consultar e sinaliza timeout após o limite configurado, sem marcar pagamento como falho", async () => {
+    vi.useFakeTimers();
+    const stuckPaid = order("PAID", "PAID");
+    const fetchOrder = vi.fn(async () => stuckPaid);
+    const onUpdate = vi.fn();
+    const onTimeout = vi.fn();
+    const poller = createOrderPoller({ initialOrder: stuckPaid, fetchOrder, onUpdate, onTimeout });
+    poller.start();
+    await vi.advanceTimersByTimeAsync(ORDER_POLL_MAX_DURATION_MS + ORDER_POLL_INTERVAL_MS * 2);
+    expect(onTimeout).toHaveBeenCalledOnce();
+    const callsAtTimeout = fetchOrder.mock.calls.length;
+    await vi.advanceTimersByTimeAsync(ORDER_POLL_INTERVAL_MS * 5);
+    expect(fetchOrder.mock.calls.length).toBe(callsAtTimeout); // parou de consultar
+    expect(onUpdate.mock.calls.every(([updated]) => updated.payment.status === "PAID")).toBe(true);
   });
 });
