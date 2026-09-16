@@ -5,7 +5,11 @@ import Link from "next/link";
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import type { DeliveryDTO, OrderDTO, ProductDTO } from "@/lib/dto";
 import type { CheckoutIdentitySummary } from "@/lib/checkout-identity";
-import { createOrderPoller, isActiveCheckoutOrder } from "@/lib/order-polling";
+import {
+  createOrderPoller,
+  isFailedCheckoutOrder,
+  isRecoverableCheckoutOrder,
+} from "@/lib/order-polling";
 import CredentialDelivery from "@/components/credential-delivery";
 import {
   checkoutErrorMessage,
@@ -36,11 +40,14 @@ export default function CheckoutPanel({
   const [copied, setCopied] = useState(false);
   const [delivery, setDelivery] = useState<DeliveryDTO | null>(null);
   const [variantId, setVariantId] = useState(product.variants.length === 1 ? product.variants[0].id : "");
-  const [pollTimedOut, setPollTimedOut] = useState(false);
+  // Fica true quando o polling entra na fase de espera (frequência reduzida,
+  // ver src/lib/order-polling.ts) — o polling continua rodando, só que mais
+  // devagar; isso NÃO é um erro/timeout de pagamento.
+  const [pollSlowPhase, setPollSlowPhase] = useState(false);
   const [lastPolledOrderId, setLastPolledOrderId] = useState<string | null>(null);
   if ((order?.id ?? null) !== lastPolledOrderId) {
     setLastPolledOrderId(order?.id ?? null);
-    setPollTimedOut(false);
+    setPollSlowPhase(false);
   }
   const submitGuard = useRef(createCheckoutSubmissionGuard());
   const modalRef = useRef<HTMLDialogElement | null>(null);
@@ -51,7 +58,14 @@ export default function CheckoutPanel({
   );
   const paid = order?.payment?.status === "PAID";
   const delivered = order?.status === "DELIVERED" && !!delivery;
-  const failed = order?.status === "FAILED";
+  // PARTE 5: pequena janela em que o pedido já está DELIVERED no backend mas
+  // a Delivery ainda não voltou (ou uma tentativa falhou) — não deve mostrar
+  // formulário nem a mensagem genérica de "liberando acesso".
+  const deliveryPending = order?.status === "DELIVERED" && !delivery;
+  // Cobre FAILED/CANCELLED e pagamento morto (EXPIRED/FAILED/REFUNDED) — nenhum
+  // desses progride sozinho, então nenhum deles pode cair no PIX pendente nem
+  // na mensagem de "liberando" abaixo.
+  const failed = order ? isFailedCheckoutOrder(order) : false;
   const selectedVariant = product.variants.find((variant) => variant.id === variantId);
   const checkoutFields = selectedVariant?.checkoutFields ?? product.checkoutFields;
   // PARTE 1/3/4: cliente logado com cadastro completo pula o formulário;
@@ -59,17 +73,21 @@ export default function CheckoutPanel({
   const needsCpf = identity?.missing.includes("cpfCnpj") ?? false;
   const needsWhatsapp = identity?.missing.includes("whatsapp") ?? false;
 
-  async function loadDelivery(orderId: string) {
+  // GET-only: nunca cria Order/Payment, nunca chama provider. Retorna se a
+  // entrega foi obtida, para permitir retry com backoff (PARTE 5).
+  const loadDelivery = useCallback(async (orderId: string) => {
     const token = localStorage.getItem(`bancadasoft:delivery:${orderId}`);
-    if (!token) return;
+    if (!token) return false;
     const response = await fetch(`/api/orders/${orderId}/delivery`, {
       headers: { authorization: `Bearer ${token}` },
       cache: "no-store",
     });
-    if (!response.ok) return;
+    if (!response.ok) return false;
     const payload = await response.json();
-    if (payload.data.delivery) setDelivery(payload.data.delivery);
-  }
+    if (!payload.data.delivery) return false;
+    setDelivery(payload.data.delivery);
+    return true;
+  }, []);
   useEffect(() => {
     const saved = localStorage.getItem(storageKey);
     if (!saved) return;
@@ -100,10 +118,14 @@ export default function CheckoutPanel({
             localStorage.removeItem(storageKey);
           return;
         }
-        // Fonte da verdade é o estado do pedido no banco: um pedido terminal
-        // (DELIVERED/FAILED/CANCELLED) nunca reabre o checkout automaticamente
-        // nesta página — apenas o recovery explícito (link/e-mail) faz isso.
-        if (!isActiveCheckoutOrder(payload.data)) {
+        // Fonte da verdade é o estado do pedido no banco: um pedido realmente
+        // terminal (FAILED/CANCELLED, ou pagamento expirado/falho/reembolsado)
+        // nunca reabre o checkout automaticamente nesta página — apenas o
+        // recovery explícito (link/e-mail) faz isso. DELIVERED é diferente: é
+        // terminal para fins de polling, mas continua recuperável — o cliente
+        // que volta à página do produto deve ver a entrega já pronta, não o
+        // formulário de compra de novo.
+        if (!isRecoverableCheckoutOrder(payload.data)) {
           clearActiveCheckout();
           return;
         }
@@ -159,18 +181,49 @@ export default function CheckoutPanel({
       },
       onUpdate: (updated) => {
         setOrder(updated);
-        if (updated.status === "DELIVERED") void loadDelivery(updated.id);
-        // Assim que o fulfillment chega a um estado terminal, o pedido deixa de
-        // ser o "checkout ativo" deste produto — a tela aberta continua mostrando
-        // o resultado normalmente, mas uma nova visita à página não deve reabri-la.
-        if (!isActiveCheckoutOrder(updated)) clearActiveCheckout();
+        // Assim que o pedido deixa de ser recuperável (FAILED/CANCELLED), a
+        // referência de "checkout ativo" deste produto é esquecida — uma nova
+        // visita à página não deve reabri-lo. DELIVERED continua recuperável
+        // (ver isRecoverableCheckoutOrder), então a referência é preservada
+        // para que voltar à página ainda mostre a entrega já pronta. A busca
+        // da Delivery em si é responsabilidade só do efeito de carregamento
+        // abaixo (dispara sozinho ao ver DELIVERED sem delivery carregada).
+        if (!isRecoverableCheckoutOrder(updated)) clearActiveCheckout();
       },
-      onTimeout: () => setPollTimedOut(true),
+      onSlowPhase: () => setPollSlowPhase(true),
     });
     poller.start();
     return poller.stop;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [order?.id, clearActiveCheckout]);
+  // PARTE 4/5: DELIVERED é a fonte principal — assim que o pedido chega (ou é
+  // restaurado) nesse estado e ainda não temos a Delivery carregada nesta
+  // sessão (restore, transição ao vivo do polling, ou falha transitória
+  // anterior), este é o único efeito responsável por buscá-la. Só leitura
+  // (GET), nunca cria Order/Payment nem chama provider; tenta novamente com
+  // backoff curto e limitado em vez de exigir F5 ou depender do e-mail.
+  useEffect(() => {
+    if (!order || order.status !== "DELIVERED" || delivery) return;
+    const orderId = order.id;
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const backoffMs = [0, 1500, 3000, 6000];
+    let step = 0;
+    const attempt = async () => {
+      if (cancelled) return;
+      const ok = await loadDelivery(orderId);
+      if (cancelled || ok) return;
+      if (step < backoffMs.length - 1) {
+        step += 1;
+        timer = setTimeout(attempt, backoffMs[step]);
+      }
+    };
+    timer = setTimeout(attempt, backoffMs[step]);
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+    };
+  }, [order, delivery, loadDelivery]);
 
   async function checkout(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -266,15 +319,38 @@ export default function CheckoutPanel({
   }
   function close() {
     if (submitting) return;
-    // X fecha apenas a experiência atual. Se o pedido já é terminal, também limpa
-    // a referência de "checkout ativo" para liberar uma nova compra deste produto;
-    // pedidos PENDING_PAYMENT/PROCESSING preservam a referência para recovery.
-    if (order && !isActiveCheckoutOrder(order)) clearActiveCheckout();
+    // X fecha apenas a experiência visual atual. Pedidos recuperáveis (ainda
+    // ativos, ou já DELIVERED) preservam order/delivery em memória e a
+    // referência no localStorage — reabrir pelo CTA do produto volta a mostrar
+    // exatamente o mesmo estado, sem precisar consultar o servidor de novo.
+    // Em qualquer outro caso (sem pedido, ou pedido realmente não recuperável
+    // — FAILED/CANCELLED) o estado visual é resetado, liberando uma compra
+    // nova deste produto; a referência local só é apagada quando havia de
+    // fato um pedido não recuperável (um token pré-pedido ainda sem Order
+    // associada, salvo antes do POST /api/checkout, continua preservado para
+    // a idempotência de retry).
+    const recoverable = order ? isRecoverableCheckoutOrder(order) : false;
+    if (order && !recoverable) clearActiveCheckout();
+    if (!recoverable) {
+      setOrder(null);
+      setNotice("");
+      setCopied(false);
+      setDelivery(null);
+    }
     setOpen(false);
+  }
+  // Permite explicitamente iniciar uma nova compra do mesmo produto mesmo
+  // havendo uma entrega anterior já concluída — sem transformar o DELIVERED
+  // antigo em bloqueio permanente e sem tocar no schema/idempotência do
+  // servidor: só esquece a referência local, então o próximo checkout() gera
+  // um deliveryAccessToken novo em vez de reutilizar o token já vinculado ao
+  // pedido anterior (evitaria colisão do deliveryTokenHash único no banco).
+  function startNewPurchase() {
+    clearActiveCheckout();
     setOrder(null);
+    setDelivery(null);
     setNotice("");
     setCopied(false);
-    setDelivery(null);
   }
 
   return (
@@ -500,25 +576,61 @@ export default function CheckoutPanel({
                       </div>
                       <p>Seu acesso está pronto para uso.</p>
                       <CredentialDelivery {...delivery} />
+                      {product.downloadUrl && (
+                        <a
+                          className="access-tool-cta"
+                          href={product.downloadUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                        >
+                          {product.downloadLabel || "ACESSAR FERRAMENTA"}
+                        </a>
+                      )}
                       <p className="checkout-guidance">
                         Guarde essas informações até finalizar o período de uso.
                       </p>
                       <p className="email-note">
                         Também enviamos um link de recuperação para seu e-mail.
                       </p>
+                      <button
+                        type="button"
+                        className="new-purchase-link"
+                        onClick={startNewPurchase}
+                      >
+                        Fazer nova compra
+                      </button>
+                    </>
+                  ) : deliveryPending ? (
+                    <>
+                      <span className="state-icon state-success">✓</span>
+                      <span className="checkout-kicker">Pagamento confirmado</span>
+                      <h2 id="checkout-title">Seu acesso foi liberado</h2>
+                      <div className="processing-line">
+                        <span />
+                        <span />
+                        <span />
+                      </div>
+                      <p>Estamos carregando os dados da entrega...</p>
+                      <button
+                        type="button"
+                        className="new-purchase-link"
+                        onClick={() => void loadDelivery(order.id)}
+                      >
+                        Tentar novamente
+                      </button>
                     </>
                   ) : failed ? (
                     <>
                       <span className="state-icon state-wait">!</span>
                       <h2 id="checkout-title">
-                        Estamos concluindo sua liberação
+                        Não foi possível concluir a liberação automaticamente
                       </h2>
                       <p>
-                        Aguarde alguns instantes. Se necessário, nossa equipe
-                        acompanhará o pedido.
+                        O pagamento permanece registrado. Não faça um novo
+                        pagamento. Nossa equipe pode verificar este pedido.
                       </p>
                     </>
-                  ) : paid && pollTimedOut ? (
+                  ) : paid && pollSlowPhase ? (
                     <>
                       <span className="state-icon state-success">✓</span>
                       <span className="checkout-kicker">

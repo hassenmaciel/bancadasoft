@@ -548,6 +548,43 @@ body:has(.checkout-modal)::before {
   font-size: 10px !important;
   color: #3f759f !important;
 }
+.access-tool-cta {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 44px;
+  margin-top: 6px;
+  border: 0;
+  border-radius: 10px;
+  background: linear-gradient(135deg, #12b76a, #07894a);
+  box-shadow: 0 12px 25px #07894a3d;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 0.4px;
+  text-decoration: none;
+  cursor: pointer;
+  transition:
+    transform 0.18s,
+    box-shadow 0.18s;
+}
+.access-tool-cta:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 15px 30px #07894a52;
+}
+.new-purchase-link {
+  align-self: center;
+  margin-top: 6px;
+  padding: 7px 12px;
+  border: 0;
+  background: transparent;
+  color: #3276bb;
+  font-size: 9px;
+  font-weight: 800;
+  text-decoration: underline;
+  cursor: pointer;
+}
 @media (max-height: 760px) and (min-width: 761px) {
   .checkout-shell {
     min-height: calc(100vh - 32px);

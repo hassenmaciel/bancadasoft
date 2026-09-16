@@ -1,11 +1,14 @@
 import type { OrderDTO } from "./dto";
 
+// Fase rápida: primeiros minutos após o pagamento, quando o fulfillment
+// automático normalmente conclui.
 export const ORDER_POLL_INTERVAL_MS = 3000;
-// Limite razoável para não deixar o cliente preso indefinidamente em
-// "Liberando seu acesso..." caso o fulfillment automático demore/trave. Não
-// significa que o pagamento falhou nem que o polling do backend para — só
-// que a UI passa a mostrar uma mensagem de espera seguem, sem pedir novo PIX.
-export const ORDER_POLL_MAX_DURATION_MS = 3 * 60 * 1000;
+export const ORDER_POLL_FAST_PHASE_MS = 3 * 60 * 1000;
+// Fase de espera: depois da fase rápida o polling NUNCA para definitivamente
+// enquanto o pedido não chegar a um estado terminal — só reduz a frequência,
+// para não deixar o cliente com PIX pago preso num "sumiço" da UI caso o
+// fulfillment automático demore além do normal.
+export const ORDER_POLL_SLOW_INTERVAL_MS = 20 * 1000;
 
 export const TERMINAL_ORDER_STATUSES = new Set(["DELIVERED", "FAILED", "CANCELLED"]);
 const finalPaymentStatuses = new Set(["EXPIRED", "FAILED", "REFUNDED"]);
@@ -20,57 +23,91 @@ export function shouldPollOrder(order: OrderDTO) {
 // reembolsado) não pode — mesma regra usada para decidir se o polling continua.
 export const isActiveCheckoutOrder = (order: OrderDTO) => shouldPollOrder(order);
 
+// DELIVERED não é "ativo" (não deve mais ser consultado pelo polling), mas
+// continua sendo uma compra recuperável: reabrir a página/o modal deve
+// mostrar a entrega já pronta em vez de descartar a referência e voltar ao
+// formulário. FAILED/CANCELLED permanecem não recuperáveis.
+export const isRecoverableCheckoutOrder = (order: OrderDTO) =>
+  isActiveCheckoutOrder(order) || order.status === "DELIVERED";
+
+// Terminal sem entrega: FAILED/CANCELLED, ou pagamento que morreu (EXPIRED/
+// FAILED/REFUNDED) antes da Order chegar a DELIVERED. Continua terminal para
+// o polling (nunca reativa sozinho) — usado pela UI só para nunca exibir
+// mensagem de "liberando"/PIX pendente para um pedido que não vai progredir.
+export const isFailedCheckoutOrder = (order: OrderDTO) =>
+  !isRecoverableCheckoutOrder(order);
+
 type PollerOptions = {
   initialOrder: OrderDTO;
   fetchOrder: () => Promise<OrderDTO>;
   onUpdate: (order: OrderDTO) => void;
-  onTimeout?: () => void;
-  intervalMs?: number;
-  maxDurationMs?: number;
+  /** Disparado uma única vez ao cruzar para a fase de espera (frequência reduzida). */
+  onSlowPhase?: () => void;
+  fastIntervalMs?: number;
+  slowIntervalMs?: number;
+  fastPhaseDurationMs?: number;
 };
 
 export function createOrderPoller({
   initialOrder,
   fetchOrder,
   onUpdate,
-  onTimeout,
-  intervalMs = ORDER_POLL_INTERVAL_MS,
-  maxDurationMs = ORDER_POLL_MAX_DURATION_MS,
+  onSlowPhase,
+  fastIntervalMs = ORDER_POLL_INTERVAL_MS,
+  slowIntervalMs = ORDER_POLL_SLOW_INTERVAL_MS,
+  fastPhaseDurationMs = ORDER_POLL_FAST_PHASE_MS,
 }: PollerOptions) {
-  let timer: ReturnType<typeof setInterval> | null = null;
+  let timer: ReturnType<typeof setTimeout> | null = null;
   let stopped = false;
   let requestInFlight = false;
   let startedAt = 0;
+  let slowPhaseNotified = false;
 
   const stop = () => {
     stopped = true;
-    if (timer) clearInterval(timer);
+    if (timer) clearTimeout(timer);
     timer = null;
   };
 
+  const inSlowPhase = () => Date.now() - startedAt >= fastPhaseDurationMs;
+
+  const scheduleNext = () => {
+    if (stopped) return;
+    timer = setTimeout(poll, inSlowPhase() ? slowIntervalMs : fastIntervalMs);
+  };
+
   const poll = async () => {
-    if (stopped || requestInFlight) return;
-    if (Date.now() - startedAt >= maxDurationMs) {
-      stop();
-      onTimeout?.();
-      return;
+    if (stopped) return;
+    if (!slowPhaseNotified && inSlowPhase()) {
+      slowPhaseNotified = true;
+      onSlowPhase?.();
     }
-    requestInFlight = true;
-    try {
-      const updated = await fetchOrder();
-      if (stopped) return;
-      onUpdate(updated);
-      if (!shouldPollOrder(updated)) stop();
-    } finally {
-      requestInFlight = false;
+    if (!requestInFlight) {
+      requestInFlight = true;
+      try {
+        // Somente leitura: nunca cria Order/Payment, nunca chama provider.
+        const updated = await fetchOrder();
+        if (!stopped) {
+          onUpdate(updated);
+          if (!shouldPollOrder(updated)) {
+            stop();
+            return;
+          }
+        }
+      } catch {
+        // Rede instável: tenta novamente no próximo ciclo, sem interromper o polling.
+      } finally {
+        requestInFlight = false;
+      }
     }
+    scheduleNext();
   };
 
   return {
     start() {
       if (timer || stopped || !shouldPollOrder(initialOrder)) return;
       startedAt = Date.now();
-      timer = setInterval(poll, intervalMs);
+      scheduleNext();
     },
     stop,
   };
