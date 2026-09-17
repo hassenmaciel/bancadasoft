@@ -31,6 +31,11 @@ export type ProviderOrderResult = {
 
 export interface ProviderAdapter {
   readonly code: string;
+  // Capability explícita: só o motor de reconciliação pode chamar getOrderStatus
+  // quando isto for true. Um adapter sem contrato real de consulta (ex.:
+  // HeartUnlocks, que confirma via callback) deve declarar false em vez de
+  // deixar o motor genérico descobrir isso por tentativa e erro.
+  readonly supportsReconciliation: boolean;
   checkConnection(): Promise<ProviderHealth>;
   listProducts(): Promise<ProviderCatalogItem[]>;
   getBalance(): Promise<ProviderBalance>;

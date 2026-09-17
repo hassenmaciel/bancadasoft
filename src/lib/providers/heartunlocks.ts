@@ -10,6 +10,9 @@ export { ProviderOrderUncertainError } from "./types";
 type GatewayFetcher=(input:string,init?:RequestInit)=>Promise<Response>;
 export class HeartUnlocksProviderAdapter implements ProviderAdapter {
   readonly code=HEARTUNLOCKS_CODE;
+  // Confirmação de HeartUnlocks acontece via callback (heartunlocks-callback.ts),
+  // não por consulta de status — getOrderStatus não tem contrato real aqui.
+  readonly supportsReconciliation=false;
   constructor(private readonly options:{gatewayUrl:string;gatewaySecret:string;fetcher?:GatewayFetcher;timeoutMs?:number}){}
   private async request<T>(path:string,init:RequestInit={}){const controller=new AbortController();const timer=setTimeout(()=>controller.abort(),this.options.timeoutMs??12000);try{const response=await(this.options.fetcher??fetch)(`${this.options.gatewayUrl.replace(/\/$/,"")}${path}`,{...init,signal:controller.signal,headers:{"content-type":"application/json",authorization:`Bearer ${this.options.gatewaySecret}`,...init.headers}});const data=await response.json() as T;if(!response.ok)throw new Error(`HEARTUNLOCKS_GATEWAY_${response.status}`);return data}catch(error){if(error instanceof Error&&error.name==="AbortError")throw new ProviderOrderUncertainError();throw error}finally{clearTimeout(timer)}}
   async checkConnection():Promise<ProviderHealth>{try{const result=await this.request<{ok:boolean}>("/health");return{connected:result.ok,message:result.ok?"Gateway disponível":"Gateway indisponível"}}catch{return{connected:false,message:"Gateway indisponível"}}}
@@ -21,6 +24,7 @@ export class HeartUnlocksProviderAdapter implements ProviderAdapter {
 
 export class HeartUnlocksDisconnectedAdapter implements ProviderAdapter {
   readonly code=HEARTUNLOCKS_CODE;
+  readonly supportsReconciliation=false;
   async checkConnection():Promise<ProviderHealth>{return{connected:false,message:"Não conectado"}}
   async listProducts():Promise<ProviderCatalogItem[]>{throw new ProviderNotConnectedError(this.code)}
   async getBalance():Promise<ProviderBalance>{throw new ProviderNotConnectedError(this.code)}

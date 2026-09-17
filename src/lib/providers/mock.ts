@@ -3,6 +3,7 @@ import type { ProviderAdapter, ProviderBalance, ProviderCatalogItem, ProviderHea
 export type MockOutcome = "SUCCESS" | "PROCESSING" | "FAILURE";
 export class MockProviderAdapter implements ProviderAdapter {
   readonly code = "mock-sandbox";
+  readonly supportsReconciliation = true;
   constructor(private readonly outcome: MockOutcome = "SUCCESS") {}
   async checkConnection(): Promise<ProviderHealth> { return { connected: true, message: "Sandbox disponível" }; }
   async listProducts(): Promise<ProviderCatalogItem[]> { return []; }

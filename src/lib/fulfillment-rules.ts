@@ -17,6 +17,27 @@ export function shouldRecordPaidFulfillmentFailure(error:string|null,paymentStat
   return paymentStatus==="PAID"&&error!==null&&error!=="ALREADY_DELIVERED";
 }
 
+// Mesmo sinal usado por validateProviderExecution para retornar
+// RECONCILIATION_REQUIRED. Extraído aqui para que o admin retry E o recovery
+// automático do fluxo guest usem exatamente a mesma regra de negócio — nunca
+// duas cópias divergentes decidindo "já houve tentativa externa" de formas
+// diferentes.
+export type ProviderOrderAttemptEvidence = {
+  requestReference: string | null;
+  externalOrderId: string | null;
+  lastError: string | null;
+  callbackEventCount: number;
+};
+export function hasExternalAttemptEvidence(item?: ProviderOrderAttemptEvidence | null) {
+  return Boolean(
+    item &&
+      (item.requestReference ||
+        item.externalOrderId ||
+        item.callbackEventCount > 0 ||
+        item.lastError === "PROVIDER_RESULT_UNCERTAIN"),
+  );
+}
+
 export function buildProviderExecutionPayload(
   orderId: string,
   paidAmountCents: number | undefined,

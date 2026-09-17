@@ -64,6 +64,7 @@ const defaultSleep: Sleeper = (milliseconds) =>
 
 export class AdcleanProviderAdapter implements ProviderAdapter {
   readonly code = ADCLEAN_CODE;
+  readonly supportsReconciliation = true;
   private readonly baseUrl: string;
   private readonly token: string;
 
@@ -276,6 +277,7 @@ export class AdcleanProviderAdapter implements ProviderAdapter {
 
 export class AdcleanDisconnectedAdapter implements ProviderAdapter {
   readonly code = ADCLEAN_CODE;
+  readonly supportsReconciliation = false;
   async checkConnection(): Promise<ProviderHealth> {
     return { connected: false, message: "Não conectado" };
   }
