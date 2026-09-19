@@ -1,4 +1,5 @@
 import { PaymentStatus } from "@prisma/client";
+import { resolveAsaasApiKey } from "./asaas-api-key";
 import { AsaasClient, AsaasClientError, ASAAS_PRODUCTION_BASE_URL, ASAAS_SANDBOX_BASE_URL } from "./asaas-client";
 import type {
   ParsedPaymentWebhook,
@@ -147,7 +148,7 @@ export class AsaasPaymentProvider implements PaymentProvider {
 }
 
 export function createConfiguredAsaasProvider(env: NodeJS.ProcessEnv = process.env) {
-  const key = env.ASAAS_API_KEY?.trim();
+  const { key } = resolveAsaasApiKey(env);
   const environment = env.ASAAS_ENV?.trim().toLowerCase() ?? "sandbox";
   if (!key || (environment !== "sandbox" && environment !== "production"))
     return new AsaasPaymentProvider();

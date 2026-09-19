@@ -1,3 +1,4 @@
+import { resolveAsaasApiKey } from "./asaas-api-key";
 export const ASAAS_SANDBOX_URL = "https://api-sandbox.asaas.com/v3";
 export const ASAAS_PRODUCTION_URL = "https://api.asaas.com/v3";
 const ALLOWED_BASE_URLS = new Map([
@@ -30,12 +31,14 @@ export type AsaasDiagnosticDTO = {
   baseUrl: "SANDBOX" | "PRODUCTION" | "INVALID";
   baseUrlStatus: "OK" | "INVALID";
   apiKeyConfigured: boolean;
+  apiKeySource: "b64" | "plain" | "none";
+  apiKeyReason: "ok" | "b64_invalid" | "missing";
   webhookTokenConfigured: boolean;
   authentication: "ONLINE" | "ERROR" | "NOT_TESTED";
   httpStatus: number | null;
   checkedAt: string | null;
   configurationError: boolean;
-  reason: "PROVIDER_INVALID" | "ENVIRONMENT_INVALID" | "BASE_URL_INVALID" | "API_KEY_MISSING" | "API_KEY_HEADER_INVALID" | "WEBHOOK_TOKEN_MISSING" | "AUTHENTICATION_FAILED" | "HTTP_ERROR" | "TIMEOUT" | "NETWORK_ERROR" | null;
+  reason: "PROVIDER_INVALID" | "ENVIRONMENT_INVALID" | "BASE_URL_INVALID" | "API_KEY_MISSING" | "API_KEY_B64_INVALID" | "API_KEY_HEADER_INVALID" | "WEBHOOK_TOKEN_MISSING" | "AUTHENTICATION_FAILED" | "HTTP_ERROR" | "TIMEOUT" | "NETWORK_ERROR" | null;
   category: ErrorCategory | "HTTP" | "AUTH" | null;
   target: { host: string; path: string } | null;
   requestUrlValid: boolean;
@@ -98,7 +101,7 @@ export function readAsaasRuntimeConfig(env: NodeJS.ProcessEnv = process.env): Ru
   const environment = rawEnvironment === "sandbox" || rawEnvironment === "production" ? rawEnvironment : "other";
   const effectiveBaseUrl = (env.ASAAS_BASE_URL?.trim() || ASAAS_SANDBOX_URL).replace(/\/+$/, "");
   const baseUrl = ALLOWED_BASE_URLS.get(effectiveBaseUrl as typeof ASAAS_SANDBOX_URL | typeof ASAAS_PRODUCTION_URL) ?? "INVALID";
-  const apiKey = env.ASAAS_API_KEY?.trim() || null;
+  const { key: apiKey, source: apiKeySource, reason: apiKeyReason } = resolveAsaasApiKey(env);
   const apiKeyConfigured = Boolean(apiKey);
   const apiKeyHeaderValid = validateHeaderValue(apiKey);
   const webhookTokenConfigured = configured(env.ASAAS_WEBHOOK_TOKEN);
@@ -106,10 +109,10 @@ export function readAsaasRuntimeConfig(env: NodeJS.ProcessEnv = process.env): Ru
   let requestUrlValid = false;
   let target: AsaasDiagnosticDTO["target"] = null;
   try { const url = new URL(`${effectiveBaseUrl}/finance/balance`); requestUrlValid = url.protocol === "https:"; target = { host: url.host, path: url.pathname }; } catch { /* reported safely below */ }
-  const reason = provider !== "asaas" ? "PROVIDER_INVALID" : environment === "other" ? "ENVIRONMENT_INVALID" : baseUrl === "INVALID" || baseUrl !== expectedBase ? "BASE_URL_INVALID" : !requestUrlValid ? "BASE_URL_INVALID" : !apiKeyConfigured ? "API_KEY_MISSING" : !apiKeyHeaderValid ? "API_KEY_HEADER_INVALID" : !webhookTokenConfigured ? "WEBHOOK_TOKEN_MISSING" : null;
+  const reason = provider !== "asaas" ? "PROVIDER_INVALID" : environment === "other" ? "ENVIRONMENT_INVALID" : baseUrl === "INVALID" || baseUrl !== expectedBase ? "BASE_URL_INVALID" : !requestUrlValid ? "BASE_URL_INVALID" : apiKeyReason === "b64_invalid" ? "API_KEY_B64_INVALID" : !apiKeyConfigured ? "API_KEY_MISSING" : !apiKeyHeaderValid ? "API_KEY_HEADER_INVALID" : !webhookTokenConfigured ? "WEBHOOK_TOKEN_MISSING" : null;
   return {
     ok: false, provider, environment, baseUrl, baseUrlStatus: baseUrl === "INVALID" ? "INVALID" : "OK",
-    apiKeyConfigured, webhookTokenConfigured, authentication: "NOT_TESTED", httpStatus: null, checkedAt: null,
+    apiKeyConfigured, apiKeySource, apiKeyReason, webhookTokenConfigured, authentication: "NOT_TESTED", httpStatus: null, checkedAt: null,
     configurationError: reason !== null, reason, category: !requestUrlValid ? "URL" : !apiKeyHeaderValid && apiKeyConfigured ? "HEADER" : null,
     target, requestUrlValid, apiKeyHeaderValid, requestAttempted: false, error: null,
     connectivity: { attempted: false, reachable: null, httpStatus: null, error: null }, apiKey, effectiveBaseUrl,
