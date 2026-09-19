@@ -50,7 +50,7 @@ export class AsaasPaymentProvider implements PaymentProvider {
   async getPixPaymentDetails(externalPaymentId:string):Promise<PixPaymentDetails>{
     const client=this.configured();const maxAttempts=this.pixOptions.maxAttempts??3;const wait=this.pixOptions.wait??((milliseconds:number)=>new Promise<void>((resolve)=>setTimeout(resolve,milliseconds)));
     for(let attempt=1;attempt<=maxAttempts;attempt++){
-      try{const qr=await client.request<PixResponse>(`/payments/${encodeURIComponent(externalPaymentId)}/pixQrCode`);if(!qr.payload||!qr.expirationDate)throw new Error("ASAAS_INVALID_PIX_RESPONSE");return{externalPaymentId,pixCode:qr.payload,qrCode:qr.encodedImage,expiresAt:new Date(qr.expirationDate)};}
+      try{const qr=await client.request<PixResponse>(`/payments/${encodeURIComponent(externalPaymentId)}/pixQrCode`);if(!qr.payload||!qr.encodedImage||!qr.expirationDate)throw new Error("ASAAS_INVALID_PIX_RESPONSE");return{externalPaymentId,pixCode:qr.payload,qrCode:qr.encodedImage,expiresAt:new Date(qr.expirationDate)};}
       catch(error){const retryable=error instanceof AsaasClientError&&error.status===400&&error.providerReason==="PIX_NOT_READY";if(!retryable||attempt===maxAttempts)throw error;await wait(attempt*400);}
     }
     throw new Error("ASAAS_INVALID_PIX_RESPONSE");

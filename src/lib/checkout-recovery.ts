@@ -36,6 +36,10 @@ type RecoverOrder = (
   token: string,
 ) => Promise<Parameters<typeof orderDto>[0] | null>;
 
+export function hasPayablePix(order: Parameters<typeof orderDto>[0]) {
+  return Boolean(order.payment?.pixCode && order.payment.qrCode);
+}
+
 export async function handleCheckoutRecoveryRequest(
   request: Request,
   recover: RecoverOrder,
@@ -61,6 +65,15 @@ export async function handleCheckoutRecoveryRequest(
       return NextResponse.json(
         { ok: false, error: "Checkout não encontrado.", code: "RECOVERY_NOT_FOUND" },
         { status: 404 },
+      );
+    if (!hasPayablePix(order))
+      return NextResponse.json(
+        {
+          ok: false,
+          error: "O PIX ainda nao esta disponivel. Tente gerar novamente.",
+          code: "PIX_INCOMPLETE",
+        },
+        { status: 409 },
       );
     return NextResponse.json({
       ok: true,

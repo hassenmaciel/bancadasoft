@@ -135,4 +135,13 @@ describe("recovery do checkout guest após reload", () => {
     const payload = await response.json();
     expect(JSON.stringify(payload)).not.toMatch(/cpf|email|payment-existing/i);
   });
+  it("nao restaura estado de pagamento sem QR e payload utilizaveis", async () => {
+    const recover = vi.fn(async () => ({
+      ...baseOrder,
+      payment: { ...baseOrder.payment, pixCode: "", qrCode: null },
+    }));
+    const response = await handleCheckoutRecoveryRequest(request(recoveryToken), recover);
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toMatchObject({ ok: false, code: "PIX_INCOMPLETE" });
+  });
 });

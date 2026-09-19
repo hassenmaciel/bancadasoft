@@ -19,7 +19,11 @@ import {
   transitionPayment,
 } from "@/lib/payments/rules";
 import type { ParsedPaymentWebhook } from "@/lib/payments/types";
-import { PixPaymentReconciliationRequiredError } from "@/lib/payments/types";
+import {
+  PaymentProviderNotConnectedError,
+  PixPaymentReconciliationRequiredError,
+} from "@/lib/payments/types";
+import { AsaasClientError } from "@/lib/payments/asaas-client";
 import { createDeliveryAccess } from "@/lib/guest-delivery";
 import { reconcilePendingPixPayment } from "@/lib/payment-reconciliation";
 import { resolveProviderProduct } from "@/lib/providers/selection";
@@ -49,6 +53,103 @@ export const productsForAdmin = () =>
 export const setProductAvailability = (id: string, available: boolean) =>
   prisma.product.update({ where: { id }, data: { available } });
 
+async function retryPendingPixCheckout(orderId: string) {
+  const order = await prisma.order.findUnique({
+    where: { id: orderId },
+    include: { payment: true, customer: true },
+  });
+  if (!order?.payment) throw new Error("CHECKOUT_PAYMENT_NOT_FOUND");
+  if (order.payment.pixCode && order.payment.qrCode) return;
+  if (order.payment.externalPaymentId) {
+    await reconcilePendingPixPayment(order.id);
+    const refreshed = await prisma.payment.findUnique({ where: { orderId } });
+    if (!refreshed?.pixCode || !refreshed.qrCode)
+      throw new Error("PIX_CHECKOUT_INCOMPLETE");
+    return;
+  }
+
+  const provider = getPaymentProvider(order.payment.provider);
+  if (!provider) throw new Error("PAYMENT_PROVIDER_UNAVAILABLE");
+  const pendingReference = `pending:${order.publicToken}`;
+  const creatingReference = `creating:${order.publicToken}`;
+  const claimed = await prisma.payment.updateMany({
+    where: {
+      id: order.payment.id,
+      externalPaymentId: null,
+      providerReference: pendingReference,
+    },
+    data: { providerReference: creatingReference },
+  });
+  if (claimed.count !== 1) throw new Error("PIX_CHECKOUT_IN_PROGRESS");
+
+  try {
+    const payment = await provider.createPixPayment({
+      orderId: order.publicToken,
+      amountCents: order.totalCents,
+      expiresAt: order.payment.expiresAt,
+      customer: {
+        internalId: order.customer.id,
+        name: order.customer.name,
+        email: order.customer.email,
+        cpfCnpj: order.customer.cpfCnpj ?? undefined,
+        mobilePhone: order.customer.whatsapp ?? undefined,
+        externalCustomerId: order.customer.asaasCustomerId ?? undefined,
+      },
+    });
+    await prisma.$transaction(async (tx) => {
+      if (payment.externalCustomerId && !order.customer.asaasCustomerId)
+        await tx.user.update({
+          where: { id: order.customer.id },
+          data: { asaasCustomerId: payment.externalCustomerId },
+        });
+      await tx.payment.update({
+        where: { id: order.payment!.id },
+        data: {
+          providerReference: payment.externalPaymentId,
+          externalPaymentId: payment.externalPaymentId,
+          status: payment.status,
+          pixCode: payment.pixCode,
+          qrCode: payment.qrCode,
+          expiresAt: payment.expiresAt,
+        },
+      });
+      await tx.orderEvent.create({
+        data: {
+          orderId: order.id,
+          status: OrderStatus.PENDING_PAYMENT,
+          note: `PIX ${provider.code} criado.`,
+        },
+      });
+    });
+  } catch (error) {
+    if (error instanceof PixPaymentReconciliationRequiredError) {
+      await prisma.$transaction(async (tx) => {
+        if (error.externalCustomerId && !order.customer.asaasCustomerId)
+          await tx.user.update({
+            where: { id: order.customer.id },
+            data: { asaasCustomerId: error.externalCustomerId },
+          });
+        await tx.payment.update({
+          where: { id: order.payment!.id },
+          data: {
+            providerReference: error.externalPaymentId,
+            externalPaymentId: error.externalPaymentId,
+          },
+        });
+      });
+    } else if (
+      error instanceof PaymentProviderNotConnectedError ||
+      (error instanceof AsaasClientError && error.status !== null && error.status < 500)
+    ) {
+      await prisma.payment.updateMany({
+        where: { id: order.payment.id, providerReference: creatingReference },
+        data: { providerReference: pendingReference },
+      });
+    }
+    throw error;
+  }
+}
+
 export async function createOrder(input: {
   productId: string;
   variantId?: string;
@@ -67,7 +168,7 @@ export async function createOrder(input: {
   // compra: apenas pedidos ainda ativos reutilizam o token para evitar cobrança
   // duplicada (ver PARTE 1/7 do checklist de recovery).
   if (recovered && !TERMINAL_ORDER_STATUSES.has(recovered.status)) {
-    await reconcilePendingPixPayment(recovered.id);
+    await retryPendingPixCheckout(recovered.id);
     return {
       order: await getOrder(recovered.id),
       deliveryAccessToken: access.token,

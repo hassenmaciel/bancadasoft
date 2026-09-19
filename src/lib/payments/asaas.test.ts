@@ -66,7 +66,7 @@ describe("AsaasPaymentProvider", () => {
   it("reutiliza o customer externo persistido", async () => {
     const fetcher = vi.fn()
       .mockResolvedValueOnce(json({ id: "pay_reused", status: "PENDING" }))
-      .mockResolvedValueOnce(json({ payload: "pix-reused", expirationDate: "2026-09-15T23:59:59Z" }));
+      .mockResolvedValueOnce(json({ payload: "pix-reused", encodedImage: "qr-reused", expirationDate: "2026-09-15T23:59:59Z" }));
     const provider = new AsaasPaymentProvider(new AsaasClient("isolated-test-key", { fetcher }));
     await provider.createPixPayment({ ...input, customer: { ...input.customer, cpfCnpj: undefined, externalCustomerId: "cus_existing" } });
     expect(fetcher).toHaveBeenCalledTimes(2);
@@ -79,7 +79,7 @@ describe("AsaasPaymentProvider", () => {
       .mockResolvedValueOnce(json({ id: "cus_existing" }))
       .mockResolvedValueOnce(json({ id: "pay_existing", status: "PENDING" }))
       .mockResolvedValueOnce(json({ errors: [{ code: "pix_not_ready", description: "Pix temporariamente indisponível" }] }, 400))
-      .mockResolvedValueOnce(json({ payload: "same-pix", expirationDate: "2026-09-15T23:59:59Z" }));
+      .mockResolvedValueOnce(json({ payload: "same-pix", encodedImage: "same-qr", expirationDate: "2026-09-15T23:59:59Z" }));
     const wait = vi.fn(async () => undefined);
     const provider = new AsaasPaymentProvider(new AsaasClient("isolated-test-key", { fetcher }), { wait });
     await expect(provider.createPixPayment(input)).resolves.toMatchObject({ externalPaymentId: "pay_existing", pixCode: "same-pix" });
@@ -106,6 +106,15 @@ describe("AsaasPaymentProvider", () => {
     await expect(provider.getPixPaymentDetails("pay_existing")).resolves.toMatchObject({ externalPaymentId: "pay_existing", pixCode: "existing-pix", qrCode: "existing-qr" });
     expect(fetcher).toHaveBeenCalledOnce();
     expect(fetcher.mock.calls[0][0]).toBe(`${ASAAS_SANDBOX_BASE_URL}/payments/pay_existing/pixQrCode`);
+    expect(fetcher.mock.calls[0][1]?.body).toBeUndefined();
+  });
+
+  it.each([
+    { payload: "pix", expirationDate: "2026-09-15T23:59:59Z" },
+    { encodedImage: "qr", expirationDate: "2026-09-15T23:59:59Z" },
+  ])("nao considera PIX incompleto pronto", async (response) => {
+    const provider = new AsaasPaymentProvider(new AsaasClient("isolated-test-key", { fetcher: vi.fn(async () => json(response)) }));
+    await expect(provider.getPixPaymentDetails("pay_incomplete")).rejects.toThrow("ASAAS_INVALID_PIX_RESPONSE");
   });
 
   it("não inventa documento quando CPF/CNPJ não foi informado", async () => {
