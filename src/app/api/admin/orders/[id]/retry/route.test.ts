@@ -185,7 +185,10 @@ describe("retry/recover de fulfillment — decide entre 1ª execução, retry li
 
   it("POST: chama reconcileFulfillment (NUNCA executeFulfillment) quando existe evidência de tentativa externa", async () => {
     db.order.findUnique.mockResolvedValue({
+      status: "PROCESSING",
+      payment: { status: "PAID" },
       fulfillment: {
+        delivery: null,
         providerOrders: [
           {
             id: "po-1",

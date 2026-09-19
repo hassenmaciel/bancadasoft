@@ -3,6 +3,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import CredentialDelivery from "@/components/credential-delivery";
 import type { DeliveryDTO } from "@/lib/dto";
+import { shouldContinueGuestDeliveryPolling } from "@/lib/order-polling";
 
 type State = {
   number: string;
@@ -48,10 +49,16 @@ export default function GuestDelivery({ orderId }: { orderId: string }) {
       }
       if (stopped) return;
       setState(payload.data);
+      // FAILED + Payment PAID não é terminal: o backend ainda pode convergir
+      // sozinho (ver src/lib/order-polling.ts, mesma regra do checkout
+      // principal) — incidente real de 17/09/2026 mostrou que parar aqui era
+      // o único motivo de pedidos pagos ficarem presos sem código.
       if (
-        !payload.data.delivery &&
-        payload.data.status !== "FAILED" &&
-        payload.data.status !== "CANCELLED"
+        shouldContinueGuestDeliveryPolling(
+          payload.data.status,
+          payload.data.paymentStatus,
+          !!payload.data.delivery,
+        )
       )
         timer = setTimeout(load, 3000);
     };

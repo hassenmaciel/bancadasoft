@@ -18,7 +18,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 // Zero chamadas reais a AdClean/Asaas/HeartUnlocks.
 
 const db = vi.hoisted(() => ({
-  order: { findUnique: vi.fn(), update: vi.fn() },
+  order: { findUnique: vi.fn(), update: vi.fn(), findMany: vi.fn() },
   siteSettings: { findUnique: vi.fn() },
   fulfillment: { upsert: vi.fn(), update: vi.fn() },
   providerOrder: { upsert: vi.fn(), updateMany: vi.fn(), update: vi.fn() },
@@ -30,6 +30,7 @@ vi.mock("@/lib/prisma", () => ({ prisma: db }));
 import { executeFulfillment, reconcileFulfillment } from "./fulfillment-engine";
 import { customerDelivery } from "./customer-delivery";
 import { orderDto } from "./dto";
+import { GET as sweepGET } from "@/app/api/internal/fulfillment-recovery/route";
 
 const jsonResponse = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status });
@@ -216,5 +217,115 @@ describe("INTEGRAÇÃO — checkout guest AdClean: PAID -> fulfillment real -> D
 
     const publicDto = orderDto(dtoOrder("order-int-2", persistedDelivery), { includeDelivery: false });
     expect(publicDto.fulfillment?.delivery).toBeUndefined();
+  });
+});
+
+describe("INTEGRAÇÃO — critério de aceite definitivo (seção 28): cliente fecha a aba, ZERO chamada do navegador, backend converge sozinho", () => {
+  const cronRequest = () =>
+    new Request("https://test/api/internal/fulfillment-recovery", {
+      headers: { authorization: "Bearer isolated-test-cron-secret-32chars" },
+    });
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.unstubAllGlobals();
+    process.env.ADCLEAN_PARTNER_TOKEN = "isolated-test-token";
+    process.env.ADCLEAN_BASE_URL = "https://adclean.example.test";
+    process.env.CRON_SECRET = "isolated-test-cron-secret-32chars";
+    db.siteSettings.findUnique.mockResolvedValue({ providerMode: "REAL" });
+    db.$transaction.mockImplementation(async (arg) =>
+      typeof arg === "function" ? arg(db) : Promise.all(arg as Promise<unknown>[]),
+    );
+    db.provider.findUnique.mockResolvedValue({ active: true });
+    db.order.update.mockResolvedValue({});
+    db.fulfillment.update.mockResolvedValue({});
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    delete process.env.ADCLEAN_PARTNER_TOKEN;
+    delete process.env.ADCLEAN_BASE_URL;
+    delete process.env.CRON_SECRET;
+  });
+
+  it("1. checkout criado -> 2. Payment PAID -> 3-6. NENHUMA chamada do navegador -> 7. sweep server-side (cron) executa -> 8. Order DELIVERED -> 9. Delivery persistida — sem nenhum GET/POST simulado do cliente em momento algum", async () => {
+    // Estado exatamente como ficaria depois de uma clean failure no webhook
+    // (ver executeFulfillment): Payment PAID, Fulfillment FAILED, nenhum
+    // ProviderOrder. O "cliente" nunca aparece neste teste — nenhuma rota de
+    // /api/orders/[id], /delivery ou /acompanhar é chamada em nenhum momento.
+    db.order.findMany.mockResolvedValue([{ id: "order-no-browser-1" }]);
+    db.order.findUnique.mockResolvedValue(
+      engineOrder({ id: "order-no-browser-1", fulfillment: null }),
+    );
+    db.fulfillment.upsert.mockResolvedValue({ id: "fulfillment-no-browser-1" });
+    db.providerOrder.upsert.mockResolvedValue({ id: "provider-order-no-browser-1" });
+    db.providerOrder.updateMany.mockResolvedValue({ count: 1 });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() => Promise.resolve(jsonResponse({ ok: true, codigo: "TEST-NO-BROWSER-001" }))),
+    );
+
+    // ÚNICA ação de todo o teste: o cron (Vercel) chamando o endpoint
+    // interno. Nenhum fetch para /api/orders/*, nenhum acesso a /acompanhar.
+    const response = await sweepGET(cronRequest());
+    const payload = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(payload.data).toEqual({ candidates: 1, attempted: 1, skipped: 0, errored: 0 });
+    expect(db.fulfillment.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          status: "FULFILLED",
+          delivery: expect.objectContaining({ credential: "TEST-NO-BROWSER-001" }),
+        }),
+      }),
+    );
+    expect(db.order.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ status: "DELIVERED" }) }),
+    );
+  });
+
+  it("resultado incerto (ProviderOrder existente, sem externalOrderId) também converge só via sweep, reconstruindo a identidade AdClean — sem nenhum GET do cliente e sem segundo gerar-ticket", async () => {
+    db.order.findMany.mockResolvedValue([{ id: "order-no-browser-2" }]);
+    db.order.findUnique.mockResolvedValue(
+      engineOrder({
+        id: "order-no-browser-2",
+        fulfillment: {
+          delivery: null,
+          updatedAt: new Date(Date.now() - 60_000),
+          providerOrders: [
+            {
+              id: "provider-order-no-browser-2",
+              status: "FAILED",
+              attempts: 1,
+              requestReference: "provider-order-no-browser-2",
+              externalOrderId: null, // nunca confirmado — igual ao pedido real #2
+              lastError: "ADCLEAN_HTTP_500",
+              updatedAt: new Date(Date.now() - 60_000), // mais velho que o throttle de 20s
+              callbackEvents: [],
+            },
+          ],
+        },
+      }),
+    );
+    db.providerOrder.updateMany.mockResolvedValue({ count: 1 });
+    const calls: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((url: string) => {
+        calls.push(url.includes("gerar-ticket") ? "gerar" : "consultar");
+        return Promise.resolve(jsonResponse({ ok: true, codigo: "TEST-NO-BROWSER-002" }));
+      }),
+    );
+
+    const response = await sweepGET(cronRequest());
+    const payload = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(payload.data.attempted).toBe(1);
+    expect(calls).toEqual(["consultar"]); // NUNCA um segundo gerar-ticket
+    expect(db.order.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ status: "DELIVERED" }) }),
+    );
   });
 });

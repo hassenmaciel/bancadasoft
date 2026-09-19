@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { Prisma } from "@prisma/client";
 
 // HOMOLOGAÇÃO da correção "reconciliação/recovery de pagamento PAID sem
 // entrega" — reproduz, com fixtures e SEM nenhuma chamada real a Asaas/
@@ -17,7 +18,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const db = vi.hoisted(() => ({
   order: { findUnique: vi.fn(), update: vi.fn() },
   siteSettings: { findUnique: vi.fn() },
-  fulfillment: { upsert: vi.fn(), update: vi.fn() },
+  fulfillment: { upsert: vi.fn(), update: vi.fn(), findUnique: vi.fn() },
   providerOrder: { upsert: vi.fn(), updateMany: vi.fn(), update: vi.fn() },
   provider: { findUnique: vi.fn() },
   $transaction: vi.fn(),
@@ -392,13 +393,45 @@ describe("HOMOLOGAÇÃO — Caminho B: reconcileFulfillment (resultado incerto)"
 
     expect(result).toEqual({ status: "PROCESSING" });
     expect(calls).not.toContain("gerar");
+    // [seção 16 desta etapa] O erro ORIGINAL ("PROVIDER_RESULT_UNCERTAIN", já
+    // presente no fixture) é preservado — um NOT_FOUND de reconciliação
+    // nunca sobrescreve uma evidência mais informativa que já existia.
+    expect(db.providerOrder.update).not.toHaveBeenCalled();
+    expect(db.fulfillment.update).not.toHaveBeenCalled();
+  });
+
+  it("[seção 16 desta etapa] sem erro original prévio, o resultado inconclusivo da reconciliação é registrado (prefixado, para nunca ser confundido com um erro do adapter)", async () => {
+    db.order.findUnique.mockResolvedValue(
+      baseOrder({
+        id: "order-uncertain-1",
+        status: "PROCESSING",
+        fulfillment: {
+          delivery: null,
+          providerOrders: [
+            {
+              id: "provider-order-uncertain-1",
+              status: "PROCESSING",
+              attempts: 1,
+              requestReference: "provider-order-uncertain-1",
+              externalOrderId: "bancadasoft:order-uncertain-1",
+              lastError: null, // nenhum erro original a preservar
+              callbackEvents: [],
+            },
+          ],
+        },
+      }),
+    );
+    stubAdcleanFetch({ consultar: () => jsonResponse({ ok: true, encontrado: false }) });
+
+    const result = await reconcileFulfillment("order-uncertain-1");
+
+    expect(result).toEqual({ status: "PROCESSING" });
     expect(db.providerOrder.update).toHaveBeenCalledWith(
       expect.objectContaining({
         where: { id: "provider-order-uncertain-1" },
-        data: expect.objectContaining({ lastError: "ADCLEAN_TICKET_NOT_FOUND" }),
+        data: expect.objectContaining({ lastError: "RECONCILIATION_ADCLEAN_TICKET_NOT_FOUND" }),
       }),
     );
-    expect(db.fulfillment.update).not.toHaveBeenCalled();
   });
 
   it("recusa reconciliar Payment não PAID", async () => {
@@ -708,5 +741,330 @@ describe("attemptAutomaticGuestRecovery (seções 8-10 da tarefa) — recovery/r
         data: expect.objectContaining({ delivery: expect.objectContaining({ credential: "TEST-AUTO-004" }) }),
       }),
     );
+  });
+});
+
+describe("INCIDENTE REAL DE PRODUÇÃO (17/09/2026) — race entre webhook e attemptAutomaticGuestRecovery", () => {
+  // Evidência coletada (somente leitura, autorizada pelo usuário) de dois
+  // pedidos AdClean reais: ambos falharam ~6.5s depois de Payment PAID, com
+  // erro `PrismaClientKnownRequestError` registrado em log (Vercel) para um
+  // deles. Nenhum dado pessoal, token ou código real é usado aqui — apenas os
+  // estados/timestamps relativos que reproduzem a causa.
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.unstubAllGlobals();
+    process.env.ADCLEAN_PARTNER_TOKEN = "isolated-test-token";
+    process.env.ADCLEAN_BASE_URL = "https://adclean.example.test";
+    db.siteSettings.findUnique.mockResolvedValue({ providerMode: "REAL" });
+    db.provider.findUnique.mockResolvedValue({ active: true });
+    db.order.findUnique.mockResolvedValue(baseOrder({ id: "order-race-1", fulfillment: null }));
+    db.fulfillment.upsert.mockResolvedValue({ id: "fulfillment-race-1" });
+    db.providerOrder.upsert.mockResolvedValue({ id: "provider-order-race-1" });
+    db.providerOrder.updateMany.mockResolvedValue({ count: 1 });
+    db.order.update.mockResolvedValue({});
+    db.fulfillment.update.mockResolvedValue({});
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    delete process.env.ADCLEAN_PARTNER_TOKEN;
+    delete process.env.ADCLEAN_BASE_URL;
+  });
+
+  it("[causa raiz reproduzida] duas chamadas GENUINAMENTE concorrentes a executeFulfillment (webhook + auto-recovery) para o MESMO pedido: só uma reivindica e chama gerar-ticket; a outra recebe CONCURRENT_OR_INVALID_EXECUTION SEM marcar Order/Fulfillment como FAILED", async () => {
+    // Só as duas PRIMEIRAS chamadas a $transaction são as tentativas de
+    // "prepare" (claim) concorrentes — chamadas seguintes são a finalização
+    // (finalizeProviderCompletion) da execução vencedora e precisam suceder
+    // normalmente, senão o teste não provaria concorrência real (provaria só
+    // que qualquer $transaction depois da 1ª falha).
+    let transactionAttempts = 0;
+    db.$transaction.mockImplementation(async (arg) => {
+      if (typeof arg !== "function") return Promise.all(arg as Promise<unknown>[]);
+      transactionAttempts += 1;
+      if (transactionAttempts === 2) {
+        // 2ª transação concorrente: exatamente o que o Postgres devolveu em
+        // produção quando duas execuções tentaram reivindicar o mesmo
+        // Fulfillment/ProviderOrder ao mesmo tempo — inclui meta.target
+        // porque classifyPrepareConflict agora exige a constraint exata.
+        throw new Prisma.PrismaClientKnownRequestError("Unique constraint failed on the fields: (`orderId`)", {
+          code: "P2002",
+          clientVersion: "6.19.0",
+          meta: { target: ["orderId"] },
+        });
+      }
+      return arg(db);
+    });
+    // classifyPrepareConflict releia o Fulfillment para confirmar que a
+    // concorrência é legítima antes de aceitar o P2002 como seguro.
+    db.fulfillment.findUnique.mockResolvedValue({ id: "fulfillment-race-1" });
+    stubAdcleanFetch({ gerar: () => jsonResponse({ ok: true, codigo: "TEST-RACE-001" }) });
+
+    const [first, second] = await Promise.allSettled([
+      executeFulfillment("order-race-1", { retry: false }),
+      executeFulfillment("order-race-1", { retry: false }),
+    ]);
+
+    const outcomes = [first, second];
+    const fulfilled = outcomes.filter((o) => o.status === "fulfilled");
+    const rejected = outcomes.filter((o) => o.status === "rejected");
+    expect(fulfilled).toHaveLength(1);
+    expect(rejected).toHaveLength(1);
+    expect((fulfilled[0] as PromiseFulfilledResult<{ status: string }>).value).toEqual({ status: "COMPLETED" });
+    expect((rejected[0] as PromiseRejectedResult).reason).toMatchObject({
+      code: "CONCURRENT_OR_INVALID_EXECUTION",
+    });
+    // A perdedora da corrida NUNCA marca o pedido como FAILED — antes da
+    // correção, um PrismaClientKnownRequestError não tratado caía direto em
+    // recordPaidFulfillmentFailure() e forçava Order.status=FAILED mesmo com
+    // a outra execução prestes a concluir com sucesso.
+    expect(db.order.update).not.toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ status: "FAILED" }) }),
+    );
+    // No máximo um gerar-ticket, como exigido.
+    expect(
+      (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls.filter((call) =>
+        String(call[0]).includes("gerar-ticket"),
+      ),
+    ).toHaveLength(1);
+  });
+
+  it("[proteção preservada] um Prisma error genuinamente não relacionado a concorrência (ex.: P1001, conexão indisponível) continua registrando FAILED normalmente", async () => {
+    db.$transaction.mockImplementationOnce(async () => {
+      throw new Prisma.PrismaClientKnownRequestError("Can't reach database server", {
+        code: "P1001",
+        clientVersion: "6.19.0",
+      });
+    });
+    stubAdcleanFetch({});
+
+    await expect(executeFulfillment("order-race-1", { retry: false })).rejects.toBeInstanceOf(
+      Prisma.PrismaClientKnownRequestError,
+    );
+    expect(db.order.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ status: "FAILED" }) }),
+    );
+  });
+
+  it("[fixture sanitizada — Pedido Real FAILED #2, seção 15 desta etapa] reconciliation SEM externalOrderId confirmado NUNCA mais consulta com o id interno do ProviderOrder — reconstrói a identidade real via adapter.buildReconciliationIdentity e resolve o pedido de verdade", async () => {
+    // Reproduz o estado exato do 2º pedido real: ProviderOrder existe (uma
+    // tentativa de gerar-ticket já ocorreu e falhou), mas externalOrderId
+    // nunca foi confirmado pelo AdClean. Antes desta etapa, isso ficava
+    // permanentemente bloqueado (RECONCILIATION_IDENTITY_UNKNOWN). Agora o
+    // adapter sabe reconstruir sua própria identidade determinística.
+    db.order.findUnique.mockResolvedValue(
+      baseOrder({
+        id: "order-real-failed-2",
+        status: "FAILED",
+        fulfillment: {
+          delivery: null,
+          providerOrders: [
+            {
+              id: "provider-order-real-failed-2",
+              status: "FAILED",
+              attempts: 1,
+              requestReference: "provider-order-real-failed-2",
+              externalOrderId: null, // nunca confirmado pelo AdClean
+              lastError: "ADCLEAN_HTTP_500", // erro original real (exemplo sanitizado)
+              callbackEvents: [],
+            },
+          ],
+        },
+      }),
+    );
+    db.providerOrder.updateMany.mockResolvedValue({ count: 1 });
+    const bodies: Record<string, unknown>[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((_url: string, init?: RequestInit) => {
+        bodies.push(JSON.parse(String(init?.body)));
+        return Promise.resolve(jsonResponse({ ok: true, codigo: "TEST-REAL-2-RECOVERED" }));
+      }),
+    );
+
+    const result = await reconcileFulfillment("order-real-failed-2");
+
+    expect(result).toEqual({ status: "COMPLETED" });
+    expect(bodies).toHaveLength(1);
+    // A MESMA fórmula determinística que createOrder já usa — o
+    // fulfillment-engine nunca conhece esse formato, só delega ao adapter.
+    expect(bodies[0].idempotency_key).toBe("bancadasoft:order-real-failed-2");
+  });
+
+  it("[proteção preservada] provider com supportsReconciliation=true mas SEM buildReconciliationIdentity continua retornando RECONCILIATION_IDENTITY_UNKNOWN honestamente, sem nunca consultar com uma identidade inválida", async () => {
+    // mock-sandbox só é elegível em modo TEST (isProductionProviderCode o
+    // exclui em modo REAL) — não relacionado ao que este teste verifica.
+    db.siteSettings.findUnique.mockResolvedValue({ providerMode: "TEST" });
+    db.order.findUnique.mockResolvedValue(
+      baseOrder({
+        id: "order-mock-unknown-identity",
+        status: "FAILED",
+        providerProduct: {
+          id: "provider-product-mock",
+          providerId: "provider-mock",
+          externalProductId: "mock-product",
+          active: true,
+          mode: "TEST", // mock-sandbox só é elegível em modo TEST
+          technicalEligibility: "READY",
+          providerCostCents: null,
+          currency: "BRL",
+          fieldSchema: null,
+          provider: { id: "provider-mock", code: "mock-sandbox", active: true, integrationStatus: "CONNECTED" },
+        },
+        fulfillment: {
+          delivery: null,
+          providerOrders: [
+            {
+              id: "provider-order-mock-unknown",
+              status: "FAILED",
+              attempts: 1,
+              requestReference: "provider-order-mock-unknown",
+              externalOrderId: null,
+              lastError: "MOCK_FAILURE",
+              callbackEvents: [],
+            },
+          ],
+        },
+      }),
+    );
+    const { fn } = stubAdcleanFetch({});
+
+    await expect(reconcileFulfillment("order-mock-unknown-identity")).rejects.toMatchObject({
+      code: "RECONCILIATION_IDENTITY_UNKNOWN",
+    });
+    expect(fn).not.toHaveBeenCalled();
+  });
+});
+
+describe("UNLOCKTOOL — fixtures sanitizadas dos pedidos reais de 7h", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.unstubAllGlobals();
+    process.env.HEARTUNLOCKS_GATEWAY_URL = "https://heart-gateway.example.test";
+    process.env.HEARTUNLOCKS_GATEWAY_SECRET = "isolated-test-secret";
+    db.siteSettings.findUnique.mockResolvedValue({ providerMode: "REAL" });
+    db.provider.findUnique.mockResolvedValue({ active: true });
+    db.fulfillment.upsert.mockResolvedValue({ id: "fulfillment-unlocktool" });
+    db.providerOrder.upsert.mockResolvedValue({ id: "provider-order-unlocktool" });
+    db.providerOrder.updateMany.mockResolvedValue({ count: 1 });
+    db.providerOrder.update.mockResolvedValue({});
+    db.fulfillment.update.mockResolvedValue({});
+    db.order.update.mockResolvedValue({});
+    db.$transaction.mockImplementation(async (arg) =>
+      Array.isArray(arg) ? Promise.all(arg) : arg(db),
+    );
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    delete process.env.HEARTUNLOCKS_GATEWAY_URL;
+    delete process.env.HEARTUNLOCKS_GATEWAY_SECRET;
+  });
+
+  it.each(["GUEST", "LOGADO"])(
+    "%s + PAID usa o mesmo fulfillment server-side e inicia o provider sem Admin",
+    async (customerKind) => {
+      const orderId = `order-unlocktool-${customerKind.toLowerCase()}`;
+      db.order.findUnique.mockResolvedValue(
+        baseOrder({
+          id: orderId,
+          providerProduct: heartUnlocksProviderProduct(),
+        }),
+      );
+      const providerCall = vi.fn(async (_url: string, init?: RequestInit) => {
+        const body = JSON.parse(String(init?.body));
+        expect(body).toEqual({
+          productUuid: "2337",
+          referenceId: "provider-order-unlocktool",
+          quantity: 1,
+          fields: {},
+        });
+        return jsonResponse(
+          {
+            externalOrderId: "external-sanitized",
+            referenceId: body.referenceId,
+            status: "PROCESSING",
+          },
+          202,
+        );
+      });
+      vi.stubGlobal("fetch", providerCall);
+
+      await expect(executeFulfillment(orderId)).resolves.toEqual({
+        status: "PROCESSING",
+      });
+      expect(providerCall).toHaveBeenCalledOnce();
+      expect(db.providerOrder.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: "provider-order-unlocktool" },
+          data: expect.objectContaining({ status: "PROCESSING" }),
+        }),
+      );
+    },
+  );
+
+  it("clean failure real (PAID + Fulfillment FAILED, sem ProviderOrder) é recuperado sem navegador e cria no máximo uma ativação", async () => {
+    const failedFixture = baseOrder({
+      id: "order-unlocktool-clean-failure",
+      status: "FAILED",
+      fulfillment: {
+        status: "FAILED",
+        delivery: null,
+        updatedAt: new Date(Date.now() - 60_000),
+        providerOrders: [],
+      },
+      providerProduct: heartUnlocksProviderProduct(),
+    });
+    db.order.findUnique
+      .mockResolvedValueOnce(failedFixture)
+      .mockResolvedValueOnce(failedFixture);
+    const providerCall = vi.fn(async (_url: string, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body));
+      return jsonResponse(
+        { referenceId: body.referenceId, status: "PROCESSING" },
+        202,
+      );
+    });
+    vi.stubGlobal("fetch", providerCall);
+
+    await expect(
+      attemptAutomaticGuestRecovery("order-unlocktool-clean-failure"),
+    ).resolves.toBe(true);
+    expect(providerCall).toHaveBeenCalledOnce();
+  });
+
+  it("resultado externo incerto aguarda callback/MANUAL_REVIEW e nunca faz blind retry", async () => {
+    const uncertainFixture = baseOrder({
+      id: "order-unlocktool-uncertain",
+      status: "PROCESSING",
+      fulfillment: {
+        status: "PROCESSING",
+        delivery: null,
+        updatedAt: new Date(Date.now() - 60_000),
+        providerOrders: [
+          {
+            id: "provider-order-unlocktool",
+            status: "PROCESSING",
+            attempts: 1,
+            requestReference: "provider-order-unlocktool",
+            externalOrderId: null,
+            lastError: "PROVIDER_RESULT_UNCERTAIN",
+            updatedAt: new Date(Date.now() - 60_000),
+            callbackEvents: [],
+          },
+        ],
+      },
+      providerProduct: heartUnlocksProviderProduct(),
+    });
+    db.order.findUnique
+      .mockResolvedValueOnce(uncertainFixture)
+      .mockResolvedValueOnce(uncertainFixture);
+    const providerCall = vi.fn();
+    vi.stubGlobal("fetch", providerCall);
+
+    await expect(
+      attemptAutomaticGuestRecovery("order-unlocktool-uncertain"),
+    ).resolves.toBe(true);
+    expect(providerCall).not.toHaveBeenCalled();
+    expect(db.providerOrder.upsert).not.toHaveBeenCalled();
   });
 });

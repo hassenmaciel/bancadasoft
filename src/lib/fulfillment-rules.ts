@@ -38,6 +38,41 @@ export function hasExternalAttemptEvidence(item?: ProviderOrderAttemptEvidence |
   );
 }
 
+// Classificador ÚNICO de recovery — Admin (retry/route.ts), recovery
+// automático do guest (attemptAutomaticGuestRecovery) e o sweep server-side
+// (cron) precisam decidir a partir da MESMA regra. Antes desta correção,
+// Admin e o auto-recovery tinham cada um sua própria cópia da lógica
+// "já houve tentativa externa?" — risco real de divergirem no futuro.
+export type FulfillmentRecoveryProviderOrder = {
+  status: string;
+  requestReference: string | null;
+  externalOrderId: string | null;
+  lastError: string | null;
+  callbackEventCount: number;
+};
+export type FulfillmentRecoveryState = {
+  paymentStatus?: string | null;
+  orderStatus?: string | null;
+  hasDelivery: boolean;
+  providerOrder?: FulfillmentRecoveryProviderOrder | null;
+};
+export type FulfillmentRecoveryAction =
+  | "NO_ACTION" // payment não PAID, ou nenhuma ação segura possível
+  | "ALREADY_DELIVERED"
+  | "CLEAN_RECOVERY" // sem ProviderOrder / sem evidência externa: executeFulfillment(retry:false) é seguro
+  | "RECONCILE"; // existe evidência externa: só reconcileFulfillment (nunca gerar-ticket de novo)
+
+export function classifyFulfillmentRecovery(
+  state: FulfillmentRecoveryState,
+): FulfillmentRecoveryAction {
+  if (state.paymentStatus !== "PAID") return "NO_ACTION";
+  if (state.orderStatus === "DELIVERED" || state.hasDelivery)
+    return "ALREADY_DELIVERED";
+  const item = state.providerOrder;
+  if (!item) return "CLEAN_RECOVERY";
+  return hasExternalAttemptEvidence(item) ? "RECONCILE" : "CLEAN_RECOVERY";
+}
+
 export function buildProviderExecutionPayload(
   orderId: string,
   paidAmountCents: number | undefined,

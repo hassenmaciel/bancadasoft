@@ -10,12 +10,37 @@ export const ORDER_POLL_FAST_PHASE_MS = 3 * 60 * 1000;
 // fulfillment automático demore além do normal.
 export const ORDER_POLL_SLOW_INTERVAL_MS = 20 * 1000;
 
+// Usado por commerce.ts para decidir se uma Order existente (achada pelo
+// deliveryTokenHash) pode ser reaproveitada em vez de criar um pedido novo.
+// Mantido como estava: FAILED aqui não distingue payment, de propósito — essa
+// checagem específica de reuse de token tem semântica própria.
 export const TERMINAL_ORDER_STATUSES = new Set(["DELIVERED", "FAILED", "CANCELLED"]);
 const finalPaymentStatuses = new Set(["EXPIRED", "FAILED", "REFUNDED"]);
 
+// INCIDENTE REAL (17/09/2026): antes, FAILED entrava direto em
+// TERMINAL_ORDER_STATUSES aqui também, então Order=FAILED parava o polling
+// IMEDIATAMENTE mesmo com Payment=PAID — o cliente só via o pedido convergir
+// se abrisse manualmente /acompanhar (o que, na prática, foi o único motivo
+// de um dos dois pedidos reais ter chegado a DELIVERED). Payment PAID +
+// Fulfillment FAILED não é terminal: o backend ainda pode convergir sozinho
+// (executeFulfillment/reconcileFulfillment via attemptAutomaticGuestRecovery).
+// Só DELIVERED/CANCELLED, ou um pagamento realmente morto, encerram o
+// acompanhamento.
 export function shouldPollOrder(order: OrderDTO) {
-  if (TERMINAL_ORDER_STATUSES.has(order.status)) return false;
-  return Boolean(order.payment && !finalPaymentStatuses.has(order.payment.status));
+  if (order.status === "DELIVERED" || order.status === "CANCELLED") return false;
+  if (!order.payment || finalPaymentStatuses.has(order.payment.status)) return false;
+  if (order.status === "FAILED") return order.payment.status === "PAID";
+  return true;
+}
+
+// Mesma regra, para a página /acompanhar (backup por e-mail), que consulta
+// /api/orders/[id]/delivery em vez do endpoint de status completo — ver
+// guest-delivery.tsx.
+export function shouldContinueGuestDeliveryPolling(status: string, paymentStatus: string | null, hasDelivery: boolean) {
+  if (hasDelivery) return false;
+  if (status === "CANCELLED") return false;
+  if (status === "FAILED") return paymentStatus === "PAID";
+  return true;
 }
 
 // Grupo A (spec PARTE 1): PENDING_PAYMENT / PAID / PROCESSING podem auto-restaurar

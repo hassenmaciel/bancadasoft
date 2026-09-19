@@ -16,11 +16,21 @@ const engine = vi.hoisted(() => {
       this.name = "FulfillmentEngineError";
     }
   }
-  return { executeFulfillment: vi.fn(), FakeFulfillmentEngineError };
+  // Mesma lógica de fulfillment-engine.ts safeErrorInfo — mantida em sincronia
+  // manualmente aqui porque o módulo real é mockado por inteiro neste teste.
+  function fakeSafeErrorInfo(error: unknown) {
+    if (error instanceof FakeFulfillmentEngineError)
+      return { name: error.name, code: error.code };
+    if (error instanceof Error)
+      return { name: error.name, code: "FULFILLMENT_INTERNAL_ERROR" };
+    return { name: "UnknownError", code: "FULFILLMENT_INTERNAL_ERROR" };
+  }
+  return { executeFulfillment: vi.fn(), FakeFulfillmentEngineError, fakeSafeErrorInfo };
 });
 vi.mock("@/lib/fulfillment-engine", () => ({
   executeFulfillment: engine.executeFulfillment,
   FulfillmentEngineError: engine.FakeFulfillmentEngineError,
+  safeErrorInfo: engine.fakeSafeErrorInfo,
 }));
 const { FakeFulfillmentEngineError } = engine;
 

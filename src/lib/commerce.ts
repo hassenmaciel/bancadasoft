@@ -7,7 +7,7 @@ import {
 } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { publicProductWhere } from "@/lib/catalog";
-import { executeFulfillment, FulfillmentEngineError } from "@/lib/fulfillment-engine";
+import { executeFulfillment, safeErrorInfo } from "@/lib/fulfillment-engine";
 import {
   configuredPaymentProviderCode,
   getPaymentProvider,
@@ -297,13 +297,6 @@ export const getOrder = (id: string) =>
     },
   });
 
-function safeFulfillmentError(error: unknown) {
-  if (error instanceof FulfillmentEngineError)
-    return { name: error.name, code: error.code };
-  if (error instanceof Error)
-    return { name: error.name, code: "FULFILLMENT_INTERNAL_ERROR" };
-  return { name: "UnknownError", code: "FULFILLMENT_INTERNAL_ERROR" };
-}
 
 export async function processPayment(
   event: ParsedPaymentWebhook,
@@ -395,7 +388,7 @@ export async function processPayment(
       // orderId — nunca deve ser descartada em silêncio.
       log("[fulfillment] Execução falhou após pagamento confirmado.", {
         orderId: payment.orderId,
-        ...safeFulfillmentError(error),
+        ...safeErrorInfo(error),
       });
     }
   }

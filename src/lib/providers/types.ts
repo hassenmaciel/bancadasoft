@@ -41,6 +41,17 @@ export interface ProviderAdapter {
   getBalance(): Promise<ProviderBalance>;
   createOrder(input: ProviderOrderInput): Promise<ProviderOrderResult>;
   getOrderStatus(externalOrderId: string): Promise<ProviderOrderResult>;
+  // Capability OPCIONAL: quando o provider deriva sua própria identidade de
+  // consulta deterministicamente a partir do orderId (ex.: AdClean sempre usa
+  // `bancadasoft:<orderId>` como idempotency_key, com ou sem confirmação
+  // prévia — ver adclean-contract.ts), o adapter expõe essa derivação aqui.
+  // O motor genérico NUNCA reconstrói identidade de provider nenhum sozinho
+  // (nunca fica sabendo do formato "bancadasoft:") — só usa isto como
+  // fallback quando ProviderOrder.externalOrderId ainda não foi confirmado.
+  // Ausente = provider não tem forma segura de reconstruir a identidade sem
+  // confirmação prévia; reconciliação sem externalOrderId permanece
+  // RECONCILIATION_IDENTITY_UNKNOWN para esse provider.
+  buildReconciliationIdentity?(orderId: string): string;
 }
 
 export class ProviderNotConnectedError extends Error {

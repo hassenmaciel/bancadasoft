@@ -6,6 +6,7 @@ import {
   ORDER_POLL_SLOW_INTERVAL_MS,
   isFailedCheckoutOrder,
   isRecoverableCheckoutOrder,
+  shouldContinueGuestDeliveryPolling,
   shouldPollOrder,
 } from "./order-polling";
 import type { OrderDTO } from "./dto";
@@ -125,6 +126,40 @@ describe("polling do pedido", () => {
     expect(fetchOrder.mock.calls.every((args) => args.length === 0)).toBe(true);
     poller.stop();
   });
+
+  it("[INCIDENTE REAL 17/09/2026] FAILED + Payment PAID NÃO encerra o polling — continua até o backend convergir para DELIVERED sozinho", async () => {
+    // Reproduz exatamente o que aconteceu nos dois pedidos reais: Order vira
+    // FAILED poucos segundos depois de PAID (clean failure), mas o pagamento
+    // permanece PAID. Antes da correção, o poller parava aqui para sempre e
+    // só um GET manual a /acompanhar "acordava" a recuperação.
+    vi.useFakeTimers();
+    const failedPaid = order("FAILED", "PAID");
+    const delivered = order("DELIVERED", "PAID");
+    let calls = 0;
+    const fetchOrder = vi.fn(async () => {
+      calls += 1;
+      return calls <= 3 ? failedPaid : delivered;
+    });
+    const onUpdate = vi.fn();
+    const poller = createOrderPoller({ initialOrder: order("PAID", "PAID"), fetchOrder, onUpdate });
+    poller.start();
+    await vi.advanceTimersByTimeAsync(ORDER_POLL_INTERVAL_MS * 4);
+    expect(calls).toBeGreaterThanOrEqual(4); // não parou nas 3 primeiras respostas FAILED+PAID
+    expect(onUpdate.mock.calls.at(-1)?.[0]).toEqual(delivered);
+    poller.stop();
+  });
+
+  it("FAILED + payment NÃO PAID continua terminal (comportamento preservado)", async () => {
+    vi.useFakeTimers();
+    const terminal = order("FAILED", "FAILED");
+    const fetchOrder = vi.fn(async () => terminal);
+    const poller = createOrderPoller({ initialOrder: order("PENDING_PAYMENT", "PENDING"), fetchOrder, onUpdate: vi.fn() });
+    poller.start();
+    await vi.advanceTimersByTimeAsync(ORDER_POLL_INTERVAL_MS);
+    const callsAtTerminal = fetchOrder.mock.calls.length;
+    await vi.advanceTimersByTimeAsync(ORDER_POLL_INTERVAL_MS * 5);
+    expect(fetchOrder.mock.calls.length).toBe(callsAtTerminal);
+  });
 });
 
 describe("isRecoverableCheckoutOrder", () => {
@@ -133,9 +168,12 @@ describe("isRecoverableCheckoutOrder", () => {
     expect(shouldPollOrder(delivered)).toBe(false);
     expect(isRecoverableCheckoutOrder(delivered)).toBe(true);
   });
-  it("não considera FAILED/CANCELLED recuperáveis", () => {
+  it("não considera FAILED sem pagamento confirmado, ou CANCELLED, recuperáveis", () => {
     expect(isRecoverableCheckoutOrder(order("FAILED", "FAILED"))).toBe(false);
     expect(isRecoverableCheckoutOrder(order("CANCELLED", "EXPIRED"))).toBe(false);
+  });
+  it("[INCIDENTE REAL] considera FAILED + Payment PAID recuperável — backend ainda pode convergir", () => {
+    expect(isRecoverableCheckoutOrder(order("FAILED", "PAID"))).toBe(true);
   });
   it("considera pedidos ainda ativos recuperáveis", () => {
     expect(isRecoverableCheckoutOrder(order("PENDING_PAYMENT", "PENDING"))).toBe(true);
@@ -145,9 +183,12 @@ describe("isRecoverableCheckoutOrder", () => {
 });
 
 describe("isFailedCheckoutOrder", () => {
-  it("considera FAILED e CANCELLED como falha", () => {
+  it("considera FAILED sem pagamento confirmado, e CANCELLED, como falha", () => {
     expect(isFailedCheckoutOrder(order("FAILED", "FAILED"))).toBe(true);
     expect(isFailedCheckoutOrder(order("CANCELLED", "EXPIRED"))).toBe(true);
+  });
+  it("[INCIDENTE REAL] NÃO considera FAILED + Payment PAID como falha definitiva", () => {
+    expect(isFailedCheckoutOrder(order("FAILED", "PAID"))).toBe(false);
   });
   it.each(["EXPIRED", "FAILED", "REFUNDED"])(
     "considera falha quando o pagamento chega a %s mesmo com Order ainda PENDING_PAYMENT/PROCESSING",
@@ -163,5 +204,26 @@ describe("isFailedCheckoutOrder", () => {
     expect(isFailedCheckoutOrder(order("PENDING_PAYMENT", "PENDING"))).toBe(false);
     expect(isFailedCheckoutOrder(order("PAID", "PAID"))).toBe(false);
     expect(isFailedCheckoutOrder(order("PROCESSING", "PAID"))).toBe(false);
+  });
+});
+
+describe("shouldContinueGuestDeliveryPolling (/acompanhar, backup por e-mail)", () => {
+  it("para quando já existe Delivery", () => {
+    expect(shouldContinueGuestDeliveryPolling("DELIVERED", "PAID", true)).toBe(false);
+  });
+  it("para em CANCELLED", () => {
+    expect(shouldContinueGuestDeliveryPolling("CANCELLED", "EXPIRED", false)).toBe(false);
+  });
+  it("para em FAILED sem pagamento confirmado", () => {
+    expect(shouldContinueGuestDeliveryPolling("FAILED", "FAILED", false)).toBe(false);
+    expect(shouldContinueGuestDeliveryPolling("FAILED", null, false)).toBe(false);
+  });
+  it("[INCIDENTE REAL] continua em FAILED + Payment PAID — é essa consulta que aciona o recovery automático", () => {
+    expect(shouldContinueGuestDeliveryPolling("FAILED", "PAID", false)).toBe(true);
+  });
+  it("continua em PENDING_PAYMENT/PAID/PROCESSING", () => {
+    expect(shouldContinueGuestDeliveryPolling("PENDING_PAYMENT", "PENDING", false)).toBe(true);
+    expect(shouldContinueGuestDeliveryPolling("PAID", "PAID", false)).toBe(true);
+    expect(shouldContinueGuestDeliveryPolling("PROCESSING", "PAID", false)).toBe(true);
   });
 });

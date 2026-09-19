@@ -1,4 +1,4 @@
-import { buildAdcleanTicketContract } from "./adclean-contract";
+import { adcleanIdempotencyKey, buildAdcleanTicketContract } from "./adclean-contract";
 import type {
   ProviderAdapter,
   ProviderBalance,
@@ -272,6 +272,16 @@ export class AdcleanProviderAdapter implements ProviderAdapter {
       status: "FAILED",
       error: "ADCLEAN_TICKET_NOT_FOUND",
     };
+  }
+
+  // idempotency_key é sempre bancadasoft:<orderId> — mesma função pura já
+  // usada por createOrder() via buildAdcleanTicketContract, com ou sem
+  // confirmação prévia do provider. Reconciliação pode reconstruir essa
+  // identidade com segurança mesmo quando ProviderOrder.externalOrderId
+  // nunca chegou a ser gravado (ex.: falha de rede antes de qualquer
+  // resposta do AdClean).
+  buildReconciliationIdentity(orderId: string): string {
+    return adcleanIdempotencyKey(orderId);
   }
 }
 
