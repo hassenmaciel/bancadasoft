@@ -3,6 +3,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import PublicHeader from "@/components/public-header";
+import { publicViewer } from "@/lib/public-viewer";
 import PublicFooter from "@/components/public-footer";
 import CheckoutPanel from "@/components/checkout-panel";
 import { prisma } from "@/lib/prisma";
@@ -55,7 +56,7 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
   const displayPrice = variantPrices.length ? Math.min(...variantPrices) : dto.priceCents;
   const money = displayPrice === null ? null : new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(displayPrice / 100);
   const unlockTool = dto.slug === "unlocktool-6h";
-  return <main><PublicHeader/><section className="product-page wrap">
+  return <main><PublicHeader viewer={publicViewer(viewer)}/><section className="product-page wrap">
     <nav className="breadcrumbs"><Link href="/">Início</Link><span>›</span><Link href="/catalogo">Catálogo</Link><span>›</span><b>{dto.name}</b></nav>
     <div className="product-detail"><div className="product-detail-art">{dto.imageUrl?<Image src={dto.imageUrl} alt={dto.name} fill sizes="500px" unoptimized/>:<span>{dto.name.slice(0,3).toUpperCase()}</span>}</div>
       <div className="product-detail-copy"><span className="product-type">{dto.category?.name??dto.type}</span><h1>{unlockTool?"UnlockTool — Aluguel 6 horas":dto.name}</h1>{dto.brand&&<p className="detail-brand">Marca: <b>{dto.brand.name}</b></p>}<p className="detail-description">{dto.longDescription||dto.description}</p>

@@ -1,21 +1,15 @@
 "use client";
 
 import Link from "next/link";
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
-import type { UserSessionDTO } from "@/lib/dto";
+import type { PublicViewer } from "@/lib/public-viewer";
 
-export default function PublicHeader({ initialQuery = "" }: { initialQuery?: string }) {
+export default function PublicHeader({ viewer, initialQuery = "" }: { viewer: PublicViewer; initialQuery?: string }) {
   const router = useRouter();
   const [query, setQuery] = useState(initialQuery);
-  const [user, setUser] = useState<UserSessionDTO | null>(null);
-
-  useEffect(() => {
-    fetch("/api/auth/session", { cache: "no-store" })
-      .then((response) => response.json())
-      .then((payload) => setUser(payload.data ?? null))
-      .catch(() => setUser(null));
-  }, []);
+  const [signedOut, setSignedOut] = useState(false);
+  const user = signedOut ? null : viewer;
 
   function search(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -25,7 +19,7 @@ export default function PublicHeader({ initialQuery = "" }: { initialQuery?: str
 
   async function signOut() {
     await fetch("/api/auth/logout", { method: "POST" });
-    setUser(null);
+    setSignedOut(true);
     router.push("/");
     router.refresh();
   }
