@@ -9,7 +9,12 @@ coverage/
 # Environment files
 .env
 .env.local
-.env.*.local
+.env*
+!.env.example
+
+# Vercel CLI and TypeScript incremental build
+.vercel/
+tsconfig.tsbuildinfo
 
 # Logs and system files
 *.log
