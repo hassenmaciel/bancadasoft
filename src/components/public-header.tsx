@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
+import { SUPPORT_WHATSAPP_URL } from "@/lib/support";
 import type { PublicViewer } from "@/lib/public-viewer";
 
 export default function PublicHeader({ viewer, initialQuery = "" }: { viewer: PublicViewer; initialQuery?: string }) {
@@ -39,6 +40,7 @@ export default function PublicHeader({ viewer, initialQuery = "" }: { viewer: Pu
           {user ? <><Link href="/meus-pedidos">Olá, {user.name.split(" ")[0]}</Link><button type="button" onClick={signOut}>Sair</button></> : <Link href="/login">Entrar</Link>}
           <Link href="/meus-pedidos">Meus pedidos</Link>
           {user?.role === "ADMIN" && <Link href="/admin">Painel Admin</Link>}
+          <a className="support-link" href={SUPPORT_WHATSAPP_URL} target="_blank" rel="noopener noreferrer">◉ Suporte</a>
         </div>
       </div>
       <nav className="nav-bar" aria-label="Navegação principal">
@@ -50,7 +52,6 @@ export default function PublicHeader({ viewer, initialQuery = "" }: { viewer: Pu
           <Link href="/catalogo?tipo=servico">⌘ Serviços</Link>
           <Link href="/catalogo?tipo=credito">▰ Créditos</Link>
           <Link href="/catalogo?ordem=populares">★ Mais vendidos</Link>
-          <Link href="/#suporte">◉ Suporte</Link>
         </div>
       </nav>
     </header>
