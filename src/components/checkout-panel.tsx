@@ -11,6 +11,7 @@ import {
   isRecoverableCheckoutOrder,
 } from "@/lib/order-polling";
 import CredentialDelivery from "@/components/credential-delivery";
+import PixPayment from "@/components/pix-payment";
 import {
   checkoutErrorMessage,
   createCheckoutSubmissionGuard,
@@ -38,6 +39,9 @@ export default function CheckoutPanel({
   const [notice, setNotice] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [renewing, setRenewing] = useState(false);
+  const [renewError, setRenewError] = useState("");
+  const renewGuard = useRef(false);
   const [delivery, setDelivery] = useState<DeliveryDTO | null>(null);
   const [variantId, setVariantId] = useState(product.variants.length === 1 ? product.variants[0].id : "");
   // Fica true quando o polling entra na fase de espera (frequência reduzida,
@@ -316,6 +320,29 @@ export default function CheckoutPanel({
     await navigator.clipboard.writeText(order.payment.pixPayload);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
+  }
+  // "Gerar novo PIX": um clique = no máximo uma requisição em voo; o servidor
+  // ainda garante uma única cobrança nova mesmo com cliques concorrentes.
+  async function renewPix() {
+    if (!order || renewGuard.current) return;
+    renewGuard.current = true;
+    setRenewing(true);
+    setRenewError("");
+    try {
+      const response = await fetch(
+        `/api/orders/${order.id}/pix?token=${encodeURIComponent(order.publicToken)}`,
+        { method: "POST", cache: "no-store" },
+      );
+      const payload = await response.json().catch(() => null);
+      if (!response.ok || !payload?.data)
+        throw new Error(payload?.error ?? "Não foi possível gerar um novo PIX agora.");
+      setOrder(payload.data);
+    } catch (cause) {
+      setRenewError(cause instanceof Error ? cause.message : "Não foi possível gerar um novo PIX agora.");
+    } finally {
+      renewGuard.current = false;
+      setRenewing(false);
+    }
   }
   function close() {
     if (submitting) return;
@@ -667,53 +694,23 @@ export default function CheckoutPanel({
                     </>
                   ) : (
                     <>
-                      <span className="checkout-kicker">Pagamento via PIX</span>
-                      <h2 id="checkout-title">Aguardando pagamento</h2>
-                      <div className="pix-status">
-                        <span />
-                        Aguardando confirmação do pagamento
-                      </div>
-                      {order.payment && (
-                        <div className="pix-layout">
-                          <div className="qr-frame">
-                            {order.payment.qrCodeImage && (
-                              <Image
-                                src={order.payment.qrCodeImage}
-                                width={210}
-                                height={210}
-                                unoptimized
-                                alt="QR Code PIX do pedido"
-                              />
-                            )}
-                          </div>
-                          <div className="pix-details">
-                            <small>VALOR</small>
-                            <strong>{money(order.payment.amountCents)}</strong>
-                            <label>
-                              PIX COPIA E COLA
-                              <code>{order.payment.pixPayload}</code>
-                            </label>
-                            <button
-                              type="button"
-                              className="copy-pix"
-                              onClick={copyPix}
-                            >
-                              {copied ? "COPIADO ✓" : "COPIAR PIX"}
-                            </button>
-                          </div>
-                        </div>
+                      {order.payment ? (
+                        <PixPayment
+                          key={order.payment.serverTime}
+                          payment={order.payment}
+                          amountLabel={money(order.payment.amountCents)}
+                          copied={copied}
+                          onCopy={copyPix}
+                          onRenew={renewPix}
+                          renewing={renewing}
+                          renewError={renewError}
+                        />
+                      ) : (
+                        <>
+                          <span className="checkout-kicker">Pagamento via PIX</span>
+                          <h2 id="checkout-title">Aguardando pagamento</h2>
+                        </>
                       )}
-                      <p className="checkout-guidance">
-                        Após realizar o pagamento, aguarde nesta página. Seu
-                        acesso será liberado automaticamente.
-                      </p>
-                      <p className="checkout-warning">
-                        Não feche esta janela até seu login ser exibido.
-                      </p>
-                      <p className="checkout-recovery">
-                        Se fechar por engano, você poderá recuperar o acesso
-                        pelo link enviado ao seu e-mail.
-                      </p>
                     </>
                   )}
                   <Link

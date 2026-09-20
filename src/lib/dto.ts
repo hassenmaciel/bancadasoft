@@ -60,6 +60,8 @@ export type PaymentDTO = Pick<Payment, "status" | "amountCents"> & {
   pixPayload: string;
   qrCodeImage: string | null;
   expirationDate: Date;
+  /** Horário do servidor ao montar a resposta — referência do contador regressivo. */
+  serverTime: string;
 };
 export type DeliveryDTO = {
   deliveryType?: "CREDENTIALS" | "LICENSE" | "CODE" | "TEXT" | "MULTI_FIELD";
@@ -183,6 +185,7 @@ export const orderDto = (order: any, options: { includeDelivery?: boolean } = {}
         pixPayload: order.payment.pixCode,
         qrCodeImage: normalizeQrCodeImage(order.payment.qrCode),
         expirationDate: order.payment.expiresAt,
+        serverTime: new Date().toISOString(),
       }
     : null,
   fulfillment: order.fulfillment

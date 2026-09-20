@@ -39,7 +39,6 @@ const defaultDeps: ReconciliationDeps = {
         data: {
           pixCode: details.pixCode,
           qrCode: details.qrCode,
-          expiresAt: details.expiresAt,
         },
       }),
       prisma.orderEvent.create({

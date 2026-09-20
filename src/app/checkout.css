@@ -728,3 +728,18 @@ body:has(.checkout-modal)::before {
     font-size: 27px;
   }
 }
+
+.pix-countdown {
+  margin: 0;
+  font-size: 0.95rem;
+  color: var(--muted, #8a8f98);
+  font-variant-numeric: tabular-nums;
+}
+.pix-countdown strong {
+  font-size: 1.25rem;
+  color: inherit;
+}
+.pix-countdown-alert {
+  color: #ff5a5f;
+  font-weight: 700;
+}

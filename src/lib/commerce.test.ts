@@ -117,3 +117,42 @@ describe("processPayment — falha de fulfillment não pode ficar silenciosa", (
     expect(log).not.toHaveBeenCalled();
   });
 });
+
+describe("processPayment — pagamento depois da expiração do PIX", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    db.paymentEvent.findUnique.mockResolvedValue(null);
+    db.$transaction.mockImplementation(async (ops: unknown) =>
+      Array.isArray(ops) ? Promise.all(ops) : ops,
+    );
+    db.order.findUnique.mockResolvedValue({ id: "order-1", status: "PAID", payment: { status: "PAID" } });
+    engine.executeFulfillment.mockResolvedValue(undefined);
+  });
+
+  it("webhook pago para Payment EXPIRED NÃO é descartado: vira PAID, inicia entrega e sinaliza revisão manual", async () => {
+    db.payment.findFirst.mockResolvedValue({ ...pendingPayment, status: "EXPIRED", externalPaymentId: "pay-1" });
+    await processPayment(paidEvent, vi.fn());
+    expect(db.payment.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ status: "PAID" }) }),
+    );
+    expect(engine.executeFulfillment).toHaveBeenCalledWith("order-1");
+    const orderUpdate = db.order.update.mock.calls[0][0];
+    expect(orderUpdate.data.status).toBe("PAID");
+    expect(orderUpdate.data.events.create.note).toContain("REVISÃO MANUAL");
+  });
+
+  it("pagamento normal (PENDING) não é sinalizado para revisão", async () => {
+    db.payment.findFirst.mockResolvedValue({ ...pendingPayment, externalPaymentId: "pay-1" });
+    await processPayment(paidEvent, vi.fn());
+    expect(db.order.update.mock.calls[0][0].data.events.create.note).not.toContain("REVISÃO");
+  });
+
+  it("evento de cobrança cancelada (FAILED) não reverte um Payment EXPIRED", async () => {
+    db.payment.findFirst.mockResolvedValue({ ...pendingPayment, status: "EXPIRED", externalPaymentId: "pay-1" });
+    await processPayment({ ...paidEvent, providerEventId: "evt-del", status: "FAILED" as never }, vi.fn());
+    expect(db.payment.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ status: "EXPIRED" }) }),
+    );
+    expect(engine.executeFulfillment).not.toHaveBeenCalled();
+  });
+});

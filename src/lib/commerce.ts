@@ -13,6 +13,7 @@ import {
   getPaymentProvider,
 } from "@/lib/payments/registry";
 import {
+  isPaidAfterExpiry,
   paymentWebhookLookup,
   shouldProcessPaymentEvent,
   shouldStartFulfillment,
@@ -36,6 +37,8 @@ import {
   normalizeWhatsapp,
 } from "@/lib/checkout-validation";
 import { assertCheckoutPrice } from "@/lib/commercial-pricing";
+import { pixExpiresAt } from "@/lib/payments/pix-expiry";
+import { expirePixIfDue } from "@/lib/payment-expiry";
 import { TERMINAL_ORDER_STATUSES } from "@/lib/order-polling";
 import { resolveAuthenticatedCheckoutIdentity } from "@/lib/checkout-identity";
 
@@ -110,7 +113,6 @@ async function retryPendingPixCheckout(orderId: string) {
           status: payment.status,
           pixCode: payment.pixCode,
           qrCode: payment.qrCode,
-          expiresAt: payment.expiresAt,
         },
       });
       await tx.orderEvent.create({
@@ -148,6 +150,48 @@ async function retryPendingPixCheckout(orderId: string) {
     }
     throw error;
   }
+}
+
+// "Gerar novo PIX": reaproveita a MESMA Order e a MESMA linha de Payment
+// (Payment.orderId é único). O reset só acontece para quem vence o claim
+// atômico EXPIRED -> PENDING; a criação da cobrança reaproveita o claim
+// pending -> creating de retryPendingPixCheckout. Cliques repetidos ou
+// concorrentes resultam em no máximo uma nova cobrança.
+export async function renewPixPayment(orderId: string) {
+  await expirePixIfDue(orderId);
+  const order = await prisma.order.findUnique({
+    where: { id: orderId },
+    include: { payment: true },
+  });
+  if (!order?.payment) throw new Error("CHECKOUT_PAYMENT_NOT_FOUND");
+  if (order.status !== OrderStatus.PENDING_PAYMENT)
+    throw new Error("PIX_RENEW_NOT_ALLOWED");
+  const payment = order.payment;
+  if (payment.status === PaymentStatus.EXPIRED) {
+    const reset = await prisma.payment.updateMany({
+      where: { id: payment.id, status: PaymentStatus.EXPIRED },
+      data: {
+        status: PaymentStatus.PENDING,
+        providerReference: `pending:${order.publicToken}`,
+        externalPaymentId: null,
+        pixCode: "",
+        qrCode: null,
+        expiresAt: pixExpiresAt(),
+      },
+    });
+    if (reset.count === 1)
+      await prisma.orderEvent.create({
+        data: {
+          orderId: order.id,
+          status: OrderStatus.PENDING_PAYMENT,
+          note: `Novo PIX solicitado${payment.externalPaymentId ? ` (cobrança anterior ${payment.externalPaymentId})` : ""}.`,
+        },
+      });
+  } else if (payment.status !== PaymentStatus.PENDING) {
+    throw new Error("PIX_RENEW_NOT_ALLOWED");
+  }
+  await retryPendingPixCheckout(order.id);
+  return getOrder(order.id);
 }
 
 export async function createOrder(input: {
@@ -270,7 +314,7 @@ export async function createOrder(input: {
   const provider = getPaymentProvider(providerCode);
   if (!provider) throw new Error("PAYMENT_PROVIDER_UNAVAILABLE");
   const publicToken = crypto.randomUUID().replaceAll("-", "");
-  const expiresAt = new Date(Date.now() + 900000);
+  const expiresAt = pixExpiresAt();
   const pendingOrder = await prisma.order.create({
     data: {
       publicToken,
@@ -366,7 +410,6 @@ export async function createOrder(input: {
         status: payment.status,
         pixCode: payment.pixCode,
         qrCode: payment.qrCode,
-        expiresAt: payment.expiresAt,
       },
     });
     await tx.orderEvent.create({
@@ -425,6 +468,12 @@ export async function processPayment(
   if (!shouldProcessPaymentEvent(!!existing))
     return { duplicate: true, order: await getOrder(payment.orderId) };
   const nextStatus = transitionPayment(payment.status, event.status);
+  const manualReview =
+    isPaidAfterExpiry(payment.status, event.status) ||
+    (event.status === PaymentStatus.PAID &&
+      !!payment.externalPaymentId &&
+      !!event.externalPaymentId &&
+      payment.externalPaymentId !== event.externalPaymentId);
   const startFulfillment =
     payment.status !== PaymentStatus.PAID && shouldStartFulfillment(nextStatus);
   const paymentData = {
@@ -454,7 +503,9 @@ export async function processPayment(
             events: {
               create: {
                 status: OrderStatus.PAID,
-                note: `Pagamento ${payment.provider} confirmado.`,
+                note: manualReview
+                  ? `Pagamento ${payment.provider} confirmado APÓS a expiração do PIX (ou de outra cobrança) — REVISÃO MANUAL necessária.`
+                  : `Pagamento ${payment.provider} confirmado.`,
               },
             },
           },

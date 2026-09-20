@@ -26,8 +26,15 @@ const finalPaymentStatuses = new Set(["EXPIRED", "FAILED", "REFUNDED"]);
 // (executeFulfillment/reconcileFulfillment via attemptAutomaticGuestRecovery).
 // Só DELIVERED/CANCELLED, ou um pagamento realmente morto, encerram o
 // acompanhamento.
+// PIX expirado numa Order ainda PENDING_PAYMENT: não é terminal — o cliente pode
+// gerar um novo PIX, e um pagamento tardio da cobrança expirada ainda precisa
+// aparecer na tela. Continua a ser consultado (fase lenta, sem criar nada).
+export const isExpiredPixOrder = (order: OrderDTO) =>
+  order.status === "PENDING_PAYMENT" && order.payment?.status === "EXPIRED";
+
 export function shouldPollOrder(order: OrderDTO) {
   if (order.status === "DELIVERED" || order.status === "CANCELLED") return false;
+  if (isExpiredPixOrder(order)) return true;
   if (!order.payment || finalPaymentStatuses.has(order.payment.status)) return false;
   if (order.status === "FAILED") return order.payment.status === "PAID";
   return true;

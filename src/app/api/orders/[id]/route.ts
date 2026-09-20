@@ -3,6 +3,7 @@ import { getOrder } from "@/lib/commerce";
 import { orderDto } from "@/lib/dto";
 import { session } from "@/lib/auth";
 import { canReadOrder } from "@/lib/public-navigation";
+import { expirePixIfDue } from "@/lib/payment-expiry";
 import { attemptAutomaticGuestRecovery } from "@/lib/fulfillment-engine";
 export const dynamic = "force-dynamic";
 
@@ -24,6 +25,11 @@ export async function GET(
   // entrega — nunca cria PIX/Order/Payment, e é throttlada internamente
   // (ver AUTO_RECOVERY_THROTTLE_MS) para não virar uma chamada ao provider a
   // cada poll de 3s do cliente.
+  // Expiração do PIX pelo relógio do servidor (idempotente, cancelamento único).
+  if (order.payment?.status === "PENDING") {
+    const outcome = await expirePixIfDue(id).catch(() => "NOT_DUE" as const);
+    if (outcome === "EXPIRED") order = (await getOrder(id)) ?? order;
+  }
   if (order.payment?.status === "PAID" && order.status !== "DELIVERED") {
     const attempted = await attemptAutomaticGuestRecovery(id).catch(() => false);
     if (attempted) order = (await getOrder(id)) ?? order;

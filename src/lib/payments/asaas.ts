@@ -3,6 +3,7 @@ import { resolveAsaasApiKey } from "./asaas-api-key";
 import { AsaasClient, AsaasClientError, ASAAS_PRODUCTION_BASE_URL, ASAAS_SANDBOX_BASE_URL } from "./asaas-client";
 import type {
   ParsedPaymentWebhook,
+  PaymentCancelResult,
   PaymentProvider,
   PaymentStatusResult,
   PixPaymentInput,
@@ -103,6 +104,19 @@ export class AsaasPaymentProvider implements PaymentProvider {
       qrCode: qr.qrCode,
       expiresAt: qr.expiresAt,
     };
+  }
+  // Cancela a cobrança (DELETE). Nunca repete: erro ambíguo vira UNCERTAIN e fica
+  // para revisão, porque repetir às cegas não distingue "não chegou" de "já apagou".
+  async cancelPayment(externalPaymentId: string): Promise<PaymentCancelResult> {
+    try {
+      await this.configured().request(`/payments/${encodeURIComponent(externalPaymentId)}`, { method: "DELETE" });
+      return "CANCELLED";
+    } catch (error) {
+      if (!(error instanceof AsaasClientError) || error.status === null) return "UNCERTAIN";
+      if (error.status === 404) return "ALREADY_GONE";
+      if (error.status === 408 || error.status === 429 || error.status >= 500) return "UNCERTAIN";
+      return "REJECTED";
+    }
   }
   async getPaymentStatus(
     externalPaymentId: string,

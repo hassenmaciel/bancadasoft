@@ -13,11 +13,19 @@ import type { OrderDTO } from "./dto";
 
 const order = (orderStatus: string, paymentStatus: string): OrderDTO => ({
   id: "order-1", publicToken: "token", status: orderStatus as OrderDTO["status"], totalCents: 2900, createdAt: new Date(), items: [],
-  payment: { status: paymentStatus as NonNullable<OrderDTO["payment"]>["status"], amountCents: 2900, externalPaymentId: "pay-1", pixPayload: "pix", qrCodeImage: null, expirationDate: new Date() },
+  payment: { status: paymentStatus as NonNullable<OrderDTO["payment"]>["status"], amountCents: 2900, externalPaymentId: "pay-1", pixPayload: "pix", qrCodeImage: null, expirationDate: new Date(), serverTime: new Date().toISOString() },
   fulfillment: null, events: [],
 });
 
 afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); });
+
+describe("PIX expirado no acompanhamento", () => {
+  it("Order PENDING_PAYMENT com Payment EXPIRED continua consultada e recuperável (permite novo PIX / pagamento tardio)", () => {
+    expect(shouldPollOrder(order("PENDING_PAYMENT", "EXPIRED"))).toBe(true);
+    expect(isRecoverableCheckoutOrder(order("PENDING_PAYMENT", "EXPIRED"))).toBe(true);
+    expect(isFailedCheckoutOrder(order("PENDING_PAYMENT", "EXPIRED"))).toBe(false);
+  });
+});
 
 describe("polling do pedido", () => {
   it("inicia consulta periódica para pagamento PENDING", async () => {
@@ -191,10 +199,15 @@ describe("isFailedCheckoutOrder", () => {
     expect(isFailedCheckoutOrder(order("FAILED", "PAID"))).toBe(false);
   });
   it.each(["EXPIRED", "FAILED", "REFUNDED"])(
-    "considera falha quando o pagamento chega a %s mesmo com Order ainda PENDING_PAYMENT/PROCESSING",
+    "considera falha quando o pagamento chega a %s mesmo com Order ainda PROCESSING",
+    (paymentStatus) => {
+      expect(isFailedCheckoutOrder(order("PROCESSING", paymentStatus))).toBe(true);
+    },
+  );
+  it.each(["FAILED", "REFUNDED"])(
+    "considera falha quando o pagamento chega a %s com Order PENDING_PAYMENT (só EXPIRED permite novo PIX)",
     (paymentStatus) => {
       expect(isFailedCheckoutOrder(order("PENDING_PAYMENT", paymentStatus))).toBe(true);
-      expect(isFailedCheckoutOrder(order("PROCESSING", paymentStatus))).toBe(true);
     },
   );
   it("NÃO considera DELIVERED como falha", () => {
