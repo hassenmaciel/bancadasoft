@@ -3,6 +3,8 @@ const allowedTypes = new Map([
   ["image/png", "png"],
   ["image/webp", "webp"],
 ]);
+// Nomes são UUID (nunca reutilizados), então o arquivo é imutável.
+export const UPLOAD_CACHE_CONTROL = "public, max-age=31536000";
 export const MAX_ADMIN_IMAGE_BYTES = 500 * 1024;
 export function validateAdminImage(input: { type: string; size: number }) {
   if (!allowedTypes.has(input.type))
@@ -73,6 +75,7 @@ export async function uploadAdminAsset(input: {
         ...storageAuthHeaders(config.serviceKey),
         "content-type": input.file.type,
         "x-upsert": "false",
+        "cache-control": UPLOAD_CACHE_CONTROL,
       },
       body: await input.file.arrayBuffer(),
     },

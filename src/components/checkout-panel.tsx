@@ -4,6 +4,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import type { DeliveryDTO, OrderDTO, ProductDTO } from "@/lib/dto";
+import { isOptimizableImage } from "@/lib/image-source";
 import type { CheckoutIdentitySummary } from "@/lib/checkout-identity";
 import {
   createOrderPoller,
@@ -731,7 +732,8 @@ export default function CheckoutPanel({
                     alt={product.name}
                     width={180}
                     height={150}
-                    unoptimized
+                    unoptimized={!isOptimizableImage(product.imageUrl)}
+                    loading="lazy"
                   />
                 ) : (
                   <b>{product.name.slice(0, 2).toUpperCase()}</b>
