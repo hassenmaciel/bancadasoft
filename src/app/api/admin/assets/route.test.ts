@@ -4,7 +4,16 @@ const requireAdmin = vi.fn();
 vi.mock("@/lib/auth", () => ({ requireAdmin: () => requireAdmin() }));
 vi.mock("@/lib/audit", () => ({ audit: vi.fn().mockResolvedValue(undefined) }));
 
-const { POST } = await import("./route");
+const counts = { product: vi.fn(), brand: vi.fn(), homeBanner: vi.fn() };
+vi.mock("@/lib/prisma", () => ({
+  prisma: {
+    product: { count: (a: unknown) => counts.product(a) },
+    brand: { count: (a: unknown) => counts.brand(a) },
+    homeBanner: { count: (a: unknown) => counts.homeBanner(a) },
+  },
+}));
+
+const { POST, DELETE } = await import("./route");
 
 const form = (kind: string, file: File) => {
   const data = new FormData();
@@ -23,6 +32,7 @@ const configured = () => {
 
 beforeEach(() => {
   requireAdmin.mockResolvedValue({ id: "admin-1" });
+  for (const c of Object.values(counts)) c.mockResolvedValue(0);
 });
 afterEach(() => {
   vi.unstubAllEnvs();
@@ -79,5 +89,43 @@ describe("POST /api/admin/assets", () => {
     configured();
     vi.stubGlobal("fetch", vi.fn(async () => new Response("{}", { status: 200 })));
     expect((await POST(form("banners", image(500 * 1024, "image/jpeg")))).status).toBe(200);
+  });
+});
+
+describe("DELETE /api/admin/assets", () => {
+  const ASSET = "https://abcdefgh.supabase.co/storage/v1/object/public/catalog-assets/banners/11111111-1111-1111-1111-111111111111.jpg";
+  const del = (url: unknown) =>
+    new Request("http://localhost/api/admin/assets", {
+      method: "DELETE",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ url }),
+    });
+
+  it("rejeita não-admin com 403", async () => {
+    requireAdmin.mockRejectedValue(new Error("forbidden"));
+    expect((await DELETE(del(ASSET))).status).toBe(403);
+  });
+
+  it.each(["product", "brand", "homeBanner"] as const)(
+    "recusa com 409 e não chama o Storage quando o arquivo é referenciado por %s",
+    async (table) => {
+      configured();
+      counts[table].mockResolvedValue(1);
+      const fetcher = vi.fn(async () => new Response("{}", { status: 200 }));
+      vi.stubGlobal("fetch", fetcher);
+      const response = await DELETE(del(ASSET));
+      expect(response.status).toBe(409);
+      expect(fetcher).not.toHaveBeenCalled();
+    },
+  );
+
+  it("remove arquivo não referenciado (upload ainda não salvo)", async () => {
+    configured();
+    const fetcher = vi.fn(async () => new Response("{}", { status: 200 }));
+    vi.stubGlobal("fetch", fetcher);
+    const response = await DELETE(del(ASSET));
+    expect(response.status).toBe(200);
+    expect((await response.json()).data.removed).toBe(true);
+    expect(fetcher).toHaveBeenCalledTimes(1);
   });
 });

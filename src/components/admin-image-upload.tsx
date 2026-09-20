@@ -1,6 +1,7 @@
 "use client";
 import Image from "next/image";
-import { ChangeEvent, useRef, useState } from "react";
+import { ChangeEvent, useEffect, useRef, useState } from "react";
+import { createUploadSession } from "@/lib/admin-upload-session";
 export default function AdminImageUpload({
   kind,
   value,
@@ -15,14 +16,18 @@ export default function AdminImageUpload({
   const input = useRef<HTMLInputElement>(null),
     [busy, setBusy] = useState(false),
     [error, setError] = useState(""),
-    [unsavedUpload, setUnsavedUpload] = useState("");
+    session = useRef(createUploadSession());
+  // Se o valor deixou de ser o upload pendente (salvou, limpou ou trocou de registro), esquece-o.
+  useEffect(() => session.current.sync(value), [value]);
   async function discardUnsaved(url: string) {
     const response = await fetch("/api/admin/assets", {
       method: "DELETE",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ url }),
     });
-    if (!response.ok) throw new Error("Falha ao remover imagem temporária.");
+    // 409 = a imagem já está salva em algum registro: nunca apagar, sem erro.
+    if (!response.ok && response.status !== 409)
+      throw new Error("Falha ao remover imagem temporária.");
   }
   async function upload(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
@@ -41,14 +46,15 @@ export default function AdminImageUpload({
       setBusy(false);
       return setError(body.error ?? "Falha no upload.");
     }
-    if (unsavedUpload) {
+    const previous = session.current.discardTarget(value);
+    if (previous) {
       try {
-        await discardUnsaved(unsavedUpload);
+        await discardUnsaved(previous);
       } catch {
         setError("A imagem anterior não pôde ser removida.");
       }
     }
-    setUnsavedUpload(body.data.url);
+    session.current.uploaded(body.data.url);
     onChange(body.data.url);
     setBusy(false);
   }
@@ -56,9 +62,9 @@ export default function AdminImageUpload({
     setBusy(true);
     setError("");
     try {
-      if (value === unsavedUpload) {
+      if (session.current.discardTarget(value)) {
         await discardUnsaved(value);
-        setUnsavedUpload("");
+        session.current.clear();
       }
       onChange("");
     } catch (caught) {

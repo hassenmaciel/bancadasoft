@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/auth";
 import { removeAdminAsset, uploadAdminAsset } from "@/lib/admin-storage";
 import { audit } from "@/lib/audit";
+import { prisma } from "@/lib/prisma";
+import { isAssetReferenced } from "@/lib/asset-references";
 export async function POST(request: Request) {
   let admin;
   try {
@@ -48,6 +50,12 @@ export async function DELETE(request: Request) {
   if (typeof url !== "string")
     return NextResponse.json({ error: "Imagem inválida." }, { status: 422 });
   try {
+    // Defesa no servidor: nunca apagar arquivo em uso, mesmo que o cliente peça.
+    if (await isAssetReferenced(url, prisma))
+      return NextResponse.json(
+        { error: "Esta imagem está em uso e não pode ser removida." },
+        { status: 409 },
+      );
     const removed = await removeAdminAsset(url);
     if (removed)
       await audit(admin.id, "ASSET_REMOVED", "Asset", undefined, {
