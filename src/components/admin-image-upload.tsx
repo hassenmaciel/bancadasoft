@@ -7,7 +7,7 @@ export default function AdminImageUpload({
   onChange,
   label = "Imagem",
 }: {
-  kind: "products" | "brands";
+  kind: "products" | "brands" | "banners";
   value: string;
   onChange: (value: string) => void;
   label?: string;

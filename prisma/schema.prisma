@@ -526,3 +526,16 @@ model ProviderCallbackEvent {
 
   @@index([providerOrderId, createdAt])
 }
+
+model HomeBanner {
+  id        String   @id @default(cuid())
+  title     String
+  imageUrl  String
+  linkUrl   String?
+  sortOrder Int      @default(1)
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([active, sortOrder])
+}

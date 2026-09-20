@@ -12,7 +12,7 @@ export async function POST(request: Request) {
   const form = await request.formData();
   const file = form.get("file"),
     kind = form.get("kind");
-  if (!(file instanceof File) || (kind !== "products" && kind !== "brands"))
+  if (!(file instanceof File) || (kind !== "products" && kind !== "brands" && kind !== "banners"))
     return NextResponse.json({ error: "Arquivo inválido." }, { status: 422 });
   try {
     const asset = await uploadAdminAsset({ file, kind });

@@ -57,7 +57,7 @@ export async function ensurePublicAssetBucket(
 }
 export async function uploadAdminAsset(input: {
   file: File;
-  kind: "products" | "brands";
+  kind: "products" | "brands" | "banners";
   fetcher?: typeof fetch;
 }) {
   const valid = validateAdminImage(input.file);
