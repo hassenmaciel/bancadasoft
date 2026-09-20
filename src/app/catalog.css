@@ -11,3 +11,75 @@
   object-position: center;
   padding: 0;
 }
+
+/* Home compacta (mockup aprovado): hero horizontal + categorias em cards + mais procurados na 1ª dobra */
+.hero .hero-grid { min-height: 0; height: 200px; padding: 0; display: grid; grid-template-columns: 1.55fr .6fr 1fr; gap: 12px; align-items: center; }
+.hero h1 { font-size: 40px; line-height: 1; letter-spacing: -2px; white-space: nowrap; margin: 0; }
+.hero-copy > p { margin: 8px 0 14px; font-size: 14px; max-width: 540px; }
+.eyebrow { margin-bottom: 8px; }
+.hero-actions .primary-cta, .hero-actions .secondary-cta { display: inline-flex; align-items: center; min-height: 38px; padding: 0 18px; }
+.hero .hero-visual { height: 100%; }
+.hero .device-glow { width: 220px; height: 220px; top: 0; left: -20px; }
+.hero .phone { width: 128px; height: 246px; bottom: -70px; left: 8px; border-width: 5px; border-radius: 22px; }
+.hero .phone-notch { width: 48px; height: 9px; }
+.hero .phone-message { font-size: 11px; }
+.hero .phone-message em { color: #2b9bff; }
+.hero .phone-brand { bottom: 30px; font-size: 8px; }
+.hero .hero-benefits { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.hero .hero-benefits span { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 8px; font-size: 11px; line-height: 1.25; }
+.hero .hero-benefits b { display: grid; place-items: center; width: 38px; height: 38px; border: 1px solid #0adbc3; border-radius: 50%; color: #18e5c8; font-size: 18px; }
+
+.categories-section { padding-top: 14px; }
+.categories-section .section-title h2 { font-size: 18px; }
+.categories-section .section-title p { margin-bottom: 10px; }
+.categories-section .section-title > a { margin-bottom: 10px; }
+.quick-links { display: grid; grid-template-columns: none; grid-auto-flow: column; grid-auto-columns: minmax(120px, 148px); gap: 10px; padding: 0 0 14px; justify-content: start; }
+.quick-links > a { min-height: 92px; flex-direction: column; justify-content: center; align-items: center; gap: 3px; padding: 10px 8px; text-align: center; border: 1px solid #dbe6f2; background: #f6faff; }
+.quick-links > a .category-icon { display: grid; place-items: center; width: 32px; height: 32px; border-radius: 50%; background: #e2eefc; color: #0878f9; font-size: 16px; }
+.quick-links > a b { font-size: 13px; }
+.quick-links > a small { margin: 0; font-size: 10px; }
+.quick-links > a.all-categories { background: linear-gradient(135deg, #0878f9, #0a5cc0); border-color: transparent; color: #fff; }
+.quick-links > a.all-categories .category-icon { background: #ffffff26; color: #fff; }
+.quick-links > a.all-categories small { color: #ffffffcc; }
+.discovery-section { padding-top: 0; }
+.support-link { border: 1px solid #ffffff55; border-radius: 6px; padding: 6px 12px; }
+
+@media (max-width: 900px) {
+  .hero .hero-grid { height: auto; grid-template-columns: 1.4fr .6fr; padding: 16px 0; }
+  .hero .hero-benefits { grid-column: 1 / -1; }
+  .hero h1 { font-size: 34px; }
+  .hero .hero-visual { height: 150px; }
+  .hero .phone { bottom: -40px; }
+}
+
+@media (max-width: 650px) {
+  .hero .hero-grid { display: block; position: relative; padding: 16px 0 14px; }
+  .hero h1 { font-size: 28px; letter-spacing: -1.4px; white-space: normal; }
+  .hero-copy > p { width: 72%; margin: 8px 0 12px; font-size: 13px; }
+  .hero-actions { gap: 8px; }
+  .hero-actions .primary-cta, .hero-actions .secondary-cta { min-height: 44px; padding: 0 16px; font-size: 13px; }
+  .hero .hero-visual { position: absolute; right: -6px; top: 8px; width: 96px; height: 150px; opacity: .55; }
+  .hero .phone { left: 10px; width: 80px; height: 160px; bottom: auto; top: 0; }
+  .hero .device-glow { display: none; }
+  .hero .hero-benefits { margin-top: 12px; gap: 6px; }
+  .hero .hero-benefits span { flex-direction: row; text-align: left; font-size: 10px; gap: 5px; }
+  .hero .hero-benefits b { width: 26px; height: 26px; font-size: 13px; flex: none; }
+  .quick-links { grid-auto-flow: column; grid-auto-columns: 132px; overflow-x: auto; padding-bottom: 12px; scrollbar-width: none; }
+  .quick-links::-webkit-scrollbar { display: none; }
+  .quick-links > a { min-height: 84px; }
+}
+
+/* Banner rotativo do Hero (substitui os benefícios quando há banners ativos) */
+.hero .hero-banner-slot { align-self: center; min-width: 0; }
+.hero-banner { position: relative; height: 176px; overflow: hidden; border-radius: 10px; background: #061e38; box-shadow: 0 10px 28px #0005; }
+.hero-banner-slide { position: absolute; inset: 0; display: block; opacity: 0; visibility: hidden; transition: opacity .6s ease, visibility .6s; }
+.hero-banner-slide.is-active { opacity: 1; visibility: visible; }
+a.hero-banner-slide { cursor: pointer; }
+.hero-banner-slide img { object-fit: cover; }
+.hero-banner-dots { position: absolute; left: 50%; bottom: 6px; transform: translateX(-50%); display: flex; gap: 2px; padding: 0 4px; border-radius: 10px; background: #02101f66; }
+.hero-banner-dots button { width: 20px; height: 20px; padding: 0; border: 0; background: transparent; cursor: pointer; display: grid; place-items: center; }
+.hero-banner-dots button::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: #ffffff80; transition: background .2s, transform .2s; }
+.hero-banner-dots button.is-active::before { background: #fff; transform: scale(1.2); }
+@media (prefers-reduced-motion: reduce) { .hero-banner-slide { transition: none; } }
+@media (max-width: 900px) { .hero .hero-banner-slot { grid-column: 1 / -1; } .hero-banner { height: 140px; } }
+@media (max-width: 650px) { .hero .hero-banner-slot { margin-top: 12px; } .hero-banner { height: 128px; } }
