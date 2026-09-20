@@ -12,6 +12,8 @@ import {
 } from "@/lib/order-polling";
 import CredentialDelivery from "@/components/credential-delivery";
 import PixPayment from "@/components/pix-payment";
+import NewPurchaseButton from "@/components/new-purchase-button";
+import { clearStoredCheckout, showNewPurchaseButton } from "@/lib/new-purchase";
 import {
   checkoutErrorMessage,
   createCheckoutSubmissionGuard,
@@ -57,7 +59,7 @@ export default function CheckoutPanel({
   const modalRef = useRef<HTMLDialogElement | null>(null);
   const storageKey = `bancadasoft:checkout:${product.id}`;
   const clearActiveCheckout = useCallback(
-    () => localStorage.removeItem(storageKey),
+    () => clearStoredCheckout(localStorage, storageKey),
     [storageKey],
   );
   const paid = order?.payment?.status === "PAID";
@@ -613,19 +615,15 @@ export default function CheckoutPanel({
                           {product.downloadLabel || "ACESSAR FERRAMENTA"}
                         </a>
                       )}
+                      {showNewPurchaseButton(order.status, !!delivery) && (
+                        <NewPurchaseButton onClick={startNewPurchase} />
+                      )}
                       <p className="checkout-guidance">
                         Guarde essas informações até finalizar o período de uso.
                       </p>
                       <p className="email-note">
                         Também enviamos um link de recuperação para seu e-mail.
                       </p>
-                      <button
-                        type="button"
-                        className="new-purchase-link"
-                        onClick={startNewPurchase}
-                      >
-                        Fazer nova compra
-                      </button>
                     </>
                   ) : deliveryPending ? (
                     <>
