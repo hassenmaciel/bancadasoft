@@ -3,6 +3,8 @@
 import Image from "next/image";
 import { useEffect, useState } from "react";
 import type { PaymentDTO } from "@/lib/dto";
+import NewPurchaseButton from "@/components/new-purchase-button";
+import { PIX_CANCEL_WARNING, showCancelPixButton, showNewPurchaseAfterExpiry } from "@/lib/new-purchase";
 import { PIX_ALERT_MS, formatPixCountdown, pixRemainingMs } from "@/lib/payments/pix-expiry";
 
 type Props = {
@@ -13,12 +15,17 @@ type Props = {
   onRenew: () => void;
   renewing: boolean;
   renewError: string;
+  orderStatus: string;
+  onCancel: () => void;
+  cancelling: boolean;
+  cancelMessage: string;
+  onNewPurchase: () => void;
 };
 
 // Renderize com key={payment.serverTime}: cada resposta do servidor remonta o
 // componente e reancora o contador no horário do servidor (nunca no relógio do
 // cliente), então um relógio adiantado/atrasado não prejudica quem paga no fim.
-export default function PixPayment({ payment, amountLabel, copied, onCopy, onRenew, renewing, renewError }: Props) {
+export default function PixPayment({ payment, amountLabel, copied, onCopy, onRenew, renewing, renewError, orderStatus, onCancel, cancelling, cancelMessage, onNewPurchase }: Props) {
   const [receivedAt] = useState(() => Date.now());
   const [now, setNow] = useState(receivedAt);
   const serverExpired = payment.status === "EXPIRED";
@@ -41,6 +48,8 @@ export default function PixPayment({ payment, amountLabel, copied, onCopy, onRen
           {renewing ? "Gerando..." : "Gerar novo PIX"}
         </button>
         {renewError && <small role="alert">{renewError}</small>}
+        {cancelMessage && <p className="checkout-warning" role="alert">{cancelMessage}</p>}
+        {showNewPurchaseAfterExpiry(orderStatus, payment.status) && <NewPurchaseButton onClick={onNewPurchase} />}
         <p className="checkout-recovery">
           Se você já pagou, aguarde: confirmaremos o pagamento automaticamente.
         </p>
@@ -84,6 +93,15 @@ export default function PixPayment({ payment, amountLabel, copied, onCopy, onRen
       <p className="checkout-recovery">
         Se fechar por engano, você poderá recuperar o acesso pelo link enviado ao seu e-mail.
       </p>
+      {showCancelPixButton(orderStatus, payment.status) && (
+        <div className="pix-cancel">
+          <button type="button" className="new-purchase-button" onClick={onCancel} disabled={cancelling}>
+            {cancelling ? "Cancelando..." : "Cancelar e começar de novo"}
+          </button>
+          <small>{PIX_CANCEL_WARNING}</small>
+          {cancelMessage && <small role="alert">{cancelMessage}</small>}
+        </div>
+      )}
     </>
   );
 }

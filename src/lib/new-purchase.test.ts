@@ -5,7 +5,8 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import NewPurchaseButton from "@/components/new-purchase-button";
 import { needsGuestCheckoutRecovery, parseSavedCheckoutReference } from "./checkout-recovery";
-import { clearStoredCheckout, showNewPurchaseButton } from "./new-purchase";
+import PixPayment from "@/components/pix-payment";
+import { PIX_CANCEL_WARNING, clearStoredCheckout, showCancelPixButton, showNewPurchaseAfterExpiry, showNewPurchaseButton } from "./new-purchase";
 import { isRecoverableCheckoutOrder } from "./order-polling";
 import type { OrderDTO } from "./dto";
 
@@ -106,5 +107,42 @@ describe("recuperação do pedido entregue continua funcionando", () => {
     const source = readFileSync(path.resolve(__dirname, "../components/checkout-panel.tsx"), "utf8");
     expect(source).toContain("isRecoverableCheckoutOrder(payload.data)");
     expect(source).not.toMatch(/TTL|maxAge|Date\.now\(\)\s*-/);
+  });
+});
+
+describe("botões do PIX por estado", () => {
+  const props = (orderStatus: string, expirationDate: Date, paymentStatus: string) => ({
+    payment: { ...order(orderStatus, paymentStatus).payment!, expirationDate },
+    amountLabel: "R$ 12,00", copied: false, onCopy: () => undefined, onRenew: () => undefined,
+    renewing: false, renewError: "", orderStatus, onCancel: () => undefined, cancelling: false,
+    cancelMessage: "", onNewPurchase: () => undefined,
+  });
+  const render = (orderStatus: string, paymentStatus: string, expires: Date) =>
+    renderToStaticMarkup(createElement(PixPayment, props(orderStatus, expires, paymentStatus)));
+
+  it("PIX válido: mostra Cancelar e começar de novo com o aviso, sem Fazer nova compra", () => {
+    const html = render("PENDING_PAYMENT", "PENDING", new Date(Date.now() + 600_000));
+    expect(html).toContain("Cancelar e começar de novo");
+    expect(html).toContain(PIX_CANCEL_WARNING);
+    expect(html).not.toContain("Fazer nova compra");
+  });
+  it("PIX expirado: mantém Gerar novo PIX e adiciona Fazer nova compra, sem Cancelar", () => {
+    const html = render("PENDING_PAYMENT", "EXPIRED", new Date(Date.now() - 1000));
+    expect(html).toContain("Gerar novo PIX");
+    expect(html).toContain("Fazer nova compra");
+    expect(html).not.toContain("Cancelar e começar de novo");
+  });
+  it("contador com expiresAt legado de 1 ano mostra no máximo 30:00", () => {
+    const html = render("PENDING_PAYMENT", "PENDING", new Date(Date.now() + 365 * 86_400_000));
+    expect(html).toContain("30:00");
+  });
+  it("visibilidade por estado: Cancelar só com Order PENDING_PAYMENT + Payment PENDING", () => {
+    expect(showCancelPixButton("PENDING_PAYMENT", "PENDING")).toBe(true);
+    for (const [o, p] of [["PENDING_PAYMENT", "EXPIRED"], ["PAID", "PAID"], ["PROCESSING", "PAID"], ["DELIVERED", "PAID"], ["PAID", "PENDING"], [undefined, undefined]] as const)
+      expect(showCancelPixButton(o, p)).toBe(false);
+    expect(showNewPurchaseAfterExpiry("PENDING_PAYMENT", "EXPIRED")).toBe(true);
+    expect(showNewPurchaseAfterExpiry("PAID", "EXPIRED")).toBe(false);
+    expect(showNewPurchaseAfterExpiry("DELIVERED", "PAID")).toBe(false);
+    expect(showNewPurchaseButton("DELIVERED", true)).toBe(true);
   });
 });

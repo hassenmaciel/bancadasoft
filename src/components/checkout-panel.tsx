@@ -24,7 +24,7 @@ import {
 } from "@/lib/unlocktool-license";
 import PixPayment from "@/components/pix-payment";
 import NewPurchaseButton from "@/components/new-purchase-button";
-import { clearStoredCheckout, showNewPurchaseButton } from "@/lib/new-purchase";
+import { PIX_CANCEL_REVIEW_MESSAGE, clearStoredCheckout, showNewPurchaseButton } from "@/lib/new-purchase";
 import {
   checkoutErrorMessage,
   createCheckoutSubmissionGuard,
@@ -55,6 +55,9 @@ export default function CheckoutPanel({
   const [renewing, setRenewing] = useState(false);
   const [renewError, setRenewError] = useState("");
   const renewGuard = useRef(false);
+  const [cancelling, setCancelling] = useState(false);
+  const [cancelMessage, setCancelMessage] = useState("");
+  const cancelGuard = useRef(false);
   const [delivery, setDelivery] = useState<DeliveryDTO | null>(null);
   const [variantId, setVariantId] = useState(product.variants.length === 1 ? product.variants[0].id : "");
   // Fica true quando o polling entra na fase de espera (frequência reduzida,
@@ -362,6 +365,36 @@ export default function CheckoutPanel({
       setRenewing(false);
     }
   }
+  // "Cancelar e começar de novo": o servidor força a expiração pelo fluxo existente
+  // (no máximo um cancelamento no provedor). Se o provedor não confirmou, o pedido
+  // vira "PIX expirado" com aviso e a referência local é mantida; caso contrário
+  // esquece o pedido deste produto e volta ao primeiro passo do checkout.
+  async function cancelPix() {
+    if (!order || cancelGuard.current) return;
+    cancelGuard.current = true;
+    setCancelling(true);
+    setCancelMessage("");
+    try {
+      const response = await fetch(
+        `/api/orders/${order.id}/cancel-pix?token=${encodeURIComponent(order.publicToken)}`,
+        { method: "POST", cache: "no-store" },
+      );
+      const payload = await response.json().catch(() => null);
+      if (!response.ok || !payload?.data)
+        throw new Error(payload?.error ?? "Não foi possível cancelar o PIX agora.");
+      if (payload.manualReview) {
+        setOrder(payload.data);
+        setCancelMessage(PIX_CANCEL_REVIEW_MESSAGE);
+      } else {
+        startNewPurchase();
+      }
+    } catch (cause) {
+      setCancelMessage(cause instanceof Error ? cause.message : "Não foi possível cancelar o PIX agora.");
+    } finally {
+      cancelGuard.current = false;
+      setCancelling(false);
+    }
+  }
   function close() {
     if (submitting) return;
     // X fecha apenas a experiência visual atual. Pedidos recuperáveis (ainda
@@ -396,6 +429,7 @@ export default function CheckoutPanel({
     setDelivery(null);
     setNotice("");
     setCopied(false);
+    setCancelMessage("");
   }
 
   return (
@@ -736,6 +770,11 @@ export default function CheckoutPanel({
                           onRenew={renewPix}
                           renewing={renewing}
                           renewError={renewError}
+                          orderStatus={order.status}
+                          onCancel={cancelPix}
+                          cancelling={cancelling}
+                          cancelMessage={cancelMessage}
+                          onNewPurchase={startNewPurchase}
                         />
                       ) : (
                         <>

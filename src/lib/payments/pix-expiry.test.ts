@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { PIX_ALERT_MS, PIX_VALIDITY_MS, formatPixCountdown, isPixExpired, pixExpiresAt, pixRemainingMs } from "./pix-expiry";
+import { PIX_ALERT_MS, PIX_VALIDITY_MS, formatPixCountdown, isLegacyPixExpiry, isPixExpired, pixExpiresAt, pixRemainingMs } from "./pix-expiry";
 
 const T0 = Date.parse("2026-01-01T12:00:00.000Z");
 
@@ -38,5 +38,20 @@ describe("contador regressivo", () => {
     expect(formatPixCountdown(PIX_VALIDITY_MS)).toBe("30:00");
     expect(formatPixCountdown(65_000)).toBe("01:05");
     expect(PIX_ALERT_MS).toBe(5 * 60 * 1000);
+  });
+});
+
+describe("contador limitado e PIX legado", () => {
+  const YEAR = 365 * 24 * 60 * 60 * 1000;
+  it("nunca exibe mais que a validade, mesmo com expiresAt de 1 ano", () => {
+    const remaining = pixRemainingMs(new Date(T0 + YEAR), new Date(T0), 0, 0);
+    expect(remaining).toBe(PIX_VALIDITY_MS);
+    expect(formatPixCountdown(remaining)).toBe("30:00");
+  });
+  it("detecta legado só além de agora + validade + 60 s", () => {
+    expect(isLegacyPixExpiry(new Date(T0 + YEAR), T0)).toBe(true);
+    expect(isLegacyPixExpiry(new Date(T0 + PIX_VALIDITY_MS + 60_000), T0)).toBe(false);
+    expect(isLegacyPixExpiry(new Date(T0 + PIX_VALIDITY_MS + 60_001), T0)).toBe(true);
+    expect(isLegacyPixExpiry(new Date(T0 - 1000), T0)).toBe(false);
   });
 });
