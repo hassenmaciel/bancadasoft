@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { validateCronSecret } from "@/lib/cron-auth";
 import { prisma } from "@/lib/prisma";
 import { attemptAutomaticGuestRecovery, safeErrorInfo } from "@/lib/fulfillment-engine";
+import { HEARTUNLOCKS_CODE } from "@/lib/providers/heartunlocks";
 
 export const dynamic = "force-dynamic";
 
@@ -27,6 +28,22 @@ export async function GET(request: Request) {
     where: {
       payment: { status: "PAID" },
       status: { notIn: ["DELIVERED", "CANCELLED"] },
+      // HeartUnlocks confirma só por callback (sem reconciliação): pedido já
+      // enviado ao provider falharia com RECONCILIATION_NOT_SUPPORTED sem
+      // escrever nada, ficaria no topo do lote (updatedAt asc) e o ocuparia
+      // até o callback chegar (ou para sempre, se FAILED).
+      NOT: {
+        fulfillment: {
+          is: {
+            providerOrders: {
+              some: {
+                provider: { code: HEARTUNLOCKS_CODE },
+                requestReference: { not: null },
+              },
+            },
+          },
+        },
+      },
     },
     select: { id: true },
     orderBy: { updatedAt: "asc" },

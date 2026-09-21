@@ -32,20 +32,19 @@ describe("getAdminDashboard", () => {
       },
       product: { groupBy: query("product.groupBy", [{ status: "PUBLISHED", _count: 7 }, { status: "DRAFT", _count: 1 }]) },
       user: { count: query("user.count", 9) },
-      fulfillment: { count: query("fulfillment.count", 1) },
-      providerOrder: { count: query("providerOrder.count", 0) },
     };
   });
 
-  it("keeps the same metrics and runs the 10 independent queries concurrently", async () => {
+  it("keeps the same metrics and runs the 7 independent queries plus the 6 attention counts concurrently", async () => {
     const data = await getAdminDashboard();
-    expect(calls).toHaveLength(10);
+    expect(calls).toHaveLength(13);
     expect(maxInFlight).toBeGreaterThan(1);
     expect(data.metrics).toEqual({
       ordersToday: 2, awaiting: 3, paid: 4, processing: 0, completed: 5, failed: 0,
-      revenueCents: 1000, averageTicketCents: 250, published: 7, paused: 0, drafts: 1, users: 9, fulfillmentFailed: 1,
+      revenueCents: 1000, averageTicketCents: 250, published: 7, paused: 0, drafts: 1, users: 9, fulfillmentFailed: 2,
     });
-    expect(data.attention).toEqual({ fulfillmentFailed: 1, providerFailed: 0, paidWithoutDelivery: 2 });
+    expect(data.attention.map((a) => [a.key, a.count])).toEqual([["FULFILLMENT_FAILED", 2], ["PROVIDER_FAILED", 2], ["NO_FULFILLMENT", 2], ["STUCK", 2], ["MANUAL_REVIEW", 2], ["PROVIDER_REJECTED", 2]]);
+    expect(data.attention[0].href).toBe("/admin/pedidos?attention=FULFILLMENT_FAILED");
     expect(data.recent).toEqual([{ id: "o1" }]);
   });
 });

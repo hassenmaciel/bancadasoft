@@ -50,10 +50,10 @@ describe("GET /api/internal/fulfillment-recovery — sweep server-side durável 
     await GET(req("Bearer correct-secret-value-32-chars-ok"));
     expect(db.order.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: {
+        where: expect.objectContaining({
           payment: { status: "PAID" },
           status: { notIn: ["DELIVERED", "CANCELLED"] },
-        },
+        }),
         orderBy: { updatedAt: "asc" },
         take: expect.any(Number),
       }),
@@ -101,5 +101,103 @@ describe("GET /api/internal/fulfillment-recovery — sweep server-side durável 
     const response = await GET(req("Bearer correct-secret-value-32-chars-ok"));
     const text = JSON.stringify(await response.json());
     expect(text).not.toContain("order-real-id-xyz");
+  });
+});
+
+// Avaliador mínimo do where do sweep: aplica só a exclusão
+// NOT{fulfillment.is.providerOrders.some{provider.code, requestReference not null}}
+// sobre uma fixture, ordena por updatedAt asc e aplica take — o suficiente para
+// provar o comportamento do lote sem banco real.
+type FixtureOrder = {
+  id: string;
+  updatedAt: number;
+  providerOrders: { providerCode: string; requestReference: string | null }[];
+};
+type SweepArgs = {
+  take: number;
+  where: {
+    NOT?: {
+      fulfillment: {
+        is: { providerOrders: { some: { provider: { code: string }; requestReference: { not: null } } } };
+      };
+    };
+  };
+};
+const applySweepWhere = (fixture: FixtureOrder[], args: SweepArgs) => {
+  const some = args.where.NOT?.fulfillment.is.providerOrders.some;
+  return fixture.filter(
+    (order) =>
+      !some ||
+      !order.providerOrders.some(
+        (po) => po.providerCode === some.provider.code && po.requestReference !== null,
+      ),
+  );
+};
+
+describe("sweep — exclusão de pedidos HeartUnlocks já enviados ao provider", () => {
+  const SECRET = "correct-secret-value-32-chars-ok";
+  beforeEach(() => {
+    db.order.findMany.mockReset();
+    attemptAutomaticGuestRecovery.mockReset();
+    attemptAutomaticGuestRecovery.mockResolvedValue(false);
+    process.env.CRON_SECRET = SECRET;
+  });
+  afterEach(() => {
+    delete process.env.CRON_SECRET;
+  });
+
+  const run = async (fixture: FixtureOrder[]) => {
+    db.order.findMany.mockImplementation(async (args: SweepArgs) =>
+      applySweepWhere(fixture, args)
+        .sort((a, b) => a.updatedAt - b.updatedAt)
+        .slice(0, args.take)
+        .map(({ id }) => ({ id })),
+    );
+    await GET(req(`Bearer ${SECRET}`));
+    return attemptAutomaticGuestRecovery.mock.calls.map(([id]) => id);
+  };
+
+  it("where usa o código do provider HeartUnlocks e requestReference não nulo", async () => {
+    db.order.findMany.mockResolvedValue([]);
+    await GET(req(`Bearer ${SECRET}`));
+    const [[call]] = db.order.findMany.mock.calls;
+    expect(call.where.NOT).toEqual({
+      fulfillment: {
+        is: {
+          providerOrders: {
+            some: { provider: { code: "heartunlocks" }, requestReference: { not: null } },
+          },
+        },
+      },
+    });
+  });
+
+  it("pedido HeartUnlocks com requestReference fica fora do lote", async () => {
+    const ids = await run([
+      { id: "hu", updatedAt: 1, providerOrders: [{ providerCode: "heartunlocks", requestReference: "po-1" }] },
+    ]);
+    expect(ids).toEqual([]);
+  });
+
+  it("AdClean com evidência continua no lote", async () => {
+    const ids = await run([
+      { id: "ad", updatedAt: 1, providerOrders: [{ providerCode: "adclean", requestReference: "po-2" }] },
+    ]);
+    expect(ids).toEqual(["ad"]);
+  });
+
+  it("pedido sem ProviderOrder continua no lote", async () => {
+    const ids = await run([{ id: "none", updatedAt: 1, providerOrders: [] }]);
+    expect(ids).toEqual(["none"]);
+  });
+
+  it("25 pedidos HeartUnlocks travados não impedem um pedido novo de entrar no lote", async () => {
+    const stuck: FixtureOrder[] = Array.from({ length: 25 }, (_, i) => ({
+      id: `hu-${i}`,
+      updatedAt: i,
+      providerOrders: [{ providerCode: "heartunlocks", requestReference: `po-${i}` }],
+    }));
+    const ids = await run([...stuck, { id: "new-order", updatedAt: 1000, providerOrders: [] }]);
+    expect(ids).toEqual(["new-order"]);
   });
 });
