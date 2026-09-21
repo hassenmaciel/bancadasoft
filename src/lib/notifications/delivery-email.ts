@@ -8,6 +8,7 @@ import { prisma } from "../prisma";
 import { createDeliveryAccess, decryptDeliveryToken } from "../guest-delivery";
 import { maskEmail } from "../masking";
 import { secureDeliveryUrl, type DeliveryNotice } from "./delivery";
+import { isUnlockToolLicense, licenseAccountUsername } from "../unlocktool-license";
 
 export type DeliveryEmailContent = {
   subject: string;
@@ -31,9 +32,36 @@ const escapeHtml = (value: string) =>
         char
       ]!,
   );
-export function deliveryEmailContent(
+// Só a licença UnlockTool (isUnlockToolLicense) preenche licenseActivation; sem
+// ele o conteúdo do e-mail é exatamente o de sempre.
+export type LicenseActivationNotice = { username?: string | null };
+function licenseEmailContent(
   notice: DeliveryNotice & { customerName: string },
+  license: LicenseActivationNotice,
 ): DeliveryEmailContent {
+  const subject = `BancadaSoft — Licença ${notice.productName} ativada`;
+  const name = escapeHtml(notice.customerName);
+  const number = escapeHtml(notice.orderNumber);
+  const product = escapeHtml(notice.productName);
+  const url = escapeHtml(notice.secureUrl);
+  const username = license.username?.trim() || null;
+  const accountHtml = username
+    ? `<p><strong>Usuário da conta UnlockTool:</strong> ${escapeHtml(username)}</p>`
+    : "";
+  const accountText = username ? `Usuário da conta UnlockTool: ${username}\n\n` : "";
+  return {
+    subject,
+    html: `<div style="font-family:Arial,sans-serif;color:#10213b;max-width:600px;margin:auto"><h1 style="color:#0878f9">BancadaSoft</h1><p>Olá, ${name}.</p><p>Sua licença ${product} foi ativada/renovada na conta UnlockTool informada no pedido.</p>${accountHtml}<p><strong>Pedido:</strong> ${number}</p><p><a href="${url}" style="display:inline-block;background:#0878f9;color:#fff;padding:12px 20px;border-radius:8px;text-decoration:none;font-weight:bold">VER DETALHES DO PEDIDO</a></p><p>Por segurança, não compartilhe este link.</p><p>BancadaSoft<br>Encontrou. Pagou. Liberou.</p></div>`,
+    text: `Olá, ${notice.customerName}.\n\nSua licença ${notice.productName} foi ativada/renovada na conta UnlockTool informada no pedido.\n\n${accountText}Pedido: ${notice.orderNumber}\n\nVeja os detalhes do pedido com segurança:\n${notice.secureUrl}\n\nPor segurança, não compartilhe este link.\n\nBancadaSoft\nEncontrou. Pagou. Liberou.`,
+  };
+}
+export function deliveryEmailContent(
+  notice: DeliveryNotice & {
+    customerName: string;
+    licenseActivation?: LicenseActivationNotice;
+  },
+): DeliveryEmailContent {
+  if (notice.licenseActivation) return licenseEmailContent(notice, notice.licenseActivation);
   const subject = `BancadaSoft — Seu acesso ${notice.productName} foi liberado`;
   const name = escapeHtml(notice.customerName);
   const number = escapeHtml(notice.orderNumber);
@@ -70,7 +98,10 @@ async function deliverToClaimedNotification(
     publicToken: string;
     deliveryTokenEncrypted: string;
     customer: { name: string; email: string };
-    items: Array<{ product: { name: string } }>;
+    items: Array<{
+      product: { name: string; type?: string; brand?: { name: string } | null };
+      providerFields?: unknown;
+    }>;
   },
   notificationId: string,
   recipient: string,
@@ -112,6 +143,13 @@ async function deliverToClaimedNotification(
     productName: order.items[0]?.product.name ?? "UnlockTool 6 horas",
     recipientEmail: recipient,
     secureUrl: secureDeliveryUrl(`https://${domain}`, order.id, token),
+    ...(isUnlockToolLicense(order.items[0]?.product)
+      ? {
+          licenseActivation: {
+            username: licenseAccountUsername(order.items[0]?.providerFields),
+          },
+        }
+      : {}),
   };
   const content = deliveryEmailContent(notice);
   const transport =
@@ -174,7 +212,12 @@ export async function resendDeliveryEmail(
       deliveryTokenExpiresAt: true,
       deliveryTokenRevokedAt: true,
       customer: { select: { name: true, email: true } },
-      items: { select: { product: { select: { name: true } } } },
+      items: {
+        select: {
+          providerFields: true,
+          product: { select: { name: true, type: true, brand: { select: { name: true } } } },
+        },
+      },
       fulfillment: { select: { delivery: true } },
     },
   });
@@ -242,7 +285,12 @@ export async function sendDeliveryEmail(
       deliveryTokenEncrypted: true,
       deliveryNotifiedAt: true,
       customer: { select: { name: true, email: true } },
-      items: { select: { product: { select: { name: true } } } },
+      items: {
+        select: {
+          providerFields: true,
+          product: { select: { name: true, type: true, brand: { select: { name: true } } } },
+        },
+      },
       fulfillment: { select: { delivery: true } },
     },
   });

@@ -12,6 +12,15 @@ import {
   isRecoverableCheckoutOrder,
 } from "@/lib/order-polling";
 import CredentialDelivery from "@/components/credential-delivery";
+import LicenseAccountConfirmation from "@/components/license-account-confirmation";
+import {
+  canSubmitCheckout,
+  isUnlockToolLicense,
+  LICENSE_DELIVERY_TITLE,
+  licenseActivationMessage,
+  providerFieldPresentation,
+  summaryBadge,
+} from "@/lib/unlocktool-license";
 import PixPayment from "@/components/pix-payment";
 import NewPurchaseButton from "@/components/new-purchase-button";
 import { clearStoredCheckout, showNewPurchaseButton } from "@/lib/new-purchase";
@@ -59,6 +68,10 @@ export default function CheckoutPanel({
   const submitGuard = useRef(createCheckoutSubmissionGuard());
   const modalRef = useRef<HTMLDialogElement | null>(null);
   const storageKey = `bancadasoft:checkout:${product.id}`;
+  // Apresentação específica da licença UnlockTool; false para todo outro produto.
+  const licenseMode = isUnlockToolLicense(product);
+  // Conferência apenas no cliente: não é persistida nem enviada à API.
+  const [accountConfirmed, setAccountConfirmed] = useState(false);
   const clearActiveCheckout = useCallback(
     () => clearStoredCheckout(localStorage, storageKey),
     [storageKey],
@@ -234,6 +247,7 @@ export default function CheckoutPanel({
 
   async function checkout(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (licenseMode && !accountConfirmed) return;
     if (!submitGuard.current.acquire()) return;
     setSubmitting(true);
     setNotice("");
@@ -537,14 +551,16 @@ export default function CheckoutPanel({
                         />
                       </label>
                     )}
-                    {checkoutFields.map((field) => (
+                    {checkoutFields.map((field) => {
+                      const presentation = providerFieldPresentation(licenseMode, field);
+                      return (
                       <label key={field.key} htmlFor={`checkout-provider-${field.key}`}>
-                        {field.label}
+                        {presentation.label}
                         {field.type === "textarea" ? (
                           <textarea
                             id={`checkout-provider-${field.key}`}
                             name={`provider:${field.key}`}
-                            placeholder={field.placeholder}
+                            placeholder={presentation.placeholder}
                             required={field.required}
                             minLength={field.validation?.minLength}
                             maxLength={field.validation?.maxLength}
@@ -555,7 +571,7 @@ export default function CheckoutPanel({
                             name={`provider:${field.key}`}
                             type={field.type === "email" ? "email" : field.type === "number" || field.type === "imei" ? "text" : "text"}
                             inputMode={field.type === "number" || field.type === "imei" ? "numeric" : undefined}
-                            placeholder={field.placeholder}
+                            placeholder={presentation.placeholder}
                             required={field.required}
                             minLength={field.validation?.minLength}
                             maxLength={field.validation?.maxLength}
@@ -563,8 +579,16 @@ export default function CheckoutPanel({
                             autoComplete="off"
                           />
                         )}
+                        {presentation.help && <small className="field-help">{presentation.help}</small>}
                       </label>
-                    ))}
+                      );
+                    })}
+                    {licenseMode && (
+                      <LicenseAccountConfirmation
+                        checked={accountConfirmed}
+                        onChange={setAccountConfirmed}
+                      />
+                    )}
                   </div>
                   {notice && (
                     <p className="checkout-error" role="alert">
@@ -573,7 +597,7 @@ export default function CheckoutPanel({
                   )}
                   <button
                     className="checkout-submit"
-                    disabled={submitting}
+                    disabled={!canSubmitCheckout({ licenseMode, confirmed: accountConfirmed, submitting })}
                     aria-busy={submitting}
                   >
                     {submitting ? (
@@ -599,13 +623,13 @@ export default function CheckoutPanel({
                     <>
                       <span className="state-icon state-success">✓</span>
                       <span className="checkout-kicker">Pedido concluído</span>
-                      <h2 id="checkout-title">Acesso liberado</h2>
+                      <h2 id="checkout-title">{licenseMode ? LICENSE_DELIVERY_TITLE : "Acesso liberado"}</h2>
                       <div className="progress-checks">
                         <span>✓ Pagamento confirmado</span>
                         <span>✓ Liberação concluída</span>
                       </div>
-                      <p>Seu acesso está pronto para uso.</p>
-                      <CredentialDelivery {...delivery} />
+                      {!licenseMode && <p>Seu acesso está pronto para uso.</p>}
+                      <CredentialDelivery {...delivery} licenseActivation={licenseMode} />
                       {product.downloadUrl && (
                         <a
                           className="access-tool-cta"
@@ -619,9 +643,11 @@ export default function CheckoutPanel({
                       {showNewPurchaseButton(order.status, !!delivery) && (
                         <NewPurchaseButton onClick={startNewPurchase} />
                       )}
-                      <p className="checkout-guidance">
-                        Guarde essas informações até finalizar o período de uso.
-                      </p>
+                      {!licenseMode && (
+                        <p className="checkout-guidance">
+                          Guarde essas informações até finalizar o período de uso.
+                        </p>
+                      )}
                       <p className="email-note">
                         Também enviamos um link de recuperação para seu e-mail.
                       </p>
@@ -655,6 +681,12 @@ export default function CheckoutPanel({
                         O pagamento permanece registrado. Não faça um novo
                         pagamento. Nossa equipe pode verificar este pedido.
                       </p>
+                    </>
+                  ) : paid && pollSlowPhase && licenseMode && order.status !== "FAILED" ? (
+                    <>
+                      <span className="state-icon state-success">✓</span>
+                      <h2 id="checkout-title">Ativando sua licença</h2>
+                      <p>{licenseActivationMessage(product.deliveryEstimate)}</p>
                     </>
                   ) : paid && pollSlowPhase ? (
                     <>
@@ -740,19 +772,34 @@ export default function CheckoutPanel({
                 )}
               </div>
               <span className="summary-type">
-                {product.type === "RENTAL" ? "ALUGUEL" : "FERRAMENTA"}
+                {summaryBadge(licenseMode, product.type)}
               </span>
               <h3>{product.name}</h3>
-              <p>
-                {product.duration ??
-                  product.deliveryEstimate ??
-                  "Acesso temporário"}
-              </p>
+              {licenseMode ? (
+                (product.duration ?? product.deliveryEstimate) && (
+                  <p>{product.duration ?? product.deliveryEstimate}</p>
+                )
+              ) : (
+                <p>
+                  {product.duration ??
+                    product.deliveryEstimate ??
+                    "Acesso temporário"}
+                </p>
+              )}
               <dl>
-                <div>
-                  <dt>Acesso temporário</dt>
-                  <dd>{product.duration ?? "Conforme produto"}</dd>
-                </div>
+                {licenseMode ? (
+                  product.duration && (
+                    <div>
+                      <dt>Validade</dt>
+                      <dd>{product.duration}</dd>
+                    </div>
+                  )
+                ) : (
+                  <div>
+                    <dt>Acesso temporário</dt>
+                    <dd>{product.duration ?? "Conforme produto"}</dd>
+                  </div>
+                )}
                 <div>
                   <dt>Entrega automática</dt>
                   <dd>Após confirmação e liberação</dd>
@@ -761,10 +808,19 @@ export default function CheckoutPanel({
                   <dt>Pagamento</dt>
                   <dd>PIX</dd>
                 </div>
-                <div>
-                  <dt>Entrega</dt>
-                  <dd>Na própria tela</dd>
-                </div>
+                {licenseMode ? (
+                  product.deliveryEstimate && (
+                    <div>
+                      <dt>Entrega</dt>
+                      <dd>{product.deliveryEstimate}</dd>
+                    </div>
+                  )
+                ) : (
+                  <div>
+                    <dt>Entrega</dt>
+                    <dd>Na própria tela</dd>
+                  </div>
+                )}
                 <div>
                   <dt>Suporte</dt>
                   <dd>WhatsApp BancadaSoft</dd>

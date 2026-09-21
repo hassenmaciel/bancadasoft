@@ -11,6 +11,7 @@ import { productDto } from "@/lib/dto";
 import { isOptimizableImage } from "@/lib/image-source";
 import { session } from "@/lib/auth";
 import { buildCheckoutIdentitySummary } from "@/lib/checkout-identity";
+import { isUnlockToolLicense } from "@/lib/unlocktool-license";
 
 export const dynamic = "force-dynamic";
 
@@ -60,7 +61,7 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
   return <main><PublicHeader viewer={publicViewer(viewer)}/><section className="product-page wrap">
     <nav className="breadcrumbs"><Link href="/">Início</Link><span>›</span><Link href="/catalogo">Catálogo</Link><span>›</span><b>{dto.name}</b></nav>
     <div className="product-detail"><div className="product-detail-art">{dto.imageUrl?<Image src={dto.imageUrl} alt={dto.name} fill sizes="(max-width: 900px) 100vw, 500px" preload unoptimized={!isOptimizableImage(dto.imageUrl)}/>:<span>{dto.name.slice(0,3).toUpperCase()}</span>}</div>
-      <div className="product-detail-copy"><span className="product-type">{dto.category?.name??dto.type}</span><h1>{unlockTool?"UnlockTool — Aluguel 6 horas":dto.name}</h1>{dto.brand&&<p className="detail-brand">Marca: <b>{dto.brand.name}</b></p>}<p className="detail-description">{dto.longDescription||dto.description}</p>
+      <div className="product-detail-copy"><span className="product-type">{dto.category?.name??dto.type}</span><h1>{unlockTool?"UnlockTool — Aluguel 6 horas":dto.name}</h1>{isUnlockToolLicense(dto)&&<p className="detail-subtitle">{dto.description}</p>}{dto.brand&&<p className="detail-brand">Marca: <b>{dto.brand.name}</b></p>}<p className="detail-description">{dto.longDescription||dto.description}</p>
         {unlockTool&&<ul className="product-guidance"><li>Produto digital com acesso temporário por 6 horas.</li><li>Liberação automática após a confirmação do pagamento e do fornecedor.</li><li>As credenciais ficam disponíveis com segurança em Meus Pedidos.</li><li>Não compartilhe as credenciais de acesso.</li></ul>}
         {dto.duration&&<div className="detail-line"><b>Modalidade</b><span>{dto.duration}</span></div>}
         <div className="detail-line"><b>Entrega</b><span>{dto.deliveryType==="ON_REQUEST"?"Sob consulta":dto.deliveryType==="AUTOMATIC"?"Automática":dto.deliveryType==="IMMEDIATE"?"Imediata":"Manual"}{dto.deliveryEstimate?` · ${dto.deliveryEstimate}`:""}</span></div>

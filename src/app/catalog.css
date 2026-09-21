@@ -83,3 +83,5 @@ a.hero-banner-slide { cursor: pointer; }
 @media (prefers-reduced-motion: reduce) { .hero-banner-slide { transition: none; } }
 @media (max-width: 900px) { .hero .hero-banner-slot { grid-column: 1 / -1; } .hero-banner { height: 140px; } }
 @media (max-width: 650px) { .hero .hero-banner-slot { margin-top: 12px; } .hero-banner { height: 128px; } }
+
+.detail-subtitle{margin:6px 0 0;color:var(--muted);font-weight:600}
