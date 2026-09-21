@@ -12,7 +12,7 @@ describe("LicenseAccountConfirmation", () => {
     expect(html).toContain("required");
     expect(html).not.toContain("checked");
     expect(html).toContain(
-      "Conferi que o usuário da conta UnlockTool está correto. Após a ativação não há estorno.",
+      "Conferi que o usuário da conta UnlockTool está correto. A licença é ativada na conta informada e a ativação não pode ser desfeita.",
     );
   });
   it("reflete o estado marcado", () => {

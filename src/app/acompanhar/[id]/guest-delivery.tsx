@@ -11,6 +11,8 @@ type State = {
   products: string[];
   paymentStatus: string | null;
   delivery: DeliveryDTO | null;
+  // Só presente (true) para a licença UnlockTool; calculado no servidor.
+  licenseActivation?: boolean;
 };
 const message = (state: State) =>
   state.delivery
@@ -77,7 +79,12 @@ export default function GuestDelivery({ orderId }: { orderId: string }) {
           <>
             <p>Pedido {state.number}</p>
             <p>{state.products.join(", ")}</p>
-            {state.delivery && <CredentialDelivery {...state.delivery} />}
+            {state.delivery && (
+              <CredentialDelivery
+                {...state.delivery}
+                licenseActivation={state.licenseActivation === true}
+              />
+            )}
           </>
         )}
         {error && (

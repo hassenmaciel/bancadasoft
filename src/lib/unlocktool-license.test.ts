@@ -7,6 +7,7 @@ import {
   licenseActivationMessage,
   licenseProviderReturn,
   providerFieldPresentation,
+  showLicenseActivationMessage,
   summaryBadge,
 } from "./unlocktool-license";
 
@@ -78,20 +79,38 @@ describe("textos com gating", () => {
   });
   it("mensagem pós-pagamento com e sem prazo", () => {
     expect(licenseActivationMessage("24 horas")).toBe(
-      "Pagamento confirmado. Sua licença está sendo ativada, prazo de até 24 horas. Você receberá por e-mail e pode fechar esta página.",
+      "Pagamento confirmado. Sua licença está sendo ativada. Prazo: 24 horas. Você receberá por e-mail e pode fechar esta página.",
     );
     expect(licenseActivationMessage(null)).toBe(
       "Pagamento confirmado. Sua licença está sendo ativada. Você receberá por e-mail e pode fechar esta página.",
     );
-    expect(licenseActivationMessage("  ")).not.toContain("prazo");
-    expect(licenseActivationMessage(undefined)).not.toContain("prazo");
+    expect(licenseActivationMessage("  ")).not.toContain("Prazo");
+    expect(licenseActivationMessage(undefined)).not.toContain("Prazo");
+  });
+});
+
+describe("mensagem de ativação desde o pagamento", () => {
+  it.each(["PAID", "PROCESSING", "FULFILLED"])(
+    "licença paga em %s mostra a mensagem (fase rápida e lenta)",
+    (orderStatus) => {
+      expect(showLicenseActivationMessage({ licenseMode: true, paid: true, orderStatus })).toBe(true);
+    },
+  );
+  it("licença com FAILED + pagamento PAID mantém o comportamento atual", () => {
+    expect(showLicenseActivationMessage({ licenseMode: true, paid: true, orderStatus: "FAILED" })).toBe(false);
+  });
+  it("licença ainda sem pagamento não mostra", () => {
+    expect(showLicenseActivationMessage({ licenseMode: true, paid: false, orderStatus: "PENDING_PAYMENT" })).toBe(false);
+  });
+  it("outros produtos nunca mostram", () => {
+    expect(showLicenseActivationMessage({ licenseMode: false, paid: true, orderStatus: "PROCESSING" })).toBe(false);
   });
 });
 
 describe("checkbox de conferência", () => {
   it("texto exato", () => {
     expect(LICENSE_ACCOUNT_CONFIRMATION).toBe(
-      "Conferi que o usuário da conta UnlockTool está correto. Após a ativação não há estorno.",
+      "Conferi que o usuário da conta UnlockTool está correto. A licença é ativada na conta informada e a ativação não pode ser desfeita.",
     );
   });
   it("na licença, gerar PIX só habilita depois de marcar", () => {

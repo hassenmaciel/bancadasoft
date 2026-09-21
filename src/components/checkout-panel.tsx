@@ -19,6 +19,7 @@ import {
   LICENSE_DELIVERY_TITLE,
   licenseActivationMessage,
   providerFieldPresentation,
+  showLicenseActivationMessage,
   summaryBadge,
 } from "@/lib/unlocktool-license";
 import PixPayment from "@/components/pix-payment";
@@ -682,7 +683,7 @@ export default function CheckoutPanel({
                         pagamento. Nossa equipe pode verificar este pedido.
                       </p>
                     </>
-                  ) : paid && pollSlowPhase && licenseMode && order.status !== "FAILED" ? (
+                  ) : showLicenseActivationMessage({ licenseMode, paid, orderStatus: order.status }) ? (
                     <>
                       <span className="state-icon state-success">✓</span>
                       <h2 id="checkout-title">Ativando sua licença</h2>

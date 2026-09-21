@@ -20,6 +20,7 @@ vi.mock("@/lib/guest-delivery", () => ({
 }));
 vi.mock("@/lib/fulfillment-engine", () => ({ attemptAutomaticGuestRecovery }));
 
+import { deliveryTokenMatches } from "@/lib/guest-delivery";
 import { GET } from "./route";
 
 const request = new Request("http://localhost/api/orders/order-code/delivery", {
@@ -103,5 +104,97 @@ describe("secure customer delivery endpoint", () => {
   it("NÃO aciona recovery automático quando o pedido já está DELIVERED", async () => {
     await GET(request, { params: Promise.resolve({ id: "order-code" }) });
     expect(attemptAutomaticGuestRecovery).not.toHaveBeenCalled();
+  });
+});
+
+describe("licenseActivation na resposta de entrega", () => {
+  const params = { params: Promise.resolve({ id: "order-code" }) };
+  const licenseOrder = {
+    ...deliveredOrderFixture,
+    items: [
+      {
+        product: {
+          name: "UnlockTool — Licença 3 meses",
+          type: "LICENSE",
+          brand: { name: "UnlockTool" },
+        },
+      },
+    ],
+    fulfillment: {
+      status: "FULFILLED",
+      delivery: { deliveryType: "LICENSE", title: "UnlockTool", credential: "Success" },
+    },
+  };
+  beforeEach(() => {
+    vi.clearAllMocks();
+    attemptAutomaticGuestRecovery.mockResolvedValue(false);
+    db.deliveryAccessAttempt.count.mockResolvedValue(0);
+    vi.mocked(deliveryTokenMatches).mockReturnValue(true);
+  });
+
+  it("devolve licenseActivation=true só para UnlockTool + LICENSE, sem outros campos novos", async () => {
+    db.order.findUnique.mockResolvedValue(licenseOrder);
+    const payload = await (await GET(request, params)).json();
+    expect(payload.data.licenseActivation).toBe(true);
+    expect(Object.keys(payload.data).sort()).toEqual(
+      [
+        "createdAt",
+        "delivery",
+        "fulfillmentStatus",
+        "id",
+        "licenseActivation",
+        "number",
+        "paymentStatus",
+        "products",
+        "status",
+      ].sort(),
+    );
+    const serialized = JSON.stringify(payload);
+    expect(serialized).not.toContain("brand");
+    expect(serialized).not.toContain("providerFields");
+  });
+
+  it.each([
+    ["unlocktool-6h (aluguel)", "UnlockTool 6 horas", "RENTAL", "UnlockTool"],
+    ["SamsungTool KG (LICENSE de outra marca)", "SamsungTool — KG Bypass", "LICENSE", "SamsungTool"],
+    ["Phoenix", "Phoenix Service Tool", "TOOL", "Phoenix ServiceTool"],
+  ])("%s: campo ausente e resposta idêntica à anterior", async (_label, name, type, brand) => {
+    db.order.findUnique.mockResolvedValue({
+      ...deliveredOrderFixture,
+      items: [{ product: { name, type, brand: { name: brand } } }],
+    });
+    const payload = await (await GET(request, params)).json();
+    expect("licenseActivation" in payload.data).toBe(false);
+    expect(Object.keys(payload.data).sort()).toEqual(
+      ["createdAt", "delivery", "fulfillmentStatus", "id", "number", "paymentStatus", "products", "status"].sort(),
+    );
+  });
+
+  it("marca ausente (fixture legado só com name): campo ausente", async () => {
+    db.order.findUnique.mockResolvedValue(deliveredOrderFixture);
+    const payload = await (await GET(request, params)).json();
+    expect("licenseActivation" in payload.data).toBe(false);
+  });
+
+  it("token inválido continua 403 e registra a tentativa, sem vazar a flag", async () => {
+    vi.mocked(deliveryTokenMatches).mockReturnValue(false);
+    db.order.findUnique.mockResolvedValue(licenseOrder);
+    const response = await GET(request, params);
+    expect(response.status).toBe(403);
+    expect(await response.json()).toEqual({ error: "Acesso não autorizado." });
+    expect(db.deliveryAccessAttempt.create).toHaveBeenCalledTimes(1);
+  });
+
+  it("pedido inexistente continua 403 sem registrar tentativa", async () => {
+    db.order.findUnique.mockResolvedValue(null);
+    const response = await GET(request, params);
+    expect(response.status).toBe(403);
+    expect(db.deliveryAccessAttempt.create).not.toHaveBeenCalled();
+  });
+
+  it("rate limit continua 429", async () => {
+    db.deliveryAccessAttempt.count.mockResolvedValue(10);
+    const response = await GET(request, params);
+    expect(response.status).toBe(429);
   });
 });

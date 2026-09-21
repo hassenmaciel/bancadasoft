@@ -45,7 +45,7 @@ export function providerFieldPresentation(
 }
 
 export const LICENSE_ACCOUNT_CONFIRMATION =
-  "Conferi que o usuário da conta UnlockTool está correto. Após a ativação não há estorno.";
+  "Conferi que o usuário da conta UnlockTool está correto. A licença é ativada na conta informada e a ativação não pode ser desfeita.";
 
 // Gerar PIX fica bloqueado até marcar a conferência (apenas no cliente, sem
 // persistir e sem enviar à API). Para os demais produtos o resultado é o de sempre.
@@ -60,7 +60,7 @@ export const summaryBadge = (licenseMode: boolean, type: string) =>
 
 export function licenseActivationMessage(deliveryEstimate: string | null | undefined) {
   const estimate = deliveryEstimate?.trim();
-  return `Pagamento confirmado. Sua licença está sendo ativada${estimate ? `, prazo de até ${estimate}` : ""}. Você receberá por e-mail e pode fechar esta página.`;
+  return `Pagamento confirmado. Sua licença está sendo ativada.${estimate ? ` Prazo: ${estimate}.` : ""} Você receberá por e-mail e pode fechar esta página.`;
 }
 
 export const LICENSE_DELIVERY_TITLE = "Licença ativada";
@@ -93,3 +93,12 @@ export function licenseAccountUsername(providerFields: unknown) {
   const value = record.Username ?? record.username;
   return typeof value === "string" && value.trim() ? value.trim().slice(0, 200) : null;
 }
+
+// Mensagem de licença em ativação: do pagamento confirmado até DELIVERED, nas
+// duas fases do polling. FAILED com pagamento PAID mantém o comportamento
+// anterior (prometer e-mail seria falso).
+export const showLicenseActivationMessage = (state: {
+  licenseMode: boolean;
+  paid: boolean;
+  orderStatus: string;
+}) => state.licenseMode && state.paid && state.orderStatus !== "FAILED";
