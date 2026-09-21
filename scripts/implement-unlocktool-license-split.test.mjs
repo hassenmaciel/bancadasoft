@@ -16,7 +16,7 @@ import {
   simulateNewProductResolution,
 } from "./implement-unlocktool-license-split.mjs";
 
-const ids = { brandId: "brand-1", categoryId: "cat-1" };
+const ids = { brandId: "brand-1", categoryId: "cat-1", downloadUrl: "https://file.unlocktool.net/", downloadLabel: null };
 const fieldSchema = [
   { key: "email", customerVisible: true },
   { key: "username", customerVisible: true },
@@ -39,10 +39,10 @@ const providerProduct = (overrides = {}) => ({
 describe("plano de Products", () => {
   const plan = buildPlan(ids);
   it("cria 3 Products com slug, ProviderProduct e preço da especificação", () => {
-    expect(plan.map((p) => [p.data.slug, p.externalId, p.data.priceCents])).toEqual([
-      ["unlocktool-licenca-3-meses", "4662", 15500],
-      ["unlocktool-licenca-6-meses", "4661", 21000],
-      ["unlocktool-licenca-12-meses", "4663", 31000],
+    expect(plan.map((p) => [p.data.slug, p.externalId, p.data.priceCents, p.data.sortOrder])).toEqual([
+      ["unlocktool-licenca-3-meses", "4662", 15500, 30],
+      ["unlocktool-licenca-6-meses", "4661", 21000, 20],
+      ["unlocktool-licenca-12-meses", "4663", 31000, 10],
     ]);
     expect(PLAN_SLUGS).toEqual(plan.map((p) => p.data.slug));
     expect(PLAN_EXTERNAL_IDS).toEqual(["4662", "4661", "4663"]);
@@ -72,12 +72,28 @@ describe("plano de Products", () => {
       expect(data.manualPriceCents).toBe(data.priceCents);
     }
   });
+  it("copia downloadUrl da ficha antiga; omite downloadUrl/downloadLabel quando ela não tem", () => {
+    for (const { data } of plan) {
+      expect(data.downloadUrl).toBe("https://file.unlocktool.net/");
+      expect("downloadLabel" in data).toBe(false);
+    }
+    const spec = { months: 3, priceCents: 15500, sortOrder: 30 };
+    const bare = buildProductData(spec, { brandId: "b", categoryId: "c", downloadUrl: null, downloadLabel: null });
+    expect("downloadUrl" in bare).toBe(false);
+    expect("downloadLabel" in bare).toBe(false);
+    const labeled = buildProductData(spec, { brandId: "b", categoryId: "c", downloadUrl: "https://x/", downloadLabel: "Baixar" });
+    expect(labeled).toMatchObject({ downloadUrl: "https://x/", downloadLabel: "Baixar" });
+  });
+  it("sortOrder 30/20/10: o catálogo ordena por sortOrder DESC, resultando 3, 6, 12 meses", () => {
+    const sorted = [...plan].sort((a, b) => b.data.sortOrder - a.data.sortOrder).map((p) => p.months);
+    expect(sorted).toEqual([3, 6, 12]);
+  });
   it("textos por duração", () => {
-    const three = buildProductData({ months: 3, priceCents: 15500 }, ids);
+    const three = buildProductData({ months: 3, priceCents: 15500, sortOrder: 30 }, ids);
     expect(three.name).toBe("UnlockTool — Licença 3 meses");
     expect(three.description).toBe("UnlockTool 3 months License · Active/Renew");
     expect(three.duration).toBe("3 meses (ativação/renovação)");
-    expect(buildProductData({ months: 12, priceCents: 31000 }, ids).duration).toBe("12 meses (ativação/renovação)");
+    expect(buildProductData({ months: 12, priceCents: 31000, sortOrder: 10 }, ids).duration).toBe("12 meses (ativação/renovação)");
     expect(searchTermsFor(6)).toBe("unlocktool licença ativação renovação utool active renew 6 meses");
     const long = longDescriptionFor(3);
     expect(long).not.toContain("\n");

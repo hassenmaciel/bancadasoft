@@ -30,18 +30,22 @@ const SEARCH_BASE = "unlocktool licença ativação renovação utool active ren
 // MANUAL, usa como preço efetivo e por isso precisa coincidir para o sync não
 // reescrever priceCents).
 const SPECS = [
-  { months: 3, externalId: "4662", priceCents: 15500 },
-  { months: 6, externalId: "4661", priceCents: 21000 },
-  { months: 12, externalId: "4663", priceCents: 31000 },
+  { months: 3, externalId: "4662", priceCents: 15500, sortOrder: 30 },
+  { months: 6, externalId: "4661", priceCents: 21000, sortOrder: 20 },
+  { months: 12, externalId: "4663", priceCents: 31000, sortOrder: 10 },
 ];
+// sortOrder: o catálogo ordena por featured desc, sortOrder DESC (maior primeiro),
+// nome asc (catalog-search.ts: findPublicCatalog e stableCatalogSort). 30/20/10
+// mostram 3, 6 e 12 meses nessa ordem.
 
 export const longDescriptionFor = (months) =>
   `Ativa ou renova a licença UnlockTool de ${months} meses na sua conta UnlockTool. Você informa o usuário e o e-mail da conta no checkout. Nenhum código é enviado: a licença é aplicada direto na conta informada, em 1 a 24 horas após o pagamento confirmado, e você recebe a confirmação por e-mail. Confira o usuário com atenção: a ativação não pode ser desfeita.`;
 
 export const searchTermsFor = (months) => `${SEARCH_BASE} ${months} meses`;
 
-// brandId/categoryId vêm da ficha antiga (iguais aos dela).
-export function buildProductData({ months, priceCents }, { brandId, categoryId }) {
+// brandId/categoryId/downloadUrl/downloadLabel vêm da ficha antiga (iguais aos
+// dela). downloadUrl/downloadLabel só entram quando a ficha os tem.
+export function buildProductData({ months, priceCents, sortOrder }, { brandId, categoryId, downloadUrl, downloadLabel }) {
   return {
     slug: `unlocktool-licenca-${months}-meses`,
     name: `UnlockTool — Licença ${months} meses`,
@@ -61,11 +65,13 @@ export function buildProductData({ months, priceCents }, { brandId, categoryId }
     manualPriceCents: priceCents,
     pricingStatus: "MANUAL",
     featured: false,
-    sortOrder: 0,
+    sortOrder,
     status: "DRAFT",
     available: false,
     categoryId,
     brandId,
+    ...(downloadUrl ? { downloadUrl } : {}),
+    ...(downloadLabel ? { downloadLabel } : {}),
   };
 }
 
@@ -215,8 +221,9 @@ async function dryRun(db) {
 
   line("MODE: DRY-RUN (somente SELECTs; nenhuma escrita)");
   if (!old) throw new Error(`ficha antiga ${OLD_SLUG} não encontrada`);
-  const ids = { brandId: old.brandId, categoryId: old.categoryId };
+  const ids = { brandId: old.brandId, categoryId: old.categoryId, downloadUrl: old.downloadUrl, downloadLabel: old.downloadLabel };
   const plan = buildPlan(ids);
+  line(`ficha antiga: downloadUrl=${JSON.stringify(old.downloadUrl)} downloadLabel=${JSON.stringify(old.downloadLabel)} (copiados para os 3 quando existem)`);
   const ppByExternal = new Map(providerProducts.map((pp) => [pp.externalProductId, pp]));
 
   line("\n=== (1) PRODUCTS QUE SERIAM CRIADOS ===");
@@ -224,7 +231,7 @@ async function dryRun(db) {
     line(`\n# ${item.data.slug}  (ProviderProduct ${item.externalId})`);
     for (const [key, value] of Object.entries(item.data)) line(`  ${key}: ${JSON.stringify(value)}`);
   }
-  line("\nCampos NÃO gravados (ficam no default do schema): downloadUrl/downloadLabel (nulos), costCents (nulo), suggestedPriceCents (nulo), pricingComputedAt (nulo).");
+  line("\nCampos NÃO gravados (ficam no default do schema): costCents (nulo), suggestedPriceCents (nulo), pricingComputedAt (nulo); downloadLabel só se a ficha antiga tiver.");
 
   line("\n=== (2) PROVIDERPRODUCTS QUE SERIAM ATUALIZADOS ===");
   for (const item of plan) {
@@ -309,7 +316,7 @@ async function apply(db) {
       if (existingSlugs.length)
         throw new Error(`ABORTADO: slug(s) já existe(m): ${existingSlugs.map((s) => s.slug).join(", ")}`);
       if (!old?.brand?.active || !old?.category?.active) throw new Error("ABORTADO: brand/category da ficha antiga indisponível");
-      const plan = buildPlan({ brandId: old.brandId, categoryId: old.categoryId });
+      const plan = buildPlan({ brandId: old.brandId, categoryId: old.categoryId, downloadUrl: old.downloadUrl, downloadLabel: old.downloadLabel });
       const ppByExternal = new Map(providerProducts.map((pp) => [pp.externalProductId, pp]));
       for (const item of plan) {
         const problems = providerProductProblems(ppByExternal.get(item.externalId));
@@ -337,7 +344,7 @@ async function apply(db) {
           where: { id: row.id },
           include: { providerProducts: { include: { provider: { select: { id: true, code: true, active: true } } } } },
         });
-        if (product.status !== "DRAFT" || product.available !== false || product.imageUrl !== null || product.featured !== false)
+        if (product.status !== "DRAFT" || product.available !== false || product.imageUrl !== null || product.featured !== false || product.downloadUrl !== (old.downloadUrl ?? null))
           throw new Error(`ABORTADO: pós-checagem de ${row.slug} (estado inesperado)`);
         const resolution = resolveProviderProduct(product.providerProducts, providerMode);
         if (resolution.status !== "SELECTED" || resolution.providerProduct.id !== row.providerProductId)
