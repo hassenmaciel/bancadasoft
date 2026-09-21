@@ -17,8 +17,8 @@ export default function LicenseAccountConfirmation({
         checked={checked}
         onChange={(event) => onChange(event.target.checked)}
         required
-      />{" "}
-      {LICENSE_ACCOUNT_CONFIRMATION}
+      />
+      <span>{LICENSE_ACCOUNT_CONFIRMATION}</span>
     </label>
   );
 }
