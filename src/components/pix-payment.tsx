@@ -86,7 +86,7 @@ export default function PixPayment({ payment, amountLabel, copied, onCopy, onRen
           </button>
         </div>
       </div>
-      <p className="checkout-guidance">
+      <p className="checkout-guidance pix-wait-highlight">
         Após realizar o pagamento, aguarde nesta página. Seu acesso será liberado automaticamente.
       </p>
       <p className="checkout-warning">Não feche esta janela até seu login ser exibido.</p>
