@@ -102,3 +102,26 @@ export const showLicenseActivationMessage = (state: {
   paid: boolean;
   orderStatus: string;
 }) => state.licenseMode && state.paid && state.orderStatus !== "FAILED";
+
+// Callback do HeartUnlocks com status "success" e sem retorno textual utilizável:
+// para a licença UnlockTool a ativação na conta é a própria entrega. O gate usa
+// os mesmos critérios da apresentação (marca UnlockTool + tipo LICENSE, sem
+// depender de slug) e exige também que o ProviderProduct escolhido seja de
+// entrega LICENSE, para nunca dar como entregue um produto de credencial.
+export const acceptsLicenseSuccessWithoutText = (
+  product: LicenseSubject | null | undefined,
+  expectedDeliveryType: string | null | undefined,
+) => isUnlockToolLicense(product) && expectedDeliveryType === "LICENSE";
+
+export const LICENSE_SUCCESS_INSTRUCTIONS =
+  "A ativação foi confirmada pelo fornecedor, sem retorno textual.";
+export const LICENSE_SUCCESS_MANUAL_REVIEW_NOTE =
+  "REVISÃO MANUAL: o fornecedor confirmou sucesso sem retorno textual. Conferir a licença no painel do fornecedor.";
+
+// Delivery mínimo do tipo LICENSE: sem credential e sem campos.
+export const licenseConfirmationDelivery = (product: { name: string }) => ({
+  kind: "provider-delivery",
+  deliveryType: "LICENSE" as const,
+  title: product.name,
+  instructions: LICENSE_SUCCESS_INSTRUCTIONS,
+});

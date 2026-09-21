@@ -7,6 +7,11 @@ import {
 } from "@prisma/client";
 import { prisma } from "../prisma";
 import { normalizeProviderReplay, parseProviderDelivery } from "./delivery";
+import {
+  acceptsLicenseSuccessWithoutText,
+  LICENSE_SUCCESS_MANUAL_REVIEW_NOTE,
+  licenseConfirmationDelivery,
+} from "../unlocktool-license";
 
 export type HeartUnlocksCallback = {
   reference_id: string;
@@ -78,6 +83,68 @@ export function callbackEventKey(input: HeartUnlocksCallback) {
     .digest("hex");
 }
 
+type CallbackTx = Prisma.TransactionClient;
+type CallbackCurrent = {
+  id: string;
+  orderId: string;
+  fulfillmentId: string;
+};
+
+// Conclusão comum (com retorno textual ou, só para a licença UnlockTool, sem ele):
+// mesma escrita e mesmos eventos de sempre; manualReviewNote acrescenta um evento.
+async function completeDelivered(
+  tx: CallbackTx,
+  current: CallbackCurrent,
+  input: HeartUnlocksCallback,
+  eventKey: string,
+  delivery: Prisma.InputJsonValue,
+  manualReviewNote?: string,
+) {
+  await tx.providerOrder.update({
+    where: { id: current.id },
+    data: {
+      status: ProviderOrderStatus.COMPLETED,
+      externalOrderId: input.order_id,
+      lastError: null,
+    },
+  });
+  await tx.fulfillment.update({
+    where: { id: current.fulfillmentId },
+    data: { status: FulfillmentStatus.FULFILLED, delivery },
+  });
+  await tx.order.update({
+    where: { id: current.orderId },
+    data: {
+      status: OrderStatus.DELIVERED,
+      events: {
+        create: [
+          {
+            status: OrderStatus.FULFILLED,
+            note: "Liberação concluída pelo fornecedor.",
+          },
+          {
+            status: OrderStatus.DELIVERED,
+            note: "Entrega disponibilizada ao cliente.",
+          },
+          ...(manualReviewNote
+            ? [{ status: OrderStatus.DELIVERED, note: manualReviewNote }]
+            : []),
+        ],
+      },
+    },
+  });
+  await tx.providerCallbackEvent.update({
+    where: { eventKey },
+    data: { processedAt: new Date() },
+  });
+  return {
+    matched: true,
+    duplicate: false,
+    delivered: true,
+    orderId: current.orderId,
+  };
+}
+
 const isPrismaCode = (error: unknown, code: string) =>
   error instanceof Prisma.PrismaClientKnownRequestError && error.code === code;
 
@@ -120,7 +187,15 @@ export async function processHeartUnlocksCallback(input: HeartUnlocksCallback) {
                 select: {
                   items: {
                     take: 1,
-                    select: { product: { select: { name: true } } },
+                    select: {
+                      product: {
+                        select: {
+                          name: true,
+                          type: true,
+                          brand: { select: { name: true } },
+                        },
+                      },
+                    },
                   },
                 },
               },
@@ -168,52 +243,29 @@ export async function processHeartUnlocksCallback(input: HeartUnlocksCallback) {
             });
             return { matched: true, duplicate: false, delivered: false };
           }
+          const callbackProduct = current.order.items[0]?.product;
+          // Só a licença UnlockTool aceita "success" sem retorno textual utilizável.
+          const licenseWithoutText = acceptsLicenseSuccessWithoutText(
+            callbackProduct,
+            current.providerProduct?.expectedDeliveryType,
+          );
           if (normalized === "success" && replay) {
-            const product = current.order.items[0]?.product;
+            const product = callbackProduct;
             if (!product) throw new Error("PROVIDER_PRODUCT_UNAVAILABLE");
             const delivery = parseProviderDelivery(replay, product, current.providerProduct?.expectedDeliveryType);
-            if (!delivery) throw new Error("REPLAY_REQUIRES_ACTION");
-            await tx.providerOrder.update({
-              where: { id: current.id },
-              data: {
-                status: ProviderOrderStatus.COMPLETED,
-                externalOrderId: input.order_id,
-                lastError: null,
-              },
-            });
-            await tx.fulfillment.update({
-              where: { id: current.fulfillmentId },
-              data: { status: FulfillmentStatus.FULFILLED, delivery },
-            });
-            await tx.order.update({
-              where: { id: current.orderId },
-              data: {
-                status: OrderStatus.DELIVERED,
-                events: {
-                  create: [
-                    {
-                      status: OrderStatus.FULFILLED,
-                      note: "Liberação concluída pelo fornecedor.",
-                    },
-                    {
-                      status: OrderStatus.DELIVERED,
-                      note: "Entrega disponibilizada ao cliente.",
-                    },
-                  ],
-                },
-              },
-            });
-            await tx.providerCallbackEvent.update({
-              where: { eventKey },
-              data: { processedAt: new Date() },
-            });
-            return {
-              matched: true,
-              duplicate: false,
-              delivered: true,
-              orderId: current.orderId,
-            };
+            if (!delivery && !licenseWithoutText) throw new Error("REPLAY_REQUIRES_ACTION");
+            if (delivery)
+              return completeDelivered(tx, current, input, eventKey, delivery);
           }
+          if (normalized === "success" && licenseWithoutText && callbackProduct)
+            return completeDelivered(
+              tx,
+              current,
+              input,
+              eventKey,
+              licenseConfirmationDelivery(callbackProduct),
+              LICENSE_SUCCESS_MANUAL_REVIEW_NOTE,
+            );
           if (normalized === "success") {
             await tx.providerOrder.update({
               where: { id: current.id },

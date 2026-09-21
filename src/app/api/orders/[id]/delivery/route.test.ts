@@ -198,3 +198,38 @@ describe("licenseActivation na resposta de entrega", () => {
     expect(response.status).toBe(429);
   });
 });
+
+describe("entrega mínima de licença na resposta de /acompanhar", () => {
+  it("DELIVERED com delivery mínimo: devolve a entrega (não nula) e licenseActivation=true", async () => {
+    vi.clearAllMocks();
+    attemptAutomaticGuestRecovery.mockResolvedValue(false);
+    db.deliveryAccessAttempt.count.mockResolvedValue(0);
+    vi.mocked(deliveryTokenMatches).mockReturnValue(true);
+    db.order.findUnique.mockResolvedValue({
+      ...deliveredOrderFixture,
+      items: [
+        {
+          product: { name: "UnlockTool — Licença 3 meses", type: "LICENSE", brand: { name: "UnlockTool" } },
+        },
+      ],
+      fulfillment: {
+        status: "FULFILLED",
+        delivery: {
+          kind: "provider-delivery",
+          deliveryType: "LICENSE",
+          title: "UnlockTool — Licença 3 meses",
+          instructions: "A ativação foi confirmada pelo fornecedor, sem retorno textual.",
+        },
+      },
+    });
+    const response = await GET(request, { params: Promise.resolve({ id: "order-code" }) });
+    const payload = await response.json();
+    expect(response.status).toBe(200);
+    expect(payload.data.licenseActivation).toBe(true);
+    expect(payload.data.delivery).toEqual({
+      deliveryType: "LICENSE",
+      title: "UnlockTool — Licença 3 meses",
+      instructions: "A ativação foi confirmada pelo fornecedor, sem retorno textual.",
+    });
+  });
+});

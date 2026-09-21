@@ -81,3 +81,42 @@ describe("exibição da entrega de licença (parser atual, sem alterá-lo)", () 
     expect(html).not.toContain("Retorno do fornecedor");
   });
 });
+
+// Entrega mínima gravada pelo callback quando o fornecedor confirma sucesso
+// sem retorno textual (licença UnlockTool): sem credential e sem campos.
+describe("entrega mínima de licença (sucesso sem retorno textual)", () => {
+  const minimal = {
+    kind: "provider-delivery",
+    deliveryType: "LICENSE",
+    title: PRODUCT.name,
+    instructions: "A ativação foi confirmada pelo fornecedor, sem retorno textual.",
+  };
+  it("customerDelivery aceita (senão o checkout ficaria em 'carregando' para sempre)", () => {
+    const delivery = customerDelivery(minimal);
+    expect(delivery).toEqual({
+      deliveryType: "LICENSE",
+      title: PRODUCT.name,
+      instructions: minimal.instructions,
+    });
+  });
+  it("Checkout, Meus pedidos e /acompanhar usam o mesmo componente: 'Licença ativada' sem erro e sem retorno", () => {
+    const delivery = customerDelivery(minimal)!;
+    const html = renderToStaticMarkup(<CredentialDelivery {...delivery} licenseActivation />);
+    expect(html).toContain("Licença ativada");
+    expect(html).toContain("conta UnlockTool informada");
+    expect(html).not.toContain("Retorno do fornecedor");
+    expect(html).not.toContain("<button");
+    expect(html).not.toMatch(/erro|falha/i);
+  });
+  it("sem o gate de licença, o componente também renderiza sem quebrar", () => {
+    const delivery = customerDelivery(minimal)!;
+    const html = renderToStaticMarkup(<CredentialDelivery {...delivery} />);
+    expect(html).toContain("Licença liberada");
+  });
+  it("o validador continua recusando LICENSE/CODE vazios sem instruções", () => {
+    expect(customerDelivery({ deliveryType: "LICENSE", title: "x" })).toBeNull();
+    expect(customerDelivery({ deliveryType: "CODE", title: "x", instructions: "y" })).toBeNull();
+    expect(customerDelivery({ deliveryType: "CREDENTIALS", instructions: "y" })).toBeNull();
+    expect(customerDelivery({ deliveryType: "MULTI_FIELD", instructions: "y" })).toBeNull();
+  });
+});

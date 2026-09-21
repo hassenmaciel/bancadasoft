@@ -50,6 +50,9 @@ export function customerDelivery(value: unknown): DeliveryDTO | null {
     (deliveryType === "CREDENTIALS" && Boolean(username && password)) ||
     ((deliveryType === "CODE" || deliveryType === "LICENSE") &&
       Boolean(credential || deliveryFields.length)) ||
+    // Licença confirmada pelo fornecedor sem retorno textual (UnlockTool): a
+    // entrega mínima não tem credential nem campos, só a confirmação.
+    (deliveryType === "LICENSE" && Boolean(instructions)) ||
     (deliveryType === "TEXT" && Boolean(deliveryFields.length || instructions)) ||
     (deliveryType === "MULTI_FIELD" && deliveryFields.length > 0);
   if (!deliveryType || !valid) return null;
