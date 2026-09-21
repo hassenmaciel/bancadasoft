@@ -15,6 +15,7 @@ export async function GET(request: Request) {
     orderStatus: params.get("orderStatus") ?? undefined,
     paymentStatus: params.get("paymentStatus") ?? undefined,
     fulfillmentStatus: params.get("fulfillmentStatus") ?? undefined,
+    attention: params.get("attention") ?? undefined,
   });
   return NextResponse.json({ data });
 }

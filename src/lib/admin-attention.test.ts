@@ -121,7 +121,7 @@ describe("parseAttentionKey", () => {
 });
 
 describe("getAttentionCounts", () => {
-  beforeEach(() => db.order.count.mockReset());
+  beforeEach(() => { db.order.count.mockReset(); });
   it("conta cada alerta em paralelo com o where do builder", async () => {
     db.order.count.mockResolvedValue(2);
     const counts = await getAttentionCounts();

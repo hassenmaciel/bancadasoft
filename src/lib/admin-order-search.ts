@@ -1,10 +1,13 @@
 import type { Prisma } from "@prisma/client";
+import { buildAttentionWhere, parseAttentionKey } from "./admin-attention";
 
 export type AdminOrderSearchFilters = {
   q?: string;
   orderStatus?: string;
   paymentStatus?: string;
   fulfillmentStatus?: string;
+  // Alerta operacional (lista fixa em admin-attention.ts); valor inválido é ignorado.
+  attention?: string;
 };
 
 const onlyDigits = (value: string) => value.replace(/\D/g, "");
@@ -43,5 +46,8 @@ export function buildAdminOrderSearchWhere(
     clauses.push({ payment: { status: filters.paymentStatus as never } });
   if (filters.fulfillmentStatus && filters.fulfillmentStatus !== "ALL")
     clauses.push({ fulfillment: { status: filters.fulfillmentStatus as never } });
+  // Mesmos builders da contagem do painel: a lista bate com o número do alerta.
+  const attention = parseAttentionKey(filters.attention);
+  if (attention) clauses.push(buildAttentionWhere(attention));
   return clauses.length ? { AND: clauses } : {};
 }

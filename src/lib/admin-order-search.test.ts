@@ -1,4 +1,8 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+
+vi.mock("@/lib/prisma", () => ({ prisma: {} }));
+
+import { buildAttentionWhere } from "./admin-attention";
 import { buildAdminOrderSearchWhere } from "./admin-order-search";
 
 describe("busca administrativa de pedidos (PARTE 6/16)", () => {
@@ -68,5 +72,28 @@ describe("busca administrativa de pedidos (PARTE 6/16)", () => {
     expect(buildAdminOrderSearchWhere({ orderStatus: "PENDING_PAYMENT" })).toEqual({
       AND: [{ status: "PENDING_PAYMENT" }],
     });
+  });
+});
+
+describe("filtro por alerta (attention)", () => {
+  it("usa exatamente o builder do alerta (a lista bate com a contagem)", () => {
+    const now = new Date();
+    for (const key of ["FULFILLMENT_FAILED", "PROVIDER_FAILED", "NO_FULFILLMENT", "STUCK", "MANUAL_REVIEW", "PROVIDER_REJECTED"] as const) {
+      const where = buildAdminOrderSearchWhere({ attention: key }) as { AND: unknown[] };
+      expect(JSON.stringify(where.AND[0]).length).toBe(JSON.stringify(buildAttentionWhere(key, now)).length);
+    }
+    expect(buildAdminOrderSearchWhere({ attention: "FULFILLMENT_FAILED" })).toEqual({
+      AND: [buildAttentionWhere("FULFILLMENT_FAILED")],
+    });
+  });
+  it("valor inválido é ignorado", () => {
+    expect(buildAdminOrderSearchWhere({ attention: "DROP_TABLE" })).toEqual({});
+    expect(buildAdminOrderSearchWhere({ attention: "stuck" })).toEqual({});
+    expect(buildAdminOrderSearchWhere({ attention: "" })).toEqual({});
+  });
+  it("combina com os demais filtros", () => {
+    const where = buildAdminOrderSearchWhere({ orderStatus: "FAILED", attention: "PROVIDER_FAILED" }) as { AND: unknown[] };
+    expect(where.AND).toHaveLength(2);
+    expect(where.AND[0]).toEqual({ status: "FAILED" });
   });
 });
