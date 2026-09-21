@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { DeliveryType, FulfillmentStatus, OrderStatus, PaymentStatus, PriceVisibility, PricingMode, PricingStatus, ProductStatus, ProductType, type Category, type Product } from "@prisma/client";
 import { isPublicProduct, publicProductWhere } from "./catalog";
-import { normalizeQrCodeImage, orderDto, productDto } from "./dto";
+import { customerVisibleEvents, normalizeQrCodeImage, orderDto, productDto } from "./dto";
 
 const category: Category = { id: "category-1", slug: "ferramentas", name: "Ferramentas", active: true, createdAt: new Date("2026-09-10T10:00:00Z"), updatedAt: new Date("2026-09-10T10:00:00Z") };
 const categoryDto = { id: category.id, slug: category.slug, name: category.name };
@@ -73,6 +73,40 @@ describe("DTO mappers", () => {
     expect(dto).not.toHaveProperty("product");
     expect(dto).not.toHaveProperty("pixCode");
     expect(dto).not.toHaveProperty("delivery");
+  });
+
+  it("customerVisibleEvents remove eventos internos (com/sem acento, qualquer caixa) e mantém os normais", () => {
+    const createdAt = new Date("2026-09-10T10:01:00Z");
+    const events = [
+      { id: "e1", orderId: "o1", status: "PAID", note: "Pagamento confirmado", createdAt },
+      { id: "e2", orderId: "o1", status: "PAID", note: "REVISÃO MANUAL: conferir pedido", createdAt },
+      { id: "e3", orderId: "o1", status: "PAID", note: "revisao manual necessária", createdAt },
+      { id: "e4", orderId: "o1", status: "PAID", note: "Em Análise Administrativa", createdAt },
+      { id: "e5", orderId: "o1", status: "PAID", note: "ANALISE ADMINISTRATIVA pendente", createdAt },
+      { id: "e6", orderId: "o1", status: "DELIVERED", note: "Entrega disponível", createdAt },
+    ];
+    const result = customerVisibleEvents(events);
+    expect(result).toEqual([
+      { status: "PAID", note: "Pagamento confirmado", createdAt },
+      { status: "DELIVERED", note: "Entrega disponível", createdAt },
+    ]);
+    for (const event of result) {
+      expect(event).not.toHaveProperty("id");
+      expect(event).not.toHaveProperty("orderId");
+    }
+  });
+
+  it("orderDto aplica o filtro de eventos internos", () => {
+    const dto = orderDto({
+      id: "order-1", publicToken: "t", status: OrderStatus.PAID, totalCents: 100, createdAt: new Date(),
+      items: [], payment: null, fulfillment: null,
+      events: [
+        { id: "a", orderId: "order-1", status: "PAID", note: "REVISÃO MANUAL", createdAt: new Date() },
+        { id: "b", orderId: "order-1", status: "PAID", note: "Pago", createdAt: new Date() },
+      ],
+    });
+    expect(dto.events.map((event) => event.note)).toEqual(["Pago"]);
+    expect(JSON.stringify(dto.events)).not.toMatch(/"id"|orderId/);
   });
 
   it("remove a entrega quando o pedido é consultado apenas por token público", () => {

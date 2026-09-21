@@ -41,14 +41,12 @@ describe("providerFieldPresentation", () => {
   it("mapeia rótulo, placeholder, ajuda e autoComplete só para a licença", () => {
     const e = providerFieldPresentation(true, email);
     expect(e.label).toBe("E-mail da conta UnlockTool");
-    expect(e.help).toBe(
-      "É o login da sua conta UnlockTool, onde a licença será ativada. Não é o e-mail de contato.",
-    );
+    expect(e.help).toBe("E-mail cadastrado na sua conta UnlockTool. Não é o e-mail de contato.");
     expect(e.autoComplete).toBe("off");
     expect(e.placeholder).toBeTruthy();
     const u = providerFieldPresentation(true, username);
     expect(u.label).toBe("Usuário da conta UnlockTool");
-    expect(u.help).toBe(e.help);
+    expect(u.help).toBe("Usuário (login) da sua conta UnlockTool, onde a licença será ativada.");
     expect(u.autoComplete).toBe("off");
   });
   it("não altera campos de outras keys, mesmo na licença", () => {

@@ -427,7 +427,7 @@ export default function CheckoutPanel({
           >
             ×
           </button>
-          <div className="checkout-shell">
+          <div className={licenseMode ? "checkout-shell checkout-shell--license" : "checkout-shell"}>
             <section className="checkout-main">
               {!order ? (
                 <form

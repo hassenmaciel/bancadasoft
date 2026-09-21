@@ -26,12 +26,12 @@ const UNLOCKTOOL_FIELD_COPY: Record<string, Required<Omit<ProviderFieldPresentat
   email: {
     label: "E-mail da conta UnlockTool",
     placeholder: "E-mail da sua conta UnlockTool",
-    help: "É o login da sua conta UnlockTool, onde a licença será ativada. Não é o e-mail de contato.",
+    help: "E-mail cadastrado na sua conta UnlockTool. Não é o e-mail de contato.",
   },
   username: {
     label: "Usuário da conta UnlockTool",
     placeholder: "Usuário da sua conta UnlockTool",
-    help: "É o login da sua conta UnlockTool, onde a licença será ativada. Não é o e-mail de contato.",
+    help: "Usuário (login) da sua conta UnlockTool, onde a licença será ativada.",
   },
 };
 

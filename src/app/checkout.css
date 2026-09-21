@@ -653,6 +653,17 @@ body:has(.checkout-modal)::before {
     height: 190px;
   }
 }
+/* Licença UnlockTool: formulário mais longo rola por dentro em vez de ser cortado.
+   Só desktop; o mobile (max-width: 760px) segue com a página rolando. */
+@media (min-width: 761px) {
+  .checkout-shell--license {
+    grid-template-rows: minmax(0, 1fr);
+  }
+  .checkout-shell--license .checkout-main {
+    min-height: 0;
+    overflow-y: auto;
+  }
+}
 @media (max-width: 760px) {
   body:has(.checkout-modal) {
     overflow-x: hidden;

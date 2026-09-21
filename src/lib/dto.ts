@@ -165,6 +165,22 @@ export const productDto = (product: ProductWithCategory, viewer: PriceViewer = n
   };
 };
 
+const INTERNAL_EVENT_MARKERS = ["revisao manual", "analise administrativa"];
+const foldText = (value: string) =>
+  value.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+
+// Eventos internos (revisão manual / análise administrativa) não chegam ao cliente;
+// o Admin continua lendo os eventos completos por admin-order.ts.
+export const customerVisibleEvents = (
+  events: Array<{ status: string; note: string; createdAt: Date }>,
+): OrderDTO["events"] =>
+  events
+    .filter((event) => {
+      const note = foldText(event.note ?? "");
+      return !INTERNAL_EVENT_MARKERS.some((marker) => note.includes(marker));
+    })
+    .map(({ status, note, createdAt }) => ({ status, note, createdAt }));
+
 export const orderDto = (order: any, options: { includeDelivery?: boolean } = {}): OrderDTO => ({
   id: order.id,
   publicToken: order.publicToken,
@@ -194,5 +210,5 @@ export const orderDto = (order: any, options: { includeDelivery?: boolean } = {}
         delivery: options.includeDelivery === false ? undefined : (order.fulfillment.delivery as DeliveryDTO | null) ?? undefined,
       }
     : null,
-  events: order.events,
+  events: customerVisibleEvents(order.events ?? []),
 });
