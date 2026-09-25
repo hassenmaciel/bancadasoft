@@ -2,6 +2,7 @@
 import { FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
 import AdminConfirmDialog from "@/components/admin-confirm-dialog";
+import ResellerKeysDialog, { type ResellerKeyRow } from "./reseller-keys-dialog";
 type Row = {
   id: string;
   name: string;
@@ -11,7 +12,12 @@ type Row = {
   active: boolean;
   createdAt: string;
   orderCount: number;
+  // null = linha de AccountBalance ainda não criada (equivale a saldo 0, desabilitado).
+  balance: { enabled: boolean; balanceCents: number } | null;
+  resellerKeys: ResellerKeyRow[];
 };
+const money = (cents: number) =>
+  new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(cents / 100);
 export default function UserManager({
   rows,
   currentAdminId,
@@ -24,7 +30,8 @@ export default function UserManager({
     [busy, setBusy] = useState(false),
     [editing, setEditing] = useState<Row | null>(null),
     [statusTarget, setStatusTarget] = useState<Row | null>(null),
-    [deleting, setDeleting] = useState<Row | null>(null);
+    [deleting, setDeleting] = useState<Row | null>(null),
+    [keysTarget, setKeysTarget] = useState<Row | null>(null);
   async function create(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setBusy(true);
@@ -63,6 +70,18 @@ export default function UserManager({
       setStatusTarget(null);
       router.refresh();
     }
+  }
+  async function toggleBalance(row: Row, enabled: boolean) {
+    setBusy(true);
+    const response = await fetch(`/api/admin/users/${row.id}/balance`, {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ enabled }),
+      }),
+      body = await response.json();
+    setBusy(false);
+    setMessage(response.ok ? (enabled ? "Saldo habilitado." : "Saldo desabilitado.") : body.error);
+    if (response.ok) router.refresh();
   }
   async function remove() {
     if (!deleting) return;
@@ -129,6 +148,7 @@ export default function UserManager({
                 <th>Role</th>
                 <th>Nível comercial</th>
                 <th>Status</th>
+                <th>Saldo</th>
                 <th>Pedidos</th>
                 <th>Ações</th>
               </tr>
@@ -152,10 +172,25 @@ export default function UserManager({
                   </td>
                   <td><select value={row.customerTier} disabled={busy} onChange={(e) => save(row, { customerTier: e.target.value })}><option value="NORMAL">NORMAL</option><option value="PREMIUM">PREMIUM</option></select></td>
                   <td>{row.active ? "Ativo" : "Inativo"}</td>
+                  <td>
+                    <label className="check-field">
+                      <input
+                        type="checkbox"
+                        checked={Boolean(row.balance?.enabled)}
+                        disabled={busy}
+                        onChange={(e) => toggleBalance(row, e.target.checked)}
+                      />
+                      Saldo habilitado
+                    </label>
+                    {row.balance && <small className="cell-subtitle">{money(row.balance.balanceCents)}</small>}
+                  </td>
                   <td>{row.orderCount}</td>
                   <td>
                     <div className="inline-actions">
                       <button onClick={() => setEditing(row)}>Editar</button>
+                      {row.role === "RESELLER" && (
+                        <button onClick={() => setKeysTarget(row)}>Chaves de API</button>
+                      )}
                       <button
                         disabled={row.id === currentAdminId}
                         onClick={() => setStatusTarget(row)}
@@ -219,6 +254,14 @@ export default function UserManager({
           busy={busy}
           onCancel={() => setStatusTarget(null)}
           onConfirm={() => save(statusTarget, { active: !statusTarget.active })}
+        />
+      )}
+      {keysTarget && (
+        <ResellerKeysDialog
+          userId={keysTarget.id}
+          userName={keysTarget.name}
+          keys={rows.find((row) => row.id === keysTarget.id)?.resellerKeys ?? []}
+          onClose={() => setKeysTarget(null)}
         />
       )}
       <AdminConfirmDialog

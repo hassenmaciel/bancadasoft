@@ -315,3 +315,25 @@ export function configuredAdcleanAdapter() {
       })
     : new AdcleanDisconnectedAdapter();
 }
+
+// Revenda AdClean: mesma classe e mesma ADCLEAN_BASE_URL, com um token
+// dedicado (gerado do lado do AdClean). Enquanto ADCLEAN_RESELLER_TOKEN não
+// existir no ambiente, a API de revenda responde "não configurada" antes de
+// debitar qualquer saldo.
+export function adcleanResellerConfigured(
+  token = process.env.ADCLEAN_RESELLER_TOKEN,
+  baseUrl = process.env.ADCLEAN_BASE_URL,
+) {
+  return adcleanConfigured(token, baseUrl);
+}
+
+export function configuredAdcleanResellerAdapter() {
+  const token = process.env.ADCLEAN_RESELLER_TOKEN;
+  const baseUrl = process.env.ADCLEAN_BASE_URL;
+  return adcleanResellerConfigured(token, baseUrl)
+    ? new AdcleanProviderAdapter({
+        token: token!,
+        baseUrl: baseUrl || ADCLEAN_DEFAULT_BASE_URL,
+      })
+    : new AdcleanDisconnectedAdapter();
+}

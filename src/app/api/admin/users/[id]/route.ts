@@ -82,7 +82,8 @@ export async function DELETE(_: Request, { params }: Context) {
         id: true,
         name: true,
         role: true,
-        _count: { select: { orders: true, auditLogs: true } },
+        _count: { select: { orders: true, auditLogs: true, ledgerEntries: true, resellerApiKeys: true } },
+        accountBalance: { select: { id: true } },
       },
     });
   if (!current)
@@ -97,7 +98,14 @@ export async function DELETE(_: Request, { params }: Context) {
       self: id === admin.id,
       adminCount,
       role: current.role,
-      orders: current._count.orders + current._count.auditLogs,
+      // Saldo, ledger e chaves de revenda também são histórico (FK RESTRICT):
+      // com qualquer um deles o usuário é desativado, nunca excluído.
+      orders:
+        current._count.orders +
+        current._count.auditLogs +
+        current._count.ledgerEntries +
+        current._count.resellerApiKeys +
+        (current.accountBalance ? 1 : 0),
     });
   if (decision === "BLOCK")
     return NextResponse.json(

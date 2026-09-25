@@ -73,6 +73,8 @@ export async function handleCheckoutRequest(
   } catch (error) {
     if (error instanceof Error && error.message === "LOGIN_REQUIRED_FOR_PRICE")
       return NextResponse.json({ ok: false, error: "Entre para consultar o preço e concluir a compra.", code: "LOGIN_REQUIRED" }, { status: 401 });
+    if (error instanceof Error && error.message === "BALANCE_NOT_ENABLED")
+      return NextResponse.json({ ok: false, error: "O uso de saldo ainda não está habilitado para a sua conta. Fale com o suporte.", code: "BALANCE_NOT_ENABLED" }, { status: 403 });
     if (error instanceof IncompleteCheckoutIdentityError)
       return NextResponse.json(
         {

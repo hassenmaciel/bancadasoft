@@ -3,6 +3,7 @@ import {
   OrderStatus,
   PaymentStatus,
   Prisma,
+  ProductType,
   ProviderMode,
 } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
@@ -36,7 +37,7 @@ import {
   isValidWhatsapp,
   normalizeWhatsapp,
 } from "@/lib/checkout-validation";
-import { assertCheckoutPrice } from "@/lib/commercial-pricing";
+import { assertBalanceTopupAllowed, assertCheckoutPrice } from "@/lib/commercial-pricing";
 import { pixExpiresAt } from "@/lib/payments/pix-expiry";
 import { expirePixIfDue } from "@/lib/payment-expiry";
 import { TERMINAL_ORDER_STATUSES } from "@/lib/order-polling";
@@ -258,6 +259,20 @@ export async function createOrder(input: {
     : {};
   const viewer = authenticatedUser ? { customerTier: authenticatedUser.customerTier } : null;
   const unitPriceCents = assertCheckoutPrice(product, variantResolution?.variant ?? null, viewer);
+  // Recarga de Saldo: só conta logada com saldo habilitado. A consulta extra
+  // acontece apenas para BALANCE_TOPUP; nenhum outro tipo é afetado.
+  if (product.type === ProductType.BALANCE_TOPUP) {
+    const balance = authenticatedUser
+      ? await prisma.accountBalance.findUnique({
+          where: { userId: authenticatedUser.id },
+          select: { enabled: true },
+        })
+      : null;
+    assertBalanceTopupAllowed(product.type, {
+      authenticated: Boolean(authenticatedUser),
+      balanceEnabled: Boolean(balance?.enabled),
+    });
+  }
 
   // PARTE 3/4: cliente autenticado usa a própria conta como fonte da
   // identidade (nome/e-mail nunca vêm do client); só os campos realmente

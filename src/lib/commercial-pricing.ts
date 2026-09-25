@@ -49,3 +49,16 @@ export function assertCheckoutPrice(
   if (!priceCents) throw new Error("PRICE_UNAVAILABLE");
   return priceCents;
 }
+
+// Recarga de Saldo (ProductType.BALANCE_TOPUP): além do LOGIN_REQUIRED do
+// produto, exige conta logada com AccountBalance.enabled=true. Chamado em
+// commerce.createOrder antes de criar Order/Payment. Qualquer outro tipo de
+// produto passa direto, sem consulta adicional.
+export function assertBalanceTopupAllowed(
+  productType: string,
+  account: { authenticated: boolean; balanceEnabled: boolean },
+) {
+  if (productType !== "BALANCE_TOPUP") return;
+  if (!account.authenticated) throw new Error("LOGIN_REQUIRED_FOR_PRICE");
+  if (!account.balanceEnabled) throw new Error("BALANCE_NOT_ENABLED");
+}
