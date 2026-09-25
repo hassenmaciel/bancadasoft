@@ -126,6 +126,7 @@ export default function UserManager({
             Role
             <select name="role" defaultValue="USER">
               <option value="USER">USER</option>
+              <option value="RESELLER">RESELLER</option>
               <option value="ADMIN">ADMIN</option>
             </select>
           </label>
@@ -167,6 +168,7 @@ export default function UserManager({
                       onChange={(e) => save(row, { role: e.target.value })}
                     >
                       <option>USER</option>
+                      <option>RESELLER</option>
                       <option>ADMIN</option>
                     </select>
                   </td>
