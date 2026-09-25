@@ -133,3 +133,14 @@ export function resolvePurchasedProviderProduct<T extends ProviderProductCandida
 ) {
   return resolveProviderProduct(persisted ? [persisted] : legacyCandidates, mode);
 }
+
+// Variante inicial do checkout: a pedida na URL (?variante=, usada pelo link de
+// recarga em /minha-conta/saldo) só vale se estiver entre as oferecidas; senão
+// mantém a regra anterior (pré-seleciona quando só há uma).
+export function initialCheckoutVariantId(
+  variants: Array<{ id: string; priceCents: number | null }>,
+  requested?: string | null,
+) {
+  if (requested && variants.some((variant) => variant.id === requested && variant.priceCents !== null)) return requested;
+  return variants.length === 1 ? variants[0].id : "";
+}

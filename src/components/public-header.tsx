@@ -39,6 +39,7 @@ export default function PublicHeader({ viewer, initialQuery = "" }: { viewer: Pu
         <div className="account">
           {user ? <><Link href="/meus-pedidos">Olá, {user.name.split(" ")[0]}</Link><button type="button" onClick={signOut}>Sair</button></> : <Link href="/login">Entrar</Link>}
           <Link href="/meus-pedidos">Meus pedidos</Link>
+          {user && <Link href="/minha-conta/saldo">Meu saldo</Link>}
           {user?.role === "ADMIN" && <Link href="/admin">Painel Admin</Link>}
           <a className="support-link" href={SUPPORT_WHATSAPP_URL} target="_blank" rel="noopener noreferrer">◉ Suporte</a>
         </div>

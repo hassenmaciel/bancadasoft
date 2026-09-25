@@ -6,6 +6,7 @@ import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import type { DeliveryDTO, OrderDTO, ProductDTO } from "@/lib/dto";
 import { isOptimizableImage } from "@/lib/image-source";
 import type { CheckoutIdentitySummary } from "@/lib/checkout-identity";
+import { initialCheckoutVariantId } from "@/lib/product-variants";
 import {
   createOrderPoller,
   isFailedCheckoutOrder,
@@ -43,9 +44,11 @@ const money = (value: number) =>
 export default function CheckoutPanel({
   product,
   identity = null,
+  initialVariantId = null,
 }: {
   product: ProductDTO;
   identity?: CheckoutIdentitySummary | null;
+  initialVariantId?: string | null;
 }) {
   const [open, setOpen] = useState(false);
   const [order, setOrder] = useState<OrderDTO | null>(null);
@@ -59,7 +62,7 @@ export default function CheckoutPanel({
   const [cancelMessage, setCancelMessage] = useState("");
   const cancelGuard = useRef(false);
   const [delivery, setDelivery] = useState<DeliveryDTO | null>(null);
-  const [variantId, setVariantId] = useState(product.variants.length === 1 ? product.variants[0].id : "");
+  const [variantId, setVariantId] = useState(() => initialCheckoutVariantId(product.variants, initialVariantId));
   // Fica true quando o polling entra na fase de espera (frequência reduzida,
   // ver src/lib/order-polling.ts) — o polling continua rodando, só que mais
   // devagar; isso NÃO é um erro/timeout de pagamento.
