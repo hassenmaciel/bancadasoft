@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { HeartUnlocksProviderAdapter, ProviderOrderUncertainError } from "./heartunlocks";
+import { HEARTUNLOCKS_GATEWAY_TIMEOUT_MS, HeartUnlocksProviderAdapter, ProviderOrderUncertainError } from "./heartunlocks";
 import { decodeReplay, parseCredentials, callbackEventKey, normalizeCredentialReplay } from "./heartunlocks-callback";
 import { parseProviderDelivery } from "./delivery";
 
@@ -35,6 +35,27 @@ describe("HeartUnlocks adapter", () => {
     const fetcher = vi.fn((_url: string, init?: RequestInit) => new Promise<Response>((_resolve, reject) => init?.signal?.addEventListener("abort", () => reject(new DOMException("Aborted", "AbortError")))));
     const adapter = new HeartUnlocksProviderAdapter({ gatewayUrl: "https://gateway.test", gatewaySecret: "secret", fetcher, timeoutMs: 1 });
     await expect(adapter.createOrder({ providerProductId: "2194", reference: "ref", payload: { Quantity: 1 } })).rejects.toBeInstanceOf(ProviderOrderUncertainError);
+  });
+
+  it("waits the full default gateway timeout (25s) before giving up as uncertain", async () => {
+    vi.useFakeTimers();
+    try {
+      let aborted = false;
+      const fetcher = vi.fn((_url: string, init?: RequestInit) => new Promise<Response>((_resolve, reject) => init?.signal?.addEventListener("abort", () => { aborted = true; reject(new DOMException("Aborted", "AbortError")); })));
+      const adapter = new HeartUnlocksProviderAdapter({ gatewayUrl: "https://gateway.test", gatewaySecret: "secret", fetcher });
+      const result = adapter.createOrder({ providerProductId: "2194", reference: "ref", payload: { Quantity: 1 } });
+      const settled = expect(result).rejects.toBeInstanceOf(ProviderOrderUncertainError);
+      expect(HEARTUNLOCKS_GATEWAY_TIMEOUT_MS).toBe(25000);
+      await vi.advanceTimersByTimeAsync(15000);
+      expect(aborted).toBe(false);
+      await vi.advanceTimersByTimeAsync(HEARTUNLOCKS_GATEWAY_TIMEOUT_MS - 15000 - 1);
+      expect(aborted).toBe(false);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(aborted).toBe(true);
+      await settled;
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("marks a gateway 5xx result as uncertain instead of allowing a blind retry", async () => {

@@ -2,6 +2,7 @@ import http from "node:http";
 import https from "node:https";
 import { URL } from "node:url";
 import { buildHeartUnlocksOrderPayload } from "./order-payload.mjs";
+import { PROVIDER_DEADLINE_MS } from "./timeouts.mjs";
 
 const port = Number(process.env.PORT || 8787);
 const apiBase = process.env.HEARTUNLOCKS_API_BASE_URL || "https://api.heartunlocks.com";
@@ -19,12 +20,14 @@ const read = async (req) => { const chunks = []; let size = 0; for await (const 
 
 function providerRequest(path, method, body) {
   return new Promise((resolve, reject) => {
-    const request = https.request(new URL(path, apiBase), { method, family: 4, timeout: 15000, headers: { accept: "application/json", "content-type": "application/json", authorization: `Bearer ${apiToken}` } }, (response) => {
+    const request = https.request(new URL(path, apiBase), { method, family: 4, timeout: PROVIDER_DEADLINE_MS, headers: { accept: "application/json", "content-type": "application/json", authorization: `Bearer ${apiToken}` } }, (response) => {
       const chunks = [];
       let size = 0;
       response.on("data", (chunk) => { size += chunk.length; if (size > 5 * 1024 * 1024) response.destroy(new Error("PROVIDER_RESPONSE_TOO_LARGE")); else chunks.push(chunk); });
       response.on("end", () => { try { const data = JSON.parse(Buffer.concat(chunks).toString("utf8")); if ((response.statusCode || 500) >= 400) return reject(new Error(`PROVIDER_HTTP_${response.statusCode}`)); resolve(data); } catch { reject(new Error("PROVIDER_INVALID_JSON")); } });
     });
+    const deadline = setTimeout(() => request.destroy(new Error("PROVIDER_TIMEOUT_UNCERTAIN")), PROVIDER_DEADLINE_MS);
+    request.on("close", () => clearTimeout(deadline));
     request.on("timeout", () => request.destroy(new Error("PROVIDER_TIMEOUT_UNCERTAIN")));
     request.on("error", reject);
     if (body) request.write(JSON.stringify(body));
@@ -57,15 +60,20 @@ const server = http.createServer(async (req, res) => {
       if (typeof body.productUuid !== "string" || typeof body.referenceId !== "string" || body.quantity !== 1 || !body.fields || typeof body.fields !== "object" || Array.isArray(body.fields)) return json(res, 422, { error: "INVALID_ORDER" });
       const payload = buildHeartUnlocksOrderPayload({ productUuid: body.productUuid, referenceId: body.referenceId, quantity: body.quantity, fields: body.fields, feedbackBase, callbackSecret });
       let result;
+      const startedAt = Date.now();
       try { result = await providerRequest("/api/reseller/v1/order", "POST", payload); }
       catch (error) {
         const code = error instanceof Error ? error.message : "PROVIDER_RESULT_UNCERTAIN";
+        console.warn("order failed", { referenceId: body.referenceId, code, elapsedMs: Date.now() - startedAt });
         if (/^PROVIDER_HTTP_4\d\d$/.test(code)) return json(res, 422, { error: "PROVIDER_REJECTED" });
         return json(res, 202, { referenceId: body.referenceId, status: "PROCESSING", uncertain: true });
       }
       const item = Array.isArray(result?.data) ? result.data[0] : null;
-      if (result?.status !== "success" || !item?.order_uuid) return json(res, 502, { error: "PROVIDER_REJECTED" });
-      console.info("order accepted", { referenceId: body.referenceId, orderId: item.order_uuid });
+      if (result?.status !== "success" || !item?.order_uuid) {
+        console.warn("order rejected", { referenceId: body.referenceId, providerStatus: String(result?.status ?? "").slice(0, 40), message: String(result?.message ?? "").slice(0, 200), hasOrderUuid: Boolean(item?.order_uuid), elapsedMs: Date.now() - startedAt });
+        return json(res, 502, { error: "PROVIDER_REJECTED" });
+      }
+      console.info("order accepted", { referenceId: body.referenceId, orderId: item.order_uuid, elapsedMs: Date.now() - startedAt });
       return json(res, 202, { externalOrderId: String(item.order_uuid), referenceId: body.referenceId, status: "PROCESSING" });
     }
     if (req.method === "POST" && url.pathname === "/callbacks/heartunlocks") {
