@@ -46,7 +46,7 @@ export function normalizeProviderField(name: string, rawType?: string | null, po
     : /select|option|dropdown/.test(sourceType) ? "select"
     : /textarea|long\s*text/.test(sourceType) ? "textarea"
     : /number|integer/.test(sourceType) ? "number" : "text";
-  const placeholder = remote ? "Informe o ID da sessão remota" : `Informe ${name}`;
+  const placeholder = remote ? "Informe o ID da sessão remota" : `Informe ${name.trim()}`;
   const validation = type === "imei" ? { minLength: 14, maxLength: 16, pattern: "^[0-9]+$" }
     : type === "serial" ? { minLength: 3, maxLength: 100 }
     : type === "email" ? { maxLength: 254 }
@@ -59,7 +59,8 @@ export function normalizeProviderField(name: string, rawType?: string | null, po
     required: true,
     placeholder,
     validation,
-    providerFieldName: name.trim(),
+    // Chave enviada ao provider: exatamente como veio do catálogo, sem trim.
+    providerFieldName: name,
     position,
     sensitive: /password|pass|token|license|licenca|key|chave/.test(normalized),
     customerVisible: key !== "quantity",

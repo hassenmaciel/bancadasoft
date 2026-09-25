@@ -20,6 +20,17 @@ describe("HeartUnlocks catalog contract", () => {
     expect(item.metadata).toMatchObject({ categoryId: "C443", categoryName: "Remote Services", categoryIds: ["C443", "C3", "C455"], providerImageUrl: realObservedItem.image_url });
   });
 
+  it("keeps the raw field name with surrounding spaces and still skips blank names", () => {
+    const [item] = parseHeartUnlocksCatalogResponse({ status: "success", data: { products: { "3126": {
+      name: "FRPFILE Activator",
+      price: "1.00",
+      fields: [{ type: "text", name: " Serial ", required: true }, { type: "text", name: "   " }],
+    } } } });
+    expect(item.requiredFields).toEqual([{ type: "text", name: " Serial ", required: true, base: null }]);
+    const update = providerCatalogSyncData(item, new Date("2026-09-25T12:00:00Z"));
+    expect(update.fieldSchema).toMatchObject([{ key: "serial", label: "Serial", providerFieldName: " Serial " }]);
+  });
+
   it("rejects an invalid response before persistence", () => {
     expect(() => parseHeartUnlocksCatalogResponse({ status: "error", data: [] })).toThrow("HEARTUNLOCKS_INVALID_CATALOG_RESPONSE");
     expect(() => parseHeartUnlocksCatalogResponse({ status: "success", data: { currency: "USD", products: { "2194": {} } } })).toThrow("HEARTUNLOCKS_INVALID_CATALOG_ITEM_0");

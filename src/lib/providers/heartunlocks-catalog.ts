@@ -26,10 +26,11 @@ function fields(value: unknown) {
   if (!Array.isArray(value)) return [];
   return value.flatMap((entry) => {
     const item = record(entry);
-    const name = text(item?.name);
-    if (!item || !name) return [];
+    // text() só detecta nome vazio; o nome gravado é o bruto, pois a
+    // HeartUnlocks exige a chave exata no pedido (ex.: "Serial " com espaço).
+    if (!item || !text(item.name)) return [];
     return [{
-      name,
+      name: item.name as string,
       type: text(item.type) ?? null,
       required: typeof item.required === "boolean" ? item.required : null,
       base: typeof item.base === "boolean" ? item.base : null,

@@ -35,6 +35,12 @@ describe("provider product automation", () => {
     expect(validateDynamicFieldValues(schema, { username: "tech", email: "test@example.com", serial: "ABC123" })).toEqual({ Username: "tech", Email: "test@example.com", Serial: "ABC123" });
     expect(() => validateDynamicFieldValues(schema, { username: "tech" })).toThrow("PROVIDER_FIELD_REQUIRED:email");
   });
+  it("preserves surrounding spaces in providerFieldName while key and label stay normalized", () => {
+    expect(normalizeProviderField(" Serial ")).toMatchObject({ key: "serial", type: "serial", label: "Serial", placeholder: "Informe Serial", providerFieldName: " Serial " });
+    const schema = dynamicFieldSchema({ requiredFields: [{ name: "Serial " }] });
+    expect(schema[0]).toMatchObject({ key: "serial", label: "Serial", providerFieldName: "Serial " });
+    expect(validateDynamicFieldValues(schema, { serial: "DX3FQCY40F0X" })).toEqual({ "Serial ": "DX3FQCY40F0X" });
+  });
   it("keeps incomplete contracts under manual review", () => {
     expect(classifyProviderProduct({ providerCode: "heartunlocks", label: "Unknown", providerCostCents: null, metadata: {} })).toMatchObject({ automationClass: "MANUAL_REVIEW", technicalEligibility: "REVIEW" });
   });
