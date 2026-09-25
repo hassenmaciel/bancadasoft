@@ -35,6 +35,8 @@ export const productInputSchema = z.object({
   priceVisibility: z.nativeEnum(PriceVisibility).default(PriceVisibility.PUBLIC),
   normalPriceCents: z.number().int().min(1).nullable().optional(),
   premiumPriceCents: z.number().int().min(1).nullable().optional(),
+  // Preço de revenda (API /api/reseller/v1). null = não vendido a revendedor.
+  resellerPriceCents: z.number().int().min(1).nullable().optional(),
   costCents: z.number().int().min(0).nullable().optional(),
   pricingMode: z.nativeEnum(PricingMode).default(PricingMode.MANUAL),
   manualPriceCents: z.number().int().min(1).nullable().optional(),
@@ -103,7 +105,7 @@ export type AdminVariantDTO = {
   };
 };
 
-export type AdminProductDTO = Pick<Product, "id" | "slug" | "name" | "description" | "longDescription" | "type" | "deliveryType" | "deliveryEstimate" | "searchTerms" | "duration" | "priceCents" | "priceVisibility" | "normalPriceCents" | "premiumPriceCents" | "costCents" | "pricingMode" | "manualPriceCents" | "suggestedPriceCents" | "pricingStatus" | "featured" | "sortOrder" | "status" | "available" | "imageUrl" | "downloadUrl" | "downloadLabel"> & {
+export type AdminProductDTO = Pick<Product, "id" | "slug" | "name" | "description" | "longDescription" | "type" | "deliveryType" | "deliveryEstimate" | "searchTerms" | "duration" | "priceCents" | "priceVisibility" | "normalPriceCents" | "premiumPriceCents" | "resellerPriceCents" | "costCents" | "pricingMode" | "manualPriceCents" | "suggestedPriceCents" | "pricingStatus" | "featured" | "sortOrder" | "status" | "available" | "imageUrl" | "downloadUrl" | "downloadLabel"> & {
   category: Pick<Category, "id" | "name" | "slug">;
   brand: Pick<Brand, "id" | "name" | "slug"> | null;
   updatedAt: string;
@@ -125,6 +127,7 @@ export const adminProductDto = (product: AdminProductSource, pricing: PricingRes
   deliveryEstimate: product.deliveryEstimate, searchTerms: product.searchTerms,
   type: product.type, duration: product.duration, priceCents: product.priceCents,
   priceVisibility: product.priceVisibility, normalPriceCents: product.normalPriceCents, premiumPriceCents: product.premiumPriceCents,
+  resellerPriceCents: product.resellerPriceCents,
   costCents: product.costCents, pricingMode: product.pricingMode, manualPriceCents: product.manualPriceCents,
   suggestedPriceCents: product.suggestedPriceCents, pricingStatus: product.pricingStatus,
   pricingComputedAt: product.pricingComputedAt?.toISOString() ?? null, pricing,

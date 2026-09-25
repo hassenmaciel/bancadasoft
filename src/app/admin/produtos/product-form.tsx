@@ -2,6 +2,7 @@
 import { FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { AdminProductDTO } from "@/lib/admin-catalog";
+import { optionalCentsToInput, optionalInputToCents } from "@/lib/admin-price-input";
 import AdminImageUpload from "@/components/admin-image-upload";
 import AdminConfirmDialog from "@/components/admin-confirm-dialog";
 import VariantManager from "./variant-manager";
@@ -51,6 +52,7 @@ export default function ProductForm({
     [publicPrice, setPublicPrice] = useState(product ? product.priceCents / 100 : 0),
     [normalPrice, setNormalPrice] = useState(product ? (product.normalPriceCents ?? product.priceCents) / 100 : 0),
     [premiumPrice, setPremiumPrice] = useState(product?.premiumPriceCents == null ? "" : String(product.premiumPriceCents / 100)),
+    [resellerPrice, setResellerPrice] = useState(optionalCentsToInput(product?.resellerPriceCents)),
     [cost, setCost] = useState(
       product?.costCents == null ? "" : String(product.costCents / 100),
     ),
@@ -75,6 +77,7 @@ export default function ProductForm({
       priceVisibility: f.get("priceVisibility"),
       normalPriceCents: Math.round(normalPrice * 100),
       premiumPriceCents: premiumPrice === "" ? null : Math.round(Number(premiumPrice) * 100),
+      resellerPriceCents: optionalInputToCents(resellerPrice),
       costCents: cost === "" ? null : Math.round(Number(cost) * 100),
       pricingMode,
       manualPriceCents: pricingMode === "MANUAL" ? Math.round(price * 100) : null,
@@ -295,6 +298,7 @@ export default function ProductForm({
             <label>Preço Público (R$)<input type="number" min="0.01" step=".01" value={publicPrice} onChange={(event)=>setPublicPrice(Number(event.target.value))} required/></label>
             <label>Preço Técnico (R$)<input type="number" min="0.01" step=".01" value={normalPrice} placeholder="Usa preço Público" onChange={(event)=>setNormalPrice(Number(event.target.value))}/></label>
             <label>Preço Premium (R$)<input type="number" min="0.01" step=".01" value={premiumPrice} placeholder="Usa preço Técnico" onChange={(event)=>setPremiumPrice(event.target.value)}/></label>
+            <label>Preço de revenda (R$)<input type="number" min="0.01" step=".01" value={resellerPrice} placeholder="Vazio = não vendido a revendedor" onChange={(event)=>setResellerPrice(event.target.value)}/></label>
           </div>
           <div className="form-grid">
             <label>Exibir preço publicamente<select name="priceVisibility" defaultValue={product?.priceVisibility ?? "PUBLIC"}><option value="PUBLIC">Sim</option><option value="LOGIN_REQUIRED">Não · somente cadastrados</option></select></label>
