@@ -56,3 +56,19 @@ describe("PUT /api/admin/products/[id] — Preço de revenda", () => {
     expect(db.product.update).not.toHaveBeenCalled();
   });
 });
+
+describe("PUT /api/admin/products/[id] — tipo Recarga de saldo", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    requireAdmin.mockResolvedValue({ id: "admin-1", role: "ADMIN" });
+    db.product.findUnique.mockResolvedValue({ ...stored(null), variants: [] });
+  });
+
+  it("grava type=BALANCE_TOPUP e o devolve no DTO", async () => {
+    db.product.update.mockResolvedValue({ ...stored(null), type: "BALANCE_TOPUP" });
+    const response = await put({ ...body(null), type: "BALANCE_TOPUP" });
+    expect(response.status).toBe(200);
+    expect(db.product.update.mock.calls[0][0].data).toMatchObject({ type: "BALANCE_TOPUP" });
+    expect((await response.json()).data.type).toBe("BALANCE_TOPUP");
+  });
+});

@@ -60,3 +60,16 @@ describe("Preço de revenda no formulário de produto", () => {
     expect(parse(10.5).success).toBe(false);
   });
 });
+
+describe("Tipo Recarga de saldo no formulário de produto", () => {
+  it("oferece BALANCE_TOPUP como opção e o mantém selecionado ao editar um produto desse tipo", () => {
+    const html = renderToStaticMarkup(<ProductForm product={adminProductDto({ ...source(null), type: "BALANCE_TOPUP" })} categories={[category]} brands={[]} />);
+    expect(html).toContain('<option value="BALANCE_TOPUP" selected="">Recarga de saldo</option>');
+    const blank = renderToStaticMarkup(<ProductForm categories={[category]} brands={[]} />);
+    expect(blank).toContain('<option value="BALANCE_TOPUP">Recarga de saldo</option>');
+  });
+
+  it("o schema de gravação aceita BALANCE_TOPUP", () => {
+    expect(productInputSchema.parse({ ...payload(null), type: "BALANCE_TOPUP" }).type).toBe("BALANCE_TOPUP");
+  });
+});

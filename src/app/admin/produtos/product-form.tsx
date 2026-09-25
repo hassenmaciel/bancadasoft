@@ -24,6 +24,7 @@ const productTypes = [
   ["IMEI_SN", "IMEI / SN"],
   ["FILE", "Arquivo"],
   ["REMOTE_SERVICE", "Serviço remoto"],
+  ["BALANCE_TOPUP", "Recarga de saldo"],
 ];
 const deliveryTypes = [
   ["IMMEDIATE", "Imediata"],
