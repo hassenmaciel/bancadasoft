@@ -202,6 +202,7 @@ model AccountLedgerEntry {
   note              String?
   createdAt         DateTime               @default(now())
 
+  @@unique([userId, externalReference])
   @@index([userId])
 }
 
