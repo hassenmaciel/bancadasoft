@@ -24,6 +24,7 @@ enum ProductType {
   CREDIT
   IMEI_SN
   FILE
+  BALANCE_TOPUP
 }
 
 enum DeliveryType {
@@ -152,6 +153,13 @@ enum PriceVisibility {
   LOGIN_REQUIRED
 }
 
+enum AccountLedgerEntryType {
+  TOPUP
+  PURCHASE
+  REFUND
+  ADJUSTMENT
+}
+
 model User {
   id              String       @id @default(cuid())
   email           String       @unique
@@ -167,6 +175,46 @@ model User {
   updatedAt       DateTime     @updatedAt
   orders          Order[]
   auditLogs       AuditLog[]
+  accountBalance  AccountBalance?
+  ledgerEntries   AccountLedgerEntry[]
+  resellerApiKeys ResellerApiKey[]
+}
+
+model AccountBalance {
+  id           String   @id @default(cuid())
+  userId       String   @unique
+  user         User     @relation(fields: [userId], references: [id])
+  balanceCents Int      @default(0)
+  enabled      Boolean  @default(false)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+model AccountLedgerEntry {
+  id                String                 @id @default(cuid())
+  userId            String
+  user              User                   @relation(fields: [userId], references: [id])
+  type              AccountLedgerEntryType
+  amountCents       Int
+  balanceAfterCents Int
+  sourceOrderId     String?                @unique
+  externalReference String?
+  note              String?
+  createdAt         DateTime               @default(now())
+
+  @@index([userId])
+}
+
+model ResellerApiKey {
+  id         String    @id @default(cuid())
+  userId     String
+  user       User      @relation(fields: [userId], references: [id])
+  tokenHash  String    @unique
+  label      String?
+  active     Boolean   @default(true)
+  revokedAt  DateTime?
+  lastUsedAt DateTime?
+  createdAt  DateTime  @default(now())
 }
 
 model Category {
@@ -208,6 +256,7 @@ model Product {
   priceVisibility     PriceVisibility   @default(PUBLIC)
   normalPriceCents    Int?
   premiumPriceCents   Int?
+  resellerPriceCents  Int?
   costCents           Int?
   pricingMode         PricingMode       @default(MANUAL)
   manualPriceCents    Int?
