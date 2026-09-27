@@ -29,16 +29,34 @@ const processingExample = `HTTP 202
   "message": "Emissão em confirmação. Reenvie a mesma external_reference para consultar o resultado."
 }`;
 
+const licenseRequestExample = `curl -X POST ${RESELLER_API_ENDPOINT} \\
+  -H "Authorization: Bearer SUA_CHAVE_DE_API" \\
+  -H "Content-Type: application/json" \\
+  -d '{ "external_reference": "pedido-10294", "product": "adclean-licenca-1-ano", "email": "cliente@exemplo.com" }'`;
+
+const licenseSuccessExample = `HTTP 200
+{
+  "ok": true,
+  "status": "COMPLETED",
+  "replay": false,
+  "external_reference": "pedido-10294",
+  "license": { "code": "XXXX-XXXX", "email": "cliente@exemplo.com", "period_hours": 8760 },
+  "charged_cents": 9900,
+  "balance_cents": 4500
+}`;
+
 const errorExample = `{ "ok": false, "code": "INSUFFICIENT_BALANCE", "error": "Saldo insuficiente." }`;
 
 export const RESELLER_API_ERRORS: { status: number; code: string; meaning: string; action: string }[] = [
   { status: 400, code: "INVALID_BODY", meaning: "Corpo inválido ou external_reference ausente/fora do formato.", action: "Corrija o corpo: 1 a 100 caracteres, só letras, números, ponto, hífen ou sublinhado. Não repita sem corrigir." },
+  { status: 400, code: "INVALID_PRODUCT", meaning: "product desconhecido ou não vendido pela API.", action: "Confira o identificador do produto. Nada foi debitado." },
+  { status: 400, code: "INVALID_EMAIL", meaning: "Licença sem e-mail do cliente final, ou e-mail inválido.", action: "Envie o e-mail do cliente em email. Nada foi debitado." },
   { status: 401, code: "INVALID_API_KEY", meaning: "Chave ausente, inválida, desativada ou revogada.", action: "Confira o header Authorization. Se a chave foi revogada, peça uma nova ao suporte." },
   { status: 402, code: "INSUFFICIENT_BALANCE", meaning: "Saldo pré-pago insuficiente. Nada foi debitado.", action: "Recarregue em Meu saldo e reenvie com a mesma external_reference." },
   { status: 403, code: "RESELLER_ROLE_REQUIRED / BALANCE_NOT_ENABLED", meaning: "Conta sem permissão de revenda ou sem saldo habilitado.", action: "Fale com o suporte para liberar a conta." },
   { status: 409, code: "PRODUCT_NOT_AVAILABLE_FOR_RESALE", meaning: "Produto temporariamente sem preço de revenda.", action: "Tente mais tarde ou fale com o suporte." },
   { status: 429, code: "RATE_LIMITED", meaning: `Mais de ${RESELLER_RATE_LIMIT.maxPurchases} compras novas por minuto na conta.`, action: "Aguarde um minuto e reenvie. Reenvios da mesma external_reference não contam no limite." },
-  { status: 502, code: "TICKET_FAILED_REFUNDED", meaning: "A emissão falhou e o valor voltou para o saldo.", action: "Use uma NOVA external_reference para tentar de novo." },
+  { status: 502, code: "TICKET_FAILED_REFUNDED / LICENSE_FAILED_REFUNDED", meaning: "A emissão falhou e o valor voltou para o saldo.", action: "Use uma NOVA external_reference para tentar de novo." },
   { status: 503, code: "RESELLER_INTEGRATION_NOT_CONFIGURED", meaning: "Integração temporariamente indisponível. Nada foi debitado.", action: "Tente de novo mais tarde com a mesma external_reference." },
 ];
 
@@ -48,7 +66,7 @@ export default function ResellerApiDocs() {
       <section>
         <h2>Endpoint</h2>
         <p><code>POST {RESELLER_API_ENDPOINT}</code></p>
-        <p>Cada chamada compra um ticket AdClean ({ADCLEAN_TICKET_DURATION_HOURS} horas) e debita o preço de revenda do seu saldo pré-pago.</p>
+        <p>Cada chamada compra um ticket AdClean ({ADCLEAN_TICKET_DURATION_HOURS} horas) e debita o preço de revenda do seu saldo pré-pago. Com os campos opcionais de produto, o mesmo endpoint também compra a licença AdClean (veja <a href="#licenca">Licença AdClean</a>).</p>
       </section>
 
       <section>
@@ -76,6 +94,19 @@ export default function ResellerApiDocs() {
         <pre><code>{processingExample}</code></pre>
       </section>
 
+      <section id="licenca">
+        <h2>Licença AdClean</h2>
+        <p>Para comprar a licença em vez do ticket, envie também:</p>
+        <ul>
+          <li><code>product</code>: o período — <code>&quot;adclean-licenca-12h&quot;</code>, <code>&quot;adclean-licenca-6-meses&quot;</code> ou <code>&quot;adclean-licenca-1-ano&quot;</code> (cada um com seu preço de revenda);</li>
+          <li><code>email</code>: <b>obrigatório</b>, o e-mail do cliente final. O próprio AdClean envia o código de ativação para esse e-mail, e a licença só ativa no aplicativo com ele.</li>
+        </ul>
+        <pre><code>{licenseRequestExample}</code></pre>
+        <p>A resposta traz <code>license</code> no lugar de <code>ticket</code>. Reenvios, <code>PROCESSING</code>, saldo e erros funcionam igual ao ticket; um reenvio sempre devolve a compra original, mesmo que o corpo mude.</p>
+        <pre><code>{licenseSuccessExample}</code></pre>
+        <p>Sem <code>product</code>, a chamada continua comprando o ticket, exatamente como antes.</p>
+      </section>
+
       <section>
         <h2>Erros</h2>
         <p>Toda resposta de erro traz <code>ok: false</code>, um <code>code</code> estável e uma mensagem em <code>error</code>:</p>
@@ -85,7 +116,7 @@ export default function ResellerApiDocs() {
             <thead><tr><th>Status</th><th>Código</th><th>Significado</th><th>O que fazer</th></tr></thead>
             <tbody>
               {RESELLER_API_ERRORS.map((row) => (
-                <tr key={row.status}><td>{row.status}</td><td><code>{row.code}</code></td><td>{row.meaning}</td><td>{row.action}</td></tr>
+                <tr key={row.code}><td>{row.status}</td><td><code>{row.code}</code></td><td>{row.meaning}</td><td>{row.action}</td></tr>
               ))}
             </tbody>
           </table>

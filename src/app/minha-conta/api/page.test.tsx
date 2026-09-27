@@ -35,6 +35,14 @@ describe("/minha-conta/api", () => {
     expect(body).toContain("Saldo insuficiente");
   });
 
+  it("documenta a compra da licença AdClean pelo mesmo endpoint", async () => {
+    requireUser.mockResolvedValue(user("RESELLER"));
+    const body = text(renderToStaticMarkup(await ResellerApiPage()));
+    for (const field of ['"product": "adclean-licenca-1-ano"', '"adclean-licenca-12h"', '"adclean-licenca-6-meses"', '"email"', '"license"', "INVALID_EMAIL", "INVALID_PRODUCT"])
+      expect(body).toContain(field);
+    expect(body).toContain(`curl -X POST ${RESELLER_API_ENDPOINT} \\`);
+  });
+
   it("tabela de erros tem uma linha para cada status exigido", async () => {
     requireUser.mockResolvedValue(user("RESELLER"));
     const html = renderToStaticMarkup(await ResellerApiPage());

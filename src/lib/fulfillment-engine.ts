@@ -12,6 +12,7 @@ import { resolveProviderAdapter } from "@/lib/providers/registry";
 import { ProviderOrderUncertainError } from "@/lib/providers/types";
 import type { ProviderOrderResult } from "@/lib/providers/types";
 import { adcleanConfigured } from "@/lib/providers/adclean";
+import { ADCLEAN_LICENSE_CODE, adcleanLicenseConfigured } from "@/lib/providers/adclean-license";
 import { sendDeliveryEmail } from "@/lib/notifications/delivery-email";
 import {
   buildProviderExecutionPayload,
@@ -238,7 +239,9 @@ export async function executeFulfillment(
       providerConnected:
         selected?.provider.code === "adclean"
           ? adcleanConfigured()
-          : selected?.provider.integrationStatus ===
+          : selected?.provider.code === ADCLEAN_LICENSE_CODE
+            ? adcleanLicenseConfigured()
+            : selected?.provider.integrationStatus ===
             ProviderIntegrationStatus.CONNECTED,
       providerOrderStatus: existing?.status,
       attempts: existing?.attempts ?? 0,

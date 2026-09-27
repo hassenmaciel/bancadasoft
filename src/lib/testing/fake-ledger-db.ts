@@ -30,14 +30,35 @@ type Order = {
   providerProduct: { externalProductId: string; metadata: unknown; provider: { code: string } } | null;
 };
 
+// Catálogo da API de revenda com "product": um item por ProviderProduct
+// vinculado direto a um Product (ProviderProduct.productId).
+export type FakeCatalogItem = {
+  slug: string;
+  resellerPriceCents: number | null;
+  providerCode: string;
+  externalProductId: string;
+  metadata: unknown;
+  active: boolean;
+};
+
 export type FakeState = {
   users: User[];
   balances: Balance[];
   entries: Entry[];
   keys: ApiKey[];
   orders: Order[];
+  // Preço do ticket na consulta original (sem "product").
   resellerPriceCents: number | null;
+  catalog: FakeCatalogItem[];
 };
+
+const linkOf = (item: FakeCatalogItem) => ({
+  active: item.active,
+  externalProductId: item.externalProductId,
+  metadata: structuredClone(item.metadata),
+  provider: { code: item.providerCode },
+  product: { resellerPriceCents: item.resellerPriceCents },
+});
 
 let sequence = 0;
 const id = (prefix: string) => `${prefix}-${++sequence}`;
@@ -51,6 +72,7 @@ export function createFakeLedgerDb(initial: Partial<FakeState> = {}) {
     keys: [],
     orders: [],
     resellerPriceCents: null,
+    catalog: [],
     ...structuredClone(initial),
   };
   const matches = (entry: Entry, where: Record<string, unknown>) =>
@@ -145,8 +167,18 @@ export function createFakeLedgerDb(initial: Partial<FakeState> = {}) {
       },
     },
     providerProduct: {
-      async findFirst() {
-        return { product: { resellerPriceCents: state.resellerPriceCents } };
+      // Sem catálogo correspondente: a consulta original do ticket.
+      async findFirst({ where }: { where?: { externalProductId?: string; provider?: { code: string } } } = {}) {
+        const item = state.catalog.find(
+          (c) => c.externalProductId === where?.externalProductId && c.providerCode === where?.provider?.code,
+        );
+        return item ? linkOf(item) : { product: { resellerPriceCents: state.resellerPriceCents } };
+      },
+      async findMany({ where, take }: { where: { active?: boolean; product: { slug: string } }; take?: number }) {
+        return state.catalog
+          .filter((c) => c.slug === where.product.slug && (where.active === undefined || c.active === where.active))
+          .slice(0, take)
+          .map(linkOf);
       },
     },
     order: {
