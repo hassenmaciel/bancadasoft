@@ -40,7 +40,10 @@ describe("builders de where", () => {
       AND: [{ status: { notIn: ["CANCELLED"] } }, { fulfillment: { is: { status: "FAILED" } } }],
     });
     expect(buildAttentionWhere("PROVIDER_FAILED", NOW)).toEqual({
-      AND: [{ status: { notIn: ["CANCELLED"] } }, { providerOrders: { some: { status: "FAILED" } } }],
+      AND: [
+        { status: { notIn: ["CANCELLED", "DELIVERED"] } },
+        { providerOrders: { some: { status: "FAILED" } } },
+      ],
     });
     expect(buildAttentionWhere("NO_FULFILLMENT", NOW)).toEqual({
       AND: [
@@ -93,7 +96,7 @@ describe("builders de where", () => {
   it("PROVIDER_REJECTED: FAILED com HEARTUNLOCKS_GATEWAY_422 ou PROVIDER_REJECTED", () => {
     expect(buildAttentionWhere("PROVIDER_REJECTED", NOW)).toEqual({
       AND: [
-        { status: { notIn: ["CANCELLED"] } },
+        { status: { notIn: ["CANCELLED", "DELIVERED"] } },
         {
           providerOrders: {
             some: {
@@ -107,6 +110,15 @@ describe("builders de where", () => {
         },
       ],
     });
+  });
+
+  it("entrega manual: PROVIDER_FAILED e PROVIDER_REJECTED ignoram DELIVERED; FULFILLMENT_FAILED não muda", () => {
+    for (const key of ["PROVIDER_FAILED", "PROVIDER_REJECTED"] as const) {
+      const where = buildAttentionWhere(key, NOW) as { AND: unknown[] };
+      expect(where.AND[0], key).toEqual({ status: { notIn: ["CANCELLED", "DELIVERED"] } });
+    }
+    const fulfillmentFailed = buildAttentionWhere("FULFILLMENT_FAILED", NOW) as { AND: unknown[] };
+    expect(fulfillmentFailed.AND[0]).toEqual({ status: { notIn: ["CANCELLED"] } });
   });
 });
 

@@ -30,6 +30,12 @@ export const parseAttentionKey = (value: unknown): AttentionKey | undefined =>
     : undefined;
 
 const notCancelled: Prisma.OrderWhereInput = { status: { notIn: ["CANCELLED"] } };
+// Falha do fornecedor num pedido já DELIVERED só acontece quando o Admin
+// registrou entrega manual (o ProviderOrder fica FAILED de propósito, como
+// histórico) — não é mais algo a resolver.
+const notCancelledOrDelivered: Prisma.OrderWhereInput = {
+  status: { notIn: ["CANCELLED", "DELIVERED"] },
+};
 const HOUR_MS = 3_600_000;
 const DAY_MS = 24 * HOUR_MS;
 
@@ -53,7 +59,7 @@ export const attentionWhere = {
     AND: [notCancelled, { fulfillment: { is: { status: "FAILED" } } }],
   }),
   PROVIDER_FAILED: (): Prisma.OrderWhereInput => ({
-    AND: [notCancelled, { providerOrders: { some: { status: "FAILED" } } }],
+    AND: [notCancelledOrDelivered, { providerOrders: { some: { status: "FAILED" } } }],
   }),
   NO_FULFILLMENT: (): Prisma.OrderWhereInput => ({
     AND: [notCancelled, { payment: { status: "PAID" } }, { fulfillment: { is: null } }],
@@ -91,7 +97,7 @@ export const attentionWhere = {
   }),
   PROVIDER_REJECTED: (): Prisma.OrderWhereInput => ({
     AND: [
-      notCancelled,
+      notCancelledOrDelivered,
       {
         providerOrders: {
           some: {

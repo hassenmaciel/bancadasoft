@@ -5,6 +5,8 @@ import RetryButton from "./retry-button";
 import ReconcilePixButton from "./reconcile-pix-button";
 import RevealDelivery from "./reveal-delivery";
 import ResendAccessButton from "./resend-access-button";
+import ManualDeliveryButton from "./manual-delivery-button";
+import { manualDeliveryBlocker } from "@/lib/manual-delivery-rules";
 
 export const dynamic = "force-dynamic";
 const money = (value: number, currency = "BRL") =>
@@ -28,6 +30,14 @@ export default async function OrderDetailPage({
   const maskedCpf = order.customer.cpfCnpj
     ? `***.***.***-${order.customer.cpfCnpj.slice(-2)}`
     : "Não informado";
+  const canRegisterManualDelivery =
+    manualDeliveryBlocker({
+      paymentStatus: order.payment?.status,
+      orderStatus: order.status,
+      hasDelivery: Boolean(order.fulfillment?.delivery),
+      providerOrderStatuses:
+        order.fulfillment?.providerOrders.map((item) => item.status) ?? [],
+    }) === null;
   return (
     <>
       <header className="admin-heading">
@@ -281,6 +291,9 @@ export default async function OrderDetailPage({
           />
           {order.status === "DELIVERED" && (
             <ResendAccessButton orderId={order.id} />
+          )}
+          {canRegisterManualDelivery && (
+            <ManualDeliveryButton orderId={order.id} />
           )}
         </section>
         <section className="detail-card">

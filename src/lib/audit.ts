@@ -1,8 +1,9 @@
 import { Prisma } from "@prisma/client";
 import { prisma } from "./prisma";
 
-export function audit(actorUserId: string, action: string, entityType: string, entityId?: string, metadata?: Prisma.InputJsonValue) {
-  return prisma.auditLog.create({ data: { actorUserId, action, entityType, entityId, metadata } });
+// `client` permite gravar a auditoria dentro de uma transação (tx) já aberta.
+export function audit(actorUserId: string, action: string, entityType: string, entityId?: string, metadata?: Prisma.InputJsonValue, client: Pick<Prisma.TransactionClient, "auditLog"> = prisma) {
+  return client.auditLog.create({ data: { actorUserId, action, entityType, entityId, metadata } });
 }
 
 export function safeChangeMetadata(before: Record<string, unknown>, after: Record<string, unknown>) {
