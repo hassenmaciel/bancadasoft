@@ -24,7 +24,14 @@ type FakeOrder = {
   status: string;
   payment: { status: string } | null;
   fulfillment: { id: string; status: string; delivery: unknown; provider?: string } | null;
-  providerOrders: Array<{ status: string }>;
+  providerOrders: FakeProviderOrder[];
+};
+// Mesmo formato do select de registerManualDelivery.
+type FakeProviderOrder = {
+  status: string;
+  lastError: string | null;
+  externalOrderId: string | null;
+  _count: { callbackEvents: number };
 };
 type FakeState = {
   order: FakeOrder | null;
@@ -35,13 +42,30 @@ type FakeState = {
 const REASON = "Acesso comprado no painel do fornecedor e entregue pelo WhatsApp.";
 const input = { orderId: "order-1", adminId: "admin-1", reason: REASON };
 
+const po = (status: string, extra: Partial<FakeProviderOrder> = {}): FakeProviderOrder => ({
+  status,
+  lastError: null,
+  externalOrderId: null,
+  _count: { callbackEvents: 0 },
+  ...extra,
+});
+
 // Pedido de referência (#N1G9W9IQ): Order/Fulfillment/ProviderOrder FAILED,
 // pagamento PAID, sem Delivery.
 const rejectedOrder = (): FakeOrder => ({
   status: "FAILED",
   payment: { status: "PAID" },
   fulfillment: { id: "ful-1", status: "FAILED", delivery: null },
-  providerOrders: [{ status: "FAILED" }],
+  providerOrders: [po("FAILED")],
+});
+
+// Pedido #9KJH34LN: envio ao fornecedor incerto (gateway 502), sem
+// externalOrderId e sem callback — Order/Fulfillment/ProviderOrder PROCESSING.
+const uncertainOrder = (): FakeOrder => ({
+  status: "PROCESSING",
+  payment: { status: "PAID" },
+  fulfillment: { id: "ful-1", status: "PROCESSING", delivery: null },
+  providerOrders: [po("PROCESSING", { lastError: "PROVIDER_RESULT_UNCERTAIN" })],
 });
 
 // Banco em memória com a semântica que importa aqui: findUnique devolve uma
@@ -156,7 +180,7 @@ describe("registerManualDelivery — sucesso no pedido de referência (rejeitado
   it("não altera o ProviderOrder, não chama fornecedor e não envia e-mail", async () => {
     const db = fakeDb(rejectedOrder());
     await registerManualDelivery(input, db.client);
-    expect(db.state.order?.providerOrders).toEqual([{ status: "FAILED" }]);
+    expect(db.state.order?.providerOrders).toEqual([po("FAILED")]);
     for (const fn of Object.values(db.tx.providerOrder)) expect(fn).not.toHaveBeenCalled();
     expect(external.resolveProviderAdapter).not.toHaveBeenCalled();
     expect(external.sendDeliveryEmail).not.toHaveBeenCalled();
@@ -206,8 +230,22 @@ describe("registerManualDelivery — sucesso no pedido de referência (rejeitado
   });
 
   it("ProviderOrder QUEUED (nunca enviado) não bloqueia", async () => {
-    const db = fakeDb({ ...rejectedOrder(), status: "PAID", providerOrders: [{ status: "QUEUED" }] });
+    const db = fakeDb({ ...rejectedOrder(), status: "PAID", providerOrders: [po("QUEUED")] });
     await expect(registerManualDelivery(input, db.client)).resolves.toEqual({ status: "DELIVERED" });
+  });
+
+  it("PROCESSING incerto sem evidência: entrega manual registrada, ProviderOrder intacto, sem fornecedor/e-mail", async () => {
+    const db = fakeDb(uncertainOrder());
+    const before = structuredClone(db.state.order!.providerOrders);
+    await expect(registerManualDelivery(input, db.client)).resolves.toEqual({ status: "DELIVERED" });
+    expect(db.state.order?.status).toBe("DELIVERED");
+    expect(db.state.order?.fulfillment).toMatchObject({ status: "FULFILLED", delivery: MANUAL_DELIVERY_PAYLOAD });
+    expect(db.state.order?.providerOrders).toEqual(before);
+    for (const fn of Object.values(db.tx.providerOrder)) expect(fn).not.toHaveBeenCalled();
+    expect(external.resolveProviderAdapter).not.toHaveBeenCalled();
+    expect(external.sendDeliveryEmail).not.toHaveBeenCalled();
+    expect(external.resendDeliveryEmail).not.toHaveBeenCalled();
+    expect(fetchSpy).not.toHaveBeenCalled();
   });
 });
 
@@ -217,8 +255,16 @@ describe("registerManualDelivery — cada pré-condição recusa sem gravar nada
     ["PAYMENT_NOT_PAID", { ...rejectedOrder(), payment: null }],
     ["ORDER_ALREADY_DELIVERED", { ...rejectedOrder(), status: "DELIVERED" }],
     ["ORDER_CANCELLED", { ...rejectedOrder(), status: "CANCELLED" }],
-    ["PROVIDER_ORDER_PROCESSING", { ...rejectedOrder(), status: "PROCESSING", providerOrders: [{ status: "PROCESSING" }] }],
-    ["PROVIDER_ORDER_COMPLETED", { ...rejectedOrder(), providerOrders: [{ status: "COMPLETED" }] }],
+    ["PROVIDER_ORDER_PROCESSING", { ...rejectedOrder(), status: "PROCESSING", providerOrders: [po("PROCESSING")] }],
+    ["PROVIDER_ORDER_COMPLETED", { ...rejectedOrder(), providerOrders: [po("COMPLETED")] }],
+    [
+      "PROVIDER_ORDER_PROCESSING",
+      { ...uncertainOrder(), providerOrders: [po("PROCESSING", { lastError: "PROVIDER_RESULT_UNCERTAIN", externalOrderId: "ext-1" })] },
+    ],
+    [
+      "PROVIDER_ORDER_PROCESSING",
+      { ...uncertainOrder(), providerOrders: [po("PROCESSING", { lastError: "PROVIDER_RESULT_UNCERTAIN", _count: { callbackEvents: 1 } })] },
+    ],
     [
       "DELIVERY_ALREADY_EXISTS",
       { ...rejectedOrder(), fulfillment: { id: "ful-1", status: "FAILED", delivery: { deliveryType: "TEXT", instructions: "x" } } },

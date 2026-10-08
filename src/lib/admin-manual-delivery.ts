@@ -44,7 +44,14 @@ export async function registerManualDelivery(
           status: true,
           payment: { select: { status: true } },
           fulfillment: { select: { id: true, status: true, delivery: true } },
-          providerOrders: { select: { status: true } },
+          providerOrders: {
+            select: {
+              status: true,
+              lastError: true,
+              externalOrderId: true,
+              _count: { select: { callbackEvents: true } },
+            },
+          },
         },
       });
       if (!order) throw new ManualDeliveryError("ORDER_NOT_FOUND");
@@ -52,7 +59,12 @@ export async function registerManualDelivery(
         paymentStatus: order.payment?.status,
         orderStatus: order.status,
         hasDelivery: Boolean(order.fulfillment?.delivery),
-        providerOrderStatuses: order.providerOrders.map((item) => item.status),
+        providerOrders: order.providerOrders.map((item) => ({
+          status: item.status,
+          lastError: item.lastError,
+          externalOrderId: item.externalOrderId,
+          callbackEventCount: item._count.callbackEvents,
+        })),
       });
       if (blocker) throw new ManualDeliveryError(blocker);
 

@@ -35,8 +35,13 @@ export default async function OrderDetailPage({
       paymentStatus: order.payment?.status,
       orderStatus: order.status,
       hasDelivery: Boolean(order.fulfillment?.delivery),
-      providerOrderStatuses:
-        order.fulfillment?.providerOrders.map((item) => item.status) ?? [],
+      providerOrders:
+        order.fulfillment?.providerOrders.map((item) => ({
+          status: item.status,
+          lastError: item.lastError,
+          externalOrderId: item.externalOrderId,
+          callbackEventCount: item.callbackEvents.length,
+        })) ?? [],
     }) === null;
   return (
     <>

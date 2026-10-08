@@ -32,12 +32,29 @@ export type ManualDeliveryBlocker =
   | "PROVIDER_ORDER_COMPLETED"
   | "DELIVERY_ALREADY_EXISTS";
 
+export type ManualDeliveryProviderOrder = {
+  status: string;
+  lastError: string | null;
+  externalOrderId: string | null;
+  callbackEventCount: number;
+};
+
 export type ManualDeliveryState = {
   paymentStatus?: string | null;
   orderStatus: string;
   hasDelivery: boolean;
-  providerOrderStatuses: string[];
+  providerOrders: ManualDeliveryProviderOrder[];
 };
+
+// Envio incerto (timeout/erro do gateway) sem nenhuma evidência de que o
+// fornecedor aceitou: sem externalOrderId e sem callback. Único PROCESSING
+// que não bloqueia — um callback tardio encontra a Delivery e não sobrescreve
+// (heartunlocks-callback.ts).
+const uncertainWithoutEvidence = (item: ManualDeliveryProviderOrder) =>
+  item.status === "PROCESSING" &&
+  item.lastError === "PROVIDER_RESULT_UNCERTAIN" &&
+  !item.externalOrderId &&
+  item.callbackEventCount === 0;
 
 export function manualDeliveryBlocker(
   state: ManualDeliveryState,
@@ -47,9 +64,13 @@ export function manualDeliveryBlocker(
   if (state.orderStatus === "CANCELLED") return "ORDER_CANCELLED";
   // PROCESSING: o fornecedor ainda pode concluir sozinho (callback/reconciliação)
   // — registrar entrega manual agora arriscaria entregar duas vezes.
-  if (state.providerOrderStatuses.includes("PROCESSING"))
+  if (
+    state.providerOrders.some(
+      (item) => item.status === "PROCESSING" && !uncertainWithoutEvidence(item),
+    )
+  )
     return "PROVIDER_ORDER_PROCESSING";
-  if (state.providerOrderStatuses.includes("COMPLETED"))
+  if (state.providerOrders.some((item) => item.status === "COMPLETED"))
     return "PROVIDER_ORDER_COMPLETED";
   if (state.hasDelivery) return "DELIVERY_ALREADY_EXISTS";
   return null;
