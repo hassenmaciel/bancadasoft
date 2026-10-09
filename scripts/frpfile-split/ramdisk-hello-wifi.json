@@ -1,0 +1,43 @@
+{
+  "oldSlug": "frpfile-ramdisk-hello-wifi",
+  "specs": [
+    {
+      "variantCode": "hello-baseband-ios-15-17",
+      "externalId": "222",
+      "slug": "frpfile-ramdisk-hello-baseband-ios-15-17",
+      "name": "FRPFILE Ramdisk — Hello Screen/Baseband iOS 15 a 17",
+      "description": "Bypass Hello Screen para aparelhos com Baseband danificado, iOS 15 a 17",
+      "fieldLabel": "ECID",
+      "extraSearch": "baseband danificado ios 15 16 17",
+      "expectedDeliveryType": "TEXT",
+      "fieldKeys": ["ecid"],
+      "sortOrder": 143,
+      "allowInactiveVariant": true
+    },
+    {
+      "variantCode": "wifi-ios-12-18",
+      "externalId": "224",
+      "slug": "frpfile-wifi-hello-ios-12-18",
+      "name": "FRPFILE Wi-Fi — Hello Screen iOS 12 a 18 sem sinal",
+      "description": "Bypass Hello Screen via Wi-Fi com notificações, iOS 12 a 18, para aparelhos sem sinal",
+      "fieldLabel": "ECID",
+      "extraSearch": "wifi ios 12 13 14 15 16 17 18 sem sinal notificações",
+      "expectedDeliveryType": "TEXT",
+      "fieldKeys": ["ecid"],
+      "sortOrder": 142,
+      "allowInactiveVariant": true
+    },
+    {
+      "variantCode": "a12-a13-sem-sinal",
+      "externalId": "4493",
+      "slug": "frpfile-ramdisk-a12-a13-sem-sinal",
+      "name": "FRPFILE Ramdisk A12/A13 — Hello Screen sem sinal",
+      "description": "Bypass Hello Screen em A12 e A13, para aparelhos sem sinal",
+      "fieldLabel": "ECID",
+      "extraSearch": "a12 a13 sem sinal",
+      "expectedDeliveryType": "TEXT",
+      "fieldKeys": ["ecid"],
+      "sortOrder": 141
+    }
+  ]
+}

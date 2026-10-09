@@ -1,11 +1,17 @@
-// Separação das 2 fichas FRPFILE publicadas (com variantes) em 5 Products
+// Separação de fichas FRPFILE publicadas (com variantes) em Products
 // públicos, um por serviço, com vínculo DIRETO ao ProviderProduct
 // (ProviderProduct.productId), no mesmo padrão do UnlockTool
-// (scripts/implement-unlocktool-license-split.mjs):
+// (scripts/implement-unlocktool-license-split.mjs).
+//
+// Sem --config, o plano é o original (já aplicado; hoje um dry-run dele é
+// recusado porque os slugs já existem):
 //   frpfile-ramdisk-passcode-disabled -> #223, #4400, #4401
 //   frpfile-activator-a12-plus        -> #3126, #3128
+// Com --config <arquivo.json>, o plano vem do arquivo (ver
+// scripts/frpfile-split/*.json): { "oldSlug": "...", "specs": [...] }; cada
+// spec herda oldSlug, salvo se trouxer o seu.
 //
-// Os 5 Products nascem em DRAFT e available=false: publicar e desligar as
+// Os Products nascem em DRAFT e available=false: publicar e desligar as
 // fichas antigas é um passo posterior, manual, pelo Admin.
 //
 // Diferente do UnlockTool, as fichas antigas TÊM pedidos reais (OrderItems
@@ -18,11 +24,13 @@
 //
 // Uso:
 //   DRY-RUN (padrão, só SELECTs):
-//     node --env-file=.env --experimental-strip-types scripts/implement-frpfile-split.mjs
+//     node --env-file=.env --experimental-strip-types scripts/implement-frpfile-split.mjs \
+//       [--config scripts/frpfile-split/<ficha>.json]
 //   ESCRITA (somente com aprovação explícita; 1 transação):
 //     CONFIRM_FRPFILE_SPLIT=SIM node --env-file=.env --experimental-strip-types \
-//       scripts/implement-frpfile-split.mjs --apply
+//       scripts/implement-frpfile-split.mjs [--config ...] --apply
 
+import { readFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 import { PrismaClient } from "@prisma/client";
 import { resolveProviderProduct } from "../src/lib/providers/selection.ts";
@@ -104,8 +112,48 @@ export const SPECS = [
   },
 ];
 
-export const PLAN_SLUGS = SPECS.map((spec) => spec.slug);
-export const PLAN_EXTERNAL_IDS = SPECS.map((spec) => spec.externalId);
+const REQUIRED_SPEC_KEYS = ["oldSlug", "variantCode", "externalId", "slug", "name", "description", "fieldLabel", "expectedDeliveryType", "fieldKeys", "sortOrder"];
+
+// Plano = specs + listas derivadas. Valida forma e unicidade antes de qualquer SELECT.
+export function buildPlan(specs, defaultOldSlug) {
+  if (!Array.isArray(specs) || !specs.length) throw new Error("config sem specs");
+  const full = specs.map((spec) => ({ extraSearch: "", allowInactiveVariant: false, ...spec, oldSlug: spec.oldSlug ?? defaultOldSlug }));
+  for (const spec of full) {
+    const missing = REQUIRED_SPEC_KEYS.filter((key) => spec[key] === undefined || spec[key] === null || spec[key] === "");
+    if (missing.length) throw new Error(`spec ${spec.externalId ?? "?"}: faltando ${missing.join(", ")}`);
+    if (!Array.isArray(spec.fieldKeys) || !Number.isInteger(spec.sortOrder))
+      throw new Error(`spec ${spec.externalId}: fieldKeys deve ser lista e sortOrder inteiro`);
+  }
+  for (const key of ["slug", "externalId"]) {
+    const values = full.map((spec) => spec[key]);
+    if (new Set(values).size !== values.length) throw new Error(`${key} repetido nas specs`);
+  }
+  return {
+    specs: full,
+    oldSlugs: [...new Set(full.map((spec) => spec.oldSlug))],
+    slugs: full.map((spec) => spec.slug),
+    externalIds: full.map((spec) => spec.externalId),
+  };
+}
+
+export const DEFAULT_PLAN = buildPlan(SPECS);
+export const PLAN_SLUGS = DEFAULT_PLAN.slugs;
+export const PLAN_EXTERNAL_IDS = DEFAULT_PLAN.externalIds;
+
+export function configPathFrom(argv) {
+  const index = argv.findIndex((arg) => arg === "--config" || arg.startsWith("--config="));
+  if (index === -1) return null;
+  const value = argv[index].startsWith("--config=") ? argv[index].slice("--config=".length) : argv[index + 1];
+  if (!value || value.startsWith("--")) throw new Error("--config exige o caminho do arquivo JSON. Nada foi alterado.");
+  return value;
+}
+
+export function loadPlan(argv) {
+  const path = configPathFrom(argv);
+  if (!path) return DEFAULT_PLAN;
+  const config = JSON.parse(readFileSync(path, "utf8"));
+  return buildPlan(config.specs, config.oldSlug);
+}
 
 export const longDescriptionFor = (spec) =>
   `${spec.description}. Você informa o ${spec.fieldLabel} do aparelho no checkout e o serviço é processado automaticamente após o pagamento confirmado. Confira o ${spec.fieldLabel} com atenção antes de pagar.`;
@@ -171,13 +219,15 @@ export function providerProductProblems(pp, spec) {
 }
 
 // A variante de origem precisa existir na ficha antiga, ativa, com preço,
-// apontando para o ProviderProduct da especificação.
+// apontando para o ProviderProduct da especificação. Variante inativa só passa
+// com allowInactiveVariant explícito na spec: o Product novo nasce DRAFT de
+// qualquer forma e o snapshot continua travando os pedidos da variante.
 export function sourceVariantProblems(old, spec, pp) {
   if (!old) return [`ficha ${spec.oldSlug} não encontrada`];
   const variant = old.variants.find((v) => v.code === spec.variantCode);
   if (!variant) return [`variante ${spec.variantCode} não encontrada`];
   const problems = [];
-  if (!variant.active) problems.push("variante inativa");
+  if (!variant.active && !spec.allowInactiveVariant) problems.push("variante inativa");
   if (!(variant.priceCents > 0)) problems.push(`priceCents=${variant.priceCents}`);
   if (pp && variant.providerProductId !== pp.id) problems.push("variante aponta para outro ProviderProduct");
   return problems;
@@ -212,15 +262,15 @@ export function snapshotDiff(before, after) {
   return a === b ? null : { before, after };
 }
 
-export function revertSql() {
-  const slugs = PLAN_SLUGS.map((slug) => `'${slug}'`).join(", ");
-  const ids = PLAN_EXTERNAL_IDS.map((id) => `'${id}'`).join(", ");
+export function revertSql(plan = DEFAULT_PLAN) {
+  const slugs = plan.slugs.map((slug) => `'${slug}'`).join(", ");
+  const ids = plan.externalIds.map((id) => `'${id}'`).join(", ");
   return [
     "-- 1) desvincular (obrigatório antes de apagar: FK ProviderProduct.productId é RESTRICT)",
     `UPDATE "ProviderProduct" SET "productId" = NULL`,
     `  WHERE "externalProductId" IN (${ids})`,
     `    AND "productId" IN (SELECT id FROM "Product" WHERE slug IN (${slugs}));`,
-    "-- 2) apagar os 5 Products criados (somente DRAFT e sem nenhum item de pedido)",
+    `-- 2) apagar os ${plan.slugs.length} Products criados (somente DRAFT e sem nenhum item de pedido)`,
     `DELETE FROM "Product" WHERE slug IN (${slugs}) AND status = 'DRAFT'`,
     `  AND NOT EXISTS (SELECT 1 FROM "OrderItem" oi WHERE oi."productId" = "Product".id);`,
     "-- Se algum Product já foi publicado ou vendido, NÃO apague: pause (status PAUSED, available=false) pelo Admin.",
@@ -233,10 +283,10 @@ export function revertSql() {
 const line = (text = "") => console.log(text);
 const yes = (ok) => (ok ? "OK" : "FALHOU");
 
-async function loadContext(db) {
+async function loadContext(db, plan) {
   const [olds, existingSlugs, providerProducts, settings] = await Promise.all([
     db.product.findMany({
-      where: { slug: { in: OLD_SLUGS } },
+      where: { slug: { in: plan.oldSlugs } },
       orderBy: { slug: "asc" },
       include: {
         brand: { select: { name: true, active: true } },
@@ -246,28 +296,28 @@ async function loadContext(db) {
         _count: { select: { orderItems: true } },
       },
     }),
-    db.product.findMany({ where: { slug: { in: PLAN_SLUGS } }, select: { slug: true } }),
+    db.product.findMany({ where: { slug: { in: plan.slugs } }, select: { slug: true } }),
     db.providerProduct.findMany({
-      where: { externalProductId: { in: PLAN_EXTERNAL_IDS }, provider: { code: "heartunlocks" } },
+      where: { externalProductId: { in: plan.externalIds }, provider: { code: "heartunlocks" } },
       include: { provider: { select: { id: true, code: true, active: true } } },
     }),
     db.siteSettings.findUnique({ where: { id: "default" }, select: { providerMode: true } }),
   ]);
   const oldBySlug = new Map(olds.map((o) => [o.slug, o]));
   const ppByExternal = new Map(providerProducts.map((pp) => [pp.externalProductId, pp]));
-  const plan = SPECS.map((spec) => {
+  const items = plan.specs.map((spec) => {
     const old = oldBySlug.get(spec.oldSlug);
     const pp = ppByExternal.get(spec.externalId);
     const variant = old?.variants.find((v) => v.code === spec.variantCode);
     const problems = [...sourceVariantProblems(old, spec, pp), ...providerProductProblems(pp, spec)];
     return { spec, old, pp, variant, problems, data: old && variant ? buildProductData(spec, old, variant) : null };
   });
-  return { olds, existingSlugs, plan, providerMode: settings?.providerMode ?? "TEST" };
+  return { olds, existingSlugs, plan: items, oldSlugs: plan.oldSlugs, providerMode: settings?.providerMode ?? "TEST" };
 }
 
-function preconditionProblems({ olds, existingSlugs, plan, providerMode }) {
+function preconditionProblems({ olds, existingSlugs, plan, oldSlugs, providerMode }) {
   const problems = [];
-  if (olds.length !== OLD_SLUGS.length) problems.push("ficha antiga ausente");
+  if (olds.length !== oldSlugs.length) problems.push("ficha antiga ausente");
   if (existingSlugs.length) problems.push(`slug(s) já existe(m): ${existingSlugs.map((s) => s.slug).join(", ")}`);
   for (const old of olds) {
     if (!old.brand?.active || !old.category?.active) problems.push(`${old.slug}: brand/category inativa`);
@@ -284,8 +334,8 @@ function preconditionProblems({ olds, existingSlugs, plan, providerMode }) {
   return problems;
 }
 
-async function dryRun(db) {
-  const ctx = await loadContext(db);
+async function dryRun(db, plan) {
+  const ctx = await loadContext(db, plan);
   line("MODE: DRY-RUN (somente SELECTs; nenhuma escrita)");
   line(`providerMode do site: ${ctx.providerMode}`);
 
@@ -304,11 +354,13 @@ async function dryRun(db) {
     line(`     nome do fornecedor (só admin): "${pp.label}"`);
     line(`     campos visíveis=[${visibleFieldKeys(pp.fieldSchema)}] entrega=${pp.expectedDeliveryType} custo=${pp.providerCostCents} ${pp.currency}`);
     line(`     continua também como variante ${item.spec.variantCode} da ficha antiga (providerProductId intacto)`);
+    if (item.variant && !item.variant.active && item.spec.allowInactiveVariant)
+      line("     variante de origem INATIVA — liberada por allowInactiveVariant (Product nasce DRAFT)");
   }
 
   line("\n=== (3) VERIFICAÇÕES ===");
   const problems = preconditionProblems(ctx);
-  line(`  [${yes(!ctx.existingSlugs.length)}] slugs livres: ${PLAN_SLUGS.join(", ")}`);
+  line(`  [${yes(!ctx.existingSlugs.length)}] slugs livres: ${plan.slugs.join(", ")}`);
   for (const old of ctx.olds) line(`  [${yes(old.brand?.active && old.category?.active)}] ${old.slug}: brand ${old.brand?.name} / category ${old.category?.name}`);
   for (const item of ctx.plan) {
     line(`  [${yes(!item.problems.length)}] #${item.spec.externalId} elegível e variante de origem ok${item.problems.length ? ` — ${item.problems.join("; ")}` : ""}`);
@@ -326,17 +378,17 @@ async function dryRun(db) {
   line("  O script não escreve em nenhuma dessas tabelas nem nas variantes/fichas antigas.");
 
   line("\n=== (5) COMO REVERTER (após --apply) ===");
-  line(revertSql());
+  line(revertSql(plan));
 
   line(`\nRESULTADO: ${problems.length ? `HÁ VERIFICAÇÕES FALHAS — --apply seria recusado:\n  ${problems.join("\n  ")}` : "todas as verificações OK — --apply seria aceito."}`);
   if (problems.length) process.exitCode = 2;
 }
 
-async function apply(db) {
+async function apply(db, plan) {
   line("MODE: APPLY (1 transação)");
   const created = await db.$transaction(
     async (tx) => {
-      const ctx = await loadContext(tx);
+      const ctx = await loadContext(tx, plan);
       const problems = preconditionProblems(ctx);
       if (problems.length) throw new Error(`ABORTADO: ${problems.join("; ")}`);
       const before = await orderSnapshot(tx, ctx.olds);
@@ -360,7 +412,7 @@ async function apply(db) {
         if (resolution.status !== "SELECTED" || resolution.providerProduct.id !== row.providerProductId)
           throw new Error(`ABORTADO: resolveProviderProduct(${row.slug}) = ${resolution.status}`);
       }
-      const after = await orderSnapshot(tx, (await loadContext(tx)).olds);
+      const after = await orderSnapshot(tx, (await loadContext(tx, plan)).olds);
       const diff = snapshotDiff(before, after);
       if (diff) throw new Error(`ABORTADO: fichas/variantes/pedidos antigos mudaram: ${JSON.stringify(diff)}`);
       return rows;
@@ -369,15 +421,17 @@ async function apply(db) {
   );
   for (const row of created) line(`CRIADO ${row.slug} id=${row.id} <- ProviderProduct #${row.externalId} (${row.providerProductId})`);
   line("\nPara reverter:");
-  line(revertSql());
+  line(revertSql(plan));
 }
 
 async function main() {
-  const mode = resolveMode(process.argv.slice(2), process.env);
+  const argv = process.argv.slice(2);
+  const mode = resolveMode(argv, process.env);
+  const plan = loadPlan(argv);
   const db = new PrismaClient();
   try {
-    if (mode === "APPLY") await apply(db);
-    else await dryRun(db);
+    if (mode === "APPLY") await apply(db, plan);
+    else await dryRun(db, plan);
   } finally {
     await db.$disconnect();
   }
