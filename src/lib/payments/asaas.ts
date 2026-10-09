@@ -15,6 +15,7 @@ import { PaymentProviderNotConnectedError, PixPaymentReconciliationRequiredError
 export const ASAAS_API_BASE_URL = ASAAS_SANDBOX_BASE_URL;
 type CustomerResponse = { id?: string };
 type PaymentResponse = { id?: string; status?: string };
+export type AsaasPaymentSnapshot = { id: string; status: string; value: number; externalReference: string | null };
 type PixResponse = {
   payload?: string;
   encodedImage?: string;
@@ -129,6 +130,21 @@ export class AsaasPaymentProvider implements PaymentProvider {
     return {
       externalPaymentId: payment.id,
       status: mapAsaasStatus(payment.status),
+    };
+  }
+  // Somente leitura (GET /payments/{id}): devolve o status BRUTO do Asaas, sem
+  // mapear, para a reconciliação manual decidir com os campos originais.
+  async getPayment(externalPaymentId: string): Promise<AsaasPaymentSnapshot> {
+    const payment = await this.configured().request<{ id?: unknown; status?: unknown; value?: unknown; externalReference?: unknown }>(
+      `/payments/${encodeURIComponent(externalPaymentId)}`,
+    );
+    if (typeof payment.id !== "string" || typeof payment.status !== "string" || typeof payment.value !== "number" || !Number.isFinite(payment.value))
+      throw new Error("ASAAS_INVALID_PAYMENT_RESPONSE");
+    return {
+      id: payment.id,
+      status: payment.status,
+      value: payment.value,
+      externalReference: typeof payment.externalReference === "string" ? payment.externalReference : null,
     };
   }
   validateWebhook(payload: unknown): boolean {

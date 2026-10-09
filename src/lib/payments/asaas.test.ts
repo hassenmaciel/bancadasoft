@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import { AsaasClient, AsaasClientError, ASAAS_PRODUCTION_BASE_URL, ASAAS_SANDBOX_BASE_URL } from "./asaas-client";
 import { AsaasPaymentProvider, createConfiguredAsaasProvider, mapAsaasEvent, mapAsaasStatus } from "./asaas";
 import { validateAsaasWebhookToken } from "./asaas-webhook";
-import { PixPaymentReconciliationRequiredError } from "./types";
+import { PaymentProviderNotConnectedError, PixPaymentReconciliationRequiredError } from "./types";
 
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
 const input = { orderId: "order-test", amountCents: 2990, expiresAt: new Date("2026-09-15T12:00:00Z"), customer: { internalId: "user-test", name: "Cliente Sandbox", email: "sandbox@example.test", cpfCnpj: "52998224725", mobilePhone:"5511999999999" } };
@@ -147,5 +147,28 @@ describe("regras de segurança e status Asaas", () => {
     expect(mapAsaasEvent("PAYMENT_CONFIRMED")).toBeNull();
     expect(mapAsaasStatus("RECEIVED")).toBe(PaymentStatus.PAID);
     expect(mapAsaasStatus("CONFIRMED")).toBe(PaymentStatus.PENDING);
+  });
+});
+
+describe("AsaasPaymentProvider.getPayment (somente leitura)", () => {
+  it("faz só GET /payments/{id} e devolve id, status bruto, value e externalReference", async () => {
+    const fetcher = vi.fn<typeof fetch>(async () => json({ id: "pay_1", status: "RECEIVED", value: 32, externalReference: "tok-1", customer: "cus_x", billingType: "PIX" }));
+    const provider = new AsaasPaymentProvider(new AsaasClient("isolated-test-key", { fetcher }));
+    await expect(provider.getPayment("pay_1")).resolves.toEqual({ id: "pay_1", status: "RECEIVED", value: 32, externalReference: "tok-1" });
+    expect(fetcher).toHaveBeenCalledOnce();
+    const [url, request] = fetcher.mock.calls[0];
+    expect(url).toBe(`${ASAAS_SANDBOX_BASE_URL}/payments/pay_1`);
+    expect(request!.method).toBeUndefined();
+  });
+
+  it("externalReference ausente vira null; resposta sem value numérico é recusada", async () => {
+    const ok = new AsaasPaymentProvider(new AsaasClient("isolated-test-key", { fetcher: vi.fn(async () => json({ id: "pay_1", status: "PENDING", value: 12.5 })) }));
+    await expect(ok.getPayment("pay_1")).resolves.toMatchObject({ externalReference: null, value: 12.5 });
+    const bad = new AsaasPaymentProvider(new AsaasClient("isolated-test-key", { fetcher: vi.fn(async () => json({ id: "pay_1", status: "RECEIVED", value: "32" })) }));
+    await expect(bad.getPayment("pay_1")).rejects.toThrowError("ASAAS_INVALID_PAYMENT_RESPONSE");
+  });
+
+  it("sem chave configurada lança PaymentProviderNotConnectedError, sem rede", async () => {
+    await expect(new AsaasPaymentProvider().getPayment("pay_1")).rejects.toBeInstanceOf(PaymentProviderNotConnectedError);
   });
 });

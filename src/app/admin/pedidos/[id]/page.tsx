@@ -3,10 +3,12 @@ import { notFound } from "next/navigation";
 import { getAdminOrder } from "@/lib/admin-orders";
 import RetryButton from "./retry-button";
 import ReconcilePixButton from "./reconcile-pix-button";
+import ReconcilePaymentButton from "./reconcile-payment-button";
 import RevealDelivery from "./reveal-delivery";
 import ResendAccessButton from "./resend-access-button";
 import ManualDeliveryButton from "./manual-delivery-button";
 import { manualDeliveryBlocker } from "@/lib/manual-delivery-rules";
+import { paymentReconcileBlocker } from "@/lib/payment-reconcile-rules";
 
 export const dynamic = "force-dynamic";
 const money = (value: number, currency = "BRL") =>
@@ -43,6 +45,8 @@ export default async function OrderDetailPage({
           callbackEventCount: item.callbackEvents.length,
         })) ?? [],
     }) === null;
+  const canReconcilePayment =
+    paymentReconcileBlocker({ orderStatus: order.status, payment: order.payment }) === null;
   return (
     <>
       <header className="admin-heading">
@@ -140,6 +144,9 @@ export default async function OrderDetailPage({
                 !order.payment.pixCode && (
                   <ReconcilePixButton orderId={order.id} />
                 )}
+              {canReconcilePayment && (
+                <ReconcilePaymentButton orderId={order.id} />
+              )}
               <h3>Eventos de pagamento</h3>
               {order.payment.events.length ? (
                 <ul className="event-list">

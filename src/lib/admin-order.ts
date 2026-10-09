@@ -93,6 +93,7 @@ export type AdminOrderDTO = {
     status: string;
     provider: string;
     providerReference: string;
+    externalPaymentId: string | null;
     pixCode: string;
     expiresAt: string;
     createdAt: string;
@@ -199,6 +200,7 @@ export const adminOrderDto = (order: AdminOrderRecord): AdminOrderDTO => ({
         status: order.payment.status,
         provider: order.payment.provider,
         providerReference: order.payment.providerReference,
+        externalPaymentId: order.payment.externalPaymentId,
         pixCode: order.payment.pixCode,
         expiresAt: order.payment.expiresAt.toISOString(),
         createdAt: order.payment.createdAt.toISOString(),
