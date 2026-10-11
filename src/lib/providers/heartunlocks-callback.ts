@@ -12,6 +12,11 @@ import {
   LICENSE_SUCCESS_MANUAL_REVIEW_NOTE,
   licenseConfirmationDelivery,
 } from "../unlocktool-license";
+import {
+  acceptsConfirmationSuccess,
+  CONFIRMATION_SUCCESS_MANUAL_REVIEW_NOTE,
+  confirmationDelivery,
+} from "../confirmation-delivery";
 
 export type HeartUnlocksCallback = {
   reference_id: string;
@@ -188,10 +193,12 @@ export async function processHeartUnlocksCallback(input: HeartUnlocksCallback) {
                   items: {
                     take: 1,
                     select: {
+                      quantity: true,
                       product: {
                         select: {
                           name: true,
                           type: true,
+                          acceptsSuccessWithoutText: true,
                           brand: { select: { name: true } },
                         },
                       },
@@ -249,11 +256,14 @@ export async function processHeartUnlocksCallback(input: HeartUnlocksCallback) {
             callbackProduct,
             current.providerProduct?.expectedDeliveryType,
           );
+          // Produto de confirmação (opt-in no Product, ex.: créditos Phoenix).
+          const confirmationWithoutText =
+            !licenseWithoutText && acceptsConfirmationSuccess(callbackProduct);
           if (normalized === "success" && replay) {
             const product = callbackProduct;
             if (!product) throw new Error("PROVIDER_PRODUCT_UNAVAILABLE");
             const delivery = parseProviderDelivery(replay, product, current.providerProduct?.expectedDeliveryType);
-            if (!delivery && !licenseWithoutText) throw new Error("REPLAY_REQUIRES_ACTION");
+            if (!delivery && !licenseWithoutText && !confirmationWithoutText) throw new Error("REPLAY_REQUIRES_ACTION");
             if (delivery)
               return completeDelivered(tx, current, input, eventKey, delivery);
           }
@@ -265,6 +275,15 @@ export async function processHeartUnlocksCallback(input: HeartUnlocksCallback) {
               eventKey,
               licenseConfirmationDelivery(callbackProduct),
               LICENSE_SUCCESS_MANUAL_REVIEW_NOTE,
+            );
+          if (normalized === "success" && confirmationWithoutText && callbackProduct)
+            return completeDelivered(
+              tx,
+              current,
+              input,
+              eventKey,
+              confirmationDelivery(callbackProduct, current.order.items[0]?.quantity),
+              CONFIRMATION_SUCCESS_MANUAL_REVIEW_NOTE,
             );
           if (normalized === "success") {
             await tx.providerOrder.update({

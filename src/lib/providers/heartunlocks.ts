@@ -15,6 +15,13 @@ export { ProviderOrderUncertainError } from "./types";
 // plataforma, bem acima disto.
 export const HEARTUNLOCKS_GATEWAY_TIMEOUT_MS = 25000;
 
+// Teto de segurança por pedido; o mínimo/máximo comercial vem de
+// Product.minQuantity/maxQuantity. Mesmo teto do gateway
+// (gateway/heartunlocks/order-payload.mjs: MAX_ORDER_QUANTITY).
+export const HEARTUNLOCKS_MAX_ORDER_QUANTITY = 100;
+export const isValidHeartUnlocksQuantity = (quantity: unknown): quantity is number =>
+  typeof quantity === "number" && Number.isInteger(quantity) && quantity >= 1 && quantity <= HEARTUNLOCKS_MAX_ORDER_QUANTITY;
+
 type GatewayFetcher=(input:string,init?:RequestInit)=>Promise<Response>;
 export class HeartUnlocksProviderAdapter implements ProviderAdapter {
   readonly code=HEARTUNLOCKS_CODE;
@@ -26,7 +33,7 @@ export class HeartUnlocksProviderAdapter implements ProviderAdapter {
   async checkConnection():Promise<ProviderHealth>{try{const result=await this.request<{ok:boolean}>("/health");return{connected:result.ok,message:result.ok?"Gateway disponível":"Gateway indisponível"}}catch{return{connected:false,message:"Gateway indisponível"}}}
   async listProducts():Promise<ProviderCatalogItem[]>{return parseHeartUnlocksCatalogResponse(await this.request<unknown>("/products"))}
   async getBalance():Promise<ProviderBalance>{throw new Error("HEARTUNLOCKS_BALANCE_NOT_ENABLED")}
-  async createOrder(input:ProviderOrderInput):Promise<ProviderOrderResult>{const quantity=input.payload.Quantity;const fields=input.payload.fields??{};if(quantity!==1)throw new Error("HEARTUNLOCKS_INVALID_QUANTITY");if(!fields||typeof fields!=="object"||Array.isArray(fields))throw new Error("HEARTUNLOCKS_INVALID_ORDER_FIELDS");try{const result=await this.request<{externalOrderId?:string;referenceId:string;status:"PROCESSING"|"FAILED";error?:string}>("/orders",{method:"POST",body:JSON.stringify({productUuid:input.providerProductId,referenceId:input.reference,quantity,fields})});return{externalOrderId:result.externalOrderId,status:result.status,reference:result.referenceId,error:result.error}}catch(error){if(error instanceof Error&&/^HEARTUNLOCKS_GATEWAY_4\d\d$/.test(error.message))throw error;console.warn("[heartunlocks] createOrder incerto",{reference:input.reference,cause:error instanceof ProviderOrderUncertainError?"APP_TIMEOUT":error instanceof Error?`${error.name}:${error.message}`.slice(0,120):"UNKNOWN"});if(error instanceof ProviderOrderUncertainError)throw error;throw new ProviderOrderUncertainError()}}
+  async createOrder(input:ProviderOrderInput):Promise<ProviderOrderResult>{const quantity=input.payload.Quantity;const fields=input.payload.fields??{};if(!isValidHeartUnlocksQuantity(quantity))throw new Error("HEARTUNLOCKS_INVALID_QUANTITY");if(!fields||typeof fields!=="object"||Array.isArray(fields))throw new Error("HEARTUNLOCKS_INVALID_ORDER_FIELDS");try{const result=await this.request<{externalOrderId?:string;referenceId:string;status:"PROCESSING"|"FAILED";error?:string}>("/orders",{method:"POST",body:JSON.stringify({productUuid:input.providerProductId,referenceId:input.reference,quantity,fields})});return{externalOrderId:result.externalOrderId,status:result.status,reference:result.referenceId,error:result.error}}catch(error){if(error instanceof Error&&/^HEARTUNLOCKS_GATEWAY_4\d\d$/.test(error.message))throw error;console.warn("[heartunlocks] createOrder incerto",{reference:input.reference,cause:error instanceof ProviderOrderUncertainError?"APP_TIMEOUT":error instanceof Error?`${error.name}:${error.message}`.slice(0,120):"UNKNOWN"});if(error instanceof ProviderOrderUncertainError)throw error;throw new ProviderOrderUncertainError()}}
   async getOrderStatus():Promise<ProviderOrderResult>{throw new Error("HEARTUNLOCKS_STATUS_CONTRACT_NOT_ENABLED")}
 }
 

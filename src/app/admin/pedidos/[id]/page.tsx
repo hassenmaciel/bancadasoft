@@ -9,6 +9,7 @@ import ResendAccessButton from "./resend-access-button";
 import ManualDeliveryButton from "./manual-delivery-button";
 import { manualDeliveryBlocker } from "@/lib/manual-delivery-rules";
 import { paymentReconcileBlocker } from "@/lib/payment-reconcile-rules";
+import { quantityPriceLabel } from "@/lib/checkout-quantity";
 
 export const dynamic = "force-dynamic";
 const money = (value: number, currency = "BRL") =>
@@ -114,7 +115,7 @@ export default async function OrderDetailPage({
                   </small>
                 ))}
               </div>
-              <span>{money(item.unitPriceCents)}</span>
+              <span>{quantityPriceLabel(item.quantity, money(item.unitPriceCents))}</span>
             </article>
           ))}
         </section>

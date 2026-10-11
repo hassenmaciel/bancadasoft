@@ -19,4 +19,6 @@ export const checkoutSchema = z.object({
   cpfCnpj: z.string().refine(isValidCpf).optional(),
   deliveryAccessToken: z.string().min(32).max(200),
   providerFields: z.record(z.string(), z.string().max(500)).optional().default({}),
+  // Ausente = 1. O intervalo permitido por produto é conferido em createOrder.
+  quantity: z.coerce.number().int().min(1).max(1000).optional(),
 });

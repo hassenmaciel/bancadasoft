@@ -32,6 +32,7 @@ export function checkoutErrorMessage(
   status: number,
   payload: CheckoutApiResponse | null,
 ) {
+  if (payload?.code === "INVALID_QUANTITY" && payload.error) return payload.error;
   if (status === 400 || payload?.code === "INVALID_CHECKOUT" || payload?.code === "INVALID_CUSTOMER_DATA")
     return "Revise os dados informados e tente novamente.";
   if (payload?.code === "MISSING_CUSTOMER_FIELDS")

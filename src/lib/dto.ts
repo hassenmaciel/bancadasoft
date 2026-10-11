@@ -12,6 +12,7 @@ import type { DynamicField } from "./providers/automation";
 import { publicVariantFields } from "./product-variants";
 import { isProductionProviderCode } from "./providers/selection";
 import { resolveTierPrice, resolveVisiblePrice, type PriceViewer } from "./commercial-pricing";
+import { quantityRange } from "./checkout-quantity";
 
 export type CategoryDTO = Pick<Category, "id" | "slug" | "name">;
 export type BrandDTO = Pick<Brand, "id" | "slug" | "name">;
@@ -40,6 +41,9 @@ export type ProductDTO = Pick<
   brand: BrandDTO | null;
   checkoutFields: DynamicField[];
   variants: ProductVariantDTO[];
+  // Intervalo de quantidade por pedido; 1/1 = sem seletor (ver checkout-quantity.ts).
+  minQuantity: number;
+  maxQuantity: number;
 };
 
 export type ProductVariantDTO = {
@@ -54,6 +58,7 @@ export type OrderItemDTO = {
   product: ProductDTO;
   variant: Pick<ProductVariantDTO, "id" | "name"> | null;
   unitPriceCents: number;
+  quantity: number;
 };
 export type PaymentDTO = Pick<Payment, "status" | "amountCents"> & {
   externalPaymentId: string | null;
@@ -162,6 +167,8 @@ export const productDto = (product: ProductWithCategory, viewer: PriceViewer = n
   brand: product.brand ? { id: product.brand.id, slug: product.brand.slug, name: product.brand.name } : null,
   checkoutFields: publicCheckoutFields(product),
   variants,
+  minQuantity: quantityRange(product).min,
+  maxQuantity: quantityRange(product).max,
   };
 };
 
@@ -192,6 +199,7 @@ export const orderDto = (order: any, options: { includeDelivery?: boolean } = {}
     product: productDto(item.product),
     variant: item.productVariant ? { id: item.productVariant.id, name: item.productVariant.name } : null,
     unitPriceCents: item.unitPriceCents,
+    quantity: item.quantity ?? 1,
   })),
   payment: order.payment
     ? {

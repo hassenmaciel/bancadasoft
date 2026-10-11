@@ -38,6 +38,7 @@ import {
   normalizeWhatsapp,
 } from "@/lib/checkout-validation";
 import { assertBalanceTopupAllowed, assertCheckoutPrice } from "@/lib/commercial-pricing";
+import { assertCheckoutQuantity, orderTotalCents } from "@/lib/checkout-quantity";
 import { pixExpiresAt } from "@/lib/payments/pix-expiry";
 import { expirePixIfDue } from "@/lib/payment-expiry";
 import { TERMINAL_ORDER_STATUSES } from "@/lib/order-polling";
@@ -204,6 +205,7 @@ export async function createOrder(input: {
   cpfCnpj?: string;
   deliveryAccessToken: string;
   providerFields?: Record<string, string>;
+  quantity?: number;
 }, authenticatedUserId?: string) {
   const access = createDeliveryAccess(new Date(), input.deliveryAccessToken);
   const recovered = await prisma.order.findUnique({
@@ -249,16 +251,20 @@ export async function createOrder(input: {
     providerResolution.status !== "SELECTED"
   )
     return undefined;
+  // Antes de qualquer escrita/PIX: produto 1/1 só aceita 1 (catálogo anterior).
+  const quantity = assertCheckoutQuantity(product, input.quantity);
   const providerFields = providerResolution.providerProduct
     ? validateDynamicFieldValues(
         Array.isArray(providerResolution.providerProduct.fieldSchema)
           ? providerResolution.providerProduct.fieldSchema as unknown as DynamicField[]
           : [],
         input.providerFields,
+        quantity,
       )
     : {};
   const viewer = authenticatedUser ? { customerTier: authenticatedUser.customerTier } : null;
   const unitPriceCents = assertCheckoutPrice(product, variantResolution?.variant ?? null, viewer);
+  const totalCents = orderTotalCents(unitPriceCents, quantity);
   // Recarga de Saldo: só conta logada com saldo habilitado. A consulta extra
   // acontece apenas para BALANCE_TOPUP; nenhum outro tipo é afetado.
   if (product.type === ProductType.BALANCE_TOPUP) {
@@ -337,13 +343,14 @@ export async function createOrder(input: {
       deliveryTokenExpiresAt: access.expiresAt,
       deliveryTokenEncrypted: access.encryptedToken,
       customerId: user.id,
-      totalCents: unitPriceCents,
+      totalCents,
       items: {
         create: {
           productId: product.id,
           productVariantId: variantResolution?.variant.id,
           providerProductId: providerResolution.providerProduct?.id,
           unitPriceCents,
+          quantity,
           providerFields,
         },
       },
@@ -351,7 +358,7 @@ export async function createOrder(input: {
         create: {
           provider: provider.code,
           providerReference: `pending:${publicToken}`,
-          amountCents: unitPriceCents,
+          amountCents: totalCents,
           status: PaymentStatus.PENDING,
           pixCode: "",
           expiresAt,
@@ -370,7 +377,7 @@ export async function createOrder(input: {
   try {
     payment = await provider.createPixPayment({
       orderId: publicToken,
-      amountCents: unitPriceCents,
+      amountCents: totalCents,
       expiresAt,
       customer: {
         internalId: user.id,

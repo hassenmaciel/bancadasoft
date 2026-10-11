@@ -89,6 +89,7 @@ export type AdminOrderDTO = {
   items: Array<{
     id: string;
     unitPriceCents: number;
+    quantity: number;
     product: { id: string; name: string; slug: string };
     variant: string | null;
     customerFields: CustomerFieldEcho[];
@@ -196,6 +197,7 @@ export const adminOrderDto = (order: AdminOrderRecord): AdminOrderDTO => ({
   items: order.items.map((item) => ({
     id: item.id,
     unitPriceCents: item.unitPriceCents,
+    quantity: item.quantity ?? 1,
     product: item.product,
     variant: item.productVariant?.name ?? null,
     customerFields: orderItemFieldEcho(item),

@@ -5,6 +5,7 @@ import Link from "next/link";
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import type { DeliveryDTO, OrderDTO, ProductDTO } from "@/lib/dto";
 import type { CustomerFieldEcho } from "@/lib/customer-field-echo";
+import { allowsQuantity, quantityPriceLabel, quantityRange } from "@/lib/checkout-quantity";
 import { isOptimizableImage } from "@/lib/image-source";
 import type { CheckoutIdentitySummary } from "@/lib/checkout-identity";
 import { initialCheckoutVariantId } from "@/lib/product-variants";
@@ -97,6 +98,13 @@ export default function CheckoutPanel({
   const failed = order ? isFailedCheckoutOrder(order) : false;
   const selectedVariant = product.variants.find((variant) => variant.id === variantId);
   const checkoutFields = selectedVariant?.checkoutFields ?? product.checkoutFields;
+  // Seletor só para produto com maxQuantity > 1 (ex.: créditos Phoenix); o
+  // intervalo é revalidado no servidor antes do PIX.
+  const quantityLimits = quantityRange(product);
+  const quantityEnabled = allowsQuantity(product);
+  const [quantity, setQuantity] = useState(quantityLimits.min);
+  const checkoutQuantity = quantityEnabled ? quantity : 1;
+  const unitPriceCents = selectedVariant?.priceCents ?? product.priceCents ?? 0;
   // PARTE 1/3/4: cliente logado com cadastro completo pula o formulário;
   // com cadastro incompleto, só os campos realmente ausentes são pedidos.
   const needsCpf = identity?.missing.includes("cpfCnpj") ?? false;
@@ -301,6 +309,7 @@ export default function CheckoutPanel({
           variantId: product.variants.length ? variantId : undefined,
           ...identityFields,
           deliveryAccessToken,
+          ...(quantityEnabled ? { quantity: checkoutQuantity } : {}),
           providerFields: Object.fromEntries(
             checkoutFields.map((field) => [field.key, String(form.get(`provider:${field.key}`) ?? "")]),
           ),
@@ -591,6 +600,29 @@ export default function CheckoutPanel({
                         />
                       </label>
                     )}
+                    {quantityEnabled && (
+                      <label htmlFor="checkout-quantity">
+                        Quantidade
+                        <input
+                          id="checkout-quantity"
+                          name="quantity"
+                          type="number"
+                          inputMode="numeric"
+                          min={quantityLimits.min}
+                          max={quantityLimits.max}
+                          step={1}
+                          value={quantity}
+                          onChange={(event) => {
+                            const next = Number.parseInt(event.currentTarget.value, 10);
+                            setQuantity(Number.isNaN(next) ? quantityLimits.min : next);
+                          }}
+                          required
+                        />
+                        <small className="field-help">
+                          Mínimo {quantityLimits.min}, máximo {quantityLimits.max}.
+                        </small>
+                      </label>
+                    )}
                     {checkoutFields.map((field) => {
                       const presentation = providerFieldPresentation(licenseMode, field);
                       return (
@@ -849,6 +881,17 @@ export default function CheckoutPanel({
                   <dt>Entrega automática</dt>
                   <dd>Após confirmação e liberação</dd>
                 </div>
+                {quantityEnabled && (
+                  <div>
+                    <dt>Quantidade</dt>
+                    <dd>
+                      {quantityPriceLabel(
+                        order?.items[0]?.quantity ?? checkoutQuantity,
+                        money(order?.items[0]?.unitPriceCents ?? unitPriceCents),
+                      )}
+                    </dd>
+                  </div>
+                )}
                 <div>
                   <dt>Pagamento</dt>
                   <dd>PIX</dd>
@@ -874,7 +917,7 @@ export default function CheckoutPanel({
               <div className="summary-total">
                 <span>TOTAL</span>
                 <strong>
-                  {money(order?.totalCents ?? selectedVariant?.priceCents ?? product.priceCents ?? 0)}
+                  {money(order?.totalCents ?? unitPriceCents * checkoutQuantity)}
                 </strong>
               </div>
             </aside>

@@ -122,12 +122,14 @@ export function classifyProviderProduct(input: CatalogContract): ProductAutomati
   };
 }
 
-export function validateDynamicFieldValues(schema: DynamicField[], values: unknown) {
+// quantity: já validada contra Product.minQuantity/maxQuantity em createOrder
+// (assertCheckoutQuantity); o padrão "^1$" do fieldSchema não se aplica aqui.
+export function validateDynamicFieldValues(schema: DynamicField[], values: unknown, quantity = 1) {
   const source = plainRecord(values) ?? {};
   const output: Record<string, string | number> = {};
   for (const field of schema) {
     if (field.key === "quantity") {
-      output[field.providerFieldName] = 1;
+      output[field.providerFieldName] = quantity;
       continue;
     }
     const raw = source[field.key];

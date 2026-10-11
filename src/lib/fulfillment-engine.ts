@@ -16,6 +16,7 @@ import { ADCLEAN_LICENSE_CODE, adcleanLicenseConfigured } from "@/lib/providers/
 import { sendDeliveryEmail } from "@/lib/notifications/delivery-email";
 import {
   buildProviderExecutionPayload,
+  itemQuantity,
   classifyFulfillmentRecovery,
   MAX_PROVIDER_ATTEMPTS,
   providerOutcome,
@@ -296,7 +297,11 @@ export async function executeFulfillment(
           providerProductId: selected.id,
           orderId,
           fulfillmentId: fulfillment.id,
-          costCents: selected.providerCostCents,
+          // Custo total do pedido no fornecedor (unitário × quantidade).
+          costCents:
+            selected.providerCostCents == null
+              ? null
+              : selected.providerCostCents * (order.items[0] ? itemQuantity(order.items[0]) : 1),
           currency: selected.currency,
         },
       });
@@ -393,7 +398,9 @@ export async function executeFulfillment(
       reference: prepared.id,
       payload: buildProviderExecutionPayload(
         orderId,
-        order.items[0]?.unitPriceCents,
+        // Total pago = unitário × quantidade (mesma regra de createOrder).
+        order.items[0] ? order.items[0].unitPriceCents * itemQuantity(order.items[0]) : undefined,
+        order.items[0] ? itemQuantity(order.items[0]) : undefined,
         (order.items[0]?.providerFields as Record<string, string | number> | null) ?? {},
       ),
     });

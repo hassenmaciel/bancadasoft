@@ -3,6 +3,7 @@ import { checkoutSchema } from "./checkout-schema";
 import { orderDto } from "./dto";
 import { AsaasClientError } from "./payments/asaas-client";
 import { IncompleteCheckoutIdentityError } from "./checkout-identity";
+import { CheckoutQuantityError } from "./checkout-quantity";
 
 type CreateOrder = (
   input: ReturnType<typeof checkoutSchema.parse>,
@@ -84,6 +85,15 @@ export async function handleCheckoutRequest(
           missing: error.missing,
         },
         { status: 422 },
+      );
+    if (error instanceof CheckoutQuantityError)
+      return NextResponse.json(
+        {
+          ok: false,
+          error: `Quantidade inválida: escolha de ${error.min} a ${error.max}.`,
+          code: "INVALID_QUANTITY",
+        },
+        { status: 400 },
       );
     if (error instanceof Error && error.message === "INVALID_CUSTOMER_DATA")
       return NextResponse.json(

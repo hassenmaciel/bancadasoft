@@ -73,9 +73,16 @@ export function classifyFulfillmentRecovery(
   return hasExternalAttemptEvidence(item) ? "RECONCILE" : "CLEAN_RECOVERY";
 }
 
+// OrderItem.quantity tem default 1 no banco; itens sem o campo (anteriores à
+// coluna) valem 1, que é o que foi vendido.
+export const itemQuantity = (item: { quantity?: number | null }) => item.quantity ?? 1;
+
+// paidAmountCents é o total pago (unitário × quantidade); Quantity é a
+// quantidade do OrderItem (1 para todo produto sem quantidade configurável).
 export function buildProviderExecutionPayload(
   orderId: string,
   paidAmountCents: number | undefined,
+  quantity: number | undefined,
   fields: Record<string, string | number>,
 ) {
   if (!orderId.trim()) throw new Error("ORDER_ID_REQUIRED");
@@ -85,5 +92,7 @@ export function buildProviderExecutionPayload(
     paidAmountCents <= 0
   )
     throw new Error("PAID_AMOUNT_REQUIRED");
-  return { orderId, paidAmountCents, Quantity: 1, fields };
+  if (typeof quantity !== "number" || !Number.isInteger(quantity) || quantity < 1)
+    throw new Error("QUANTITY_REQUIRED");
+  return { orderId, paidAmountCents, Quantity: quantity, fields };
 }
