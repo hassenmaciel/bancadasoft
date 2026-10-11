@@ -201,6 +201,74 @@ describe("callback HeartUnlocks: success sem retorno textual", () => {
     });
   });
 
+  describe("produto de confirmação (Product.acceptsSuccessWithoutText): créditos Phoenix", () => {
+    const phoenixCredits = { ...phoenix, acceptsSuccessWithoutText: true };
+    const CREDITS_NOTE =
+      "REVISÃO MANUAL: o fornecedor confirmou sucesso sem retorno textual. Conferir os créditos no painel do fornecedor.";
+    const phoenixState = (quantity = 5, overrides: Record<string, unknown> = {}) =>
+      state(phoenixCredits, "MULTI_FIELD", { order: { items: [{ quantity, product: phoenixCredits }] }, ...overrides });
+
+    it.each([
+      ["ausente", undefined],
+      ['vazio ("")', ""],
+      ["só quebra HTML", b64("<br>")],
+    ])("success com replay %s: entrega TEXT com a quantidade, revisão manual e e-mail 1 vez", async (_label, replay) => {
+      phoenixState(5);
+      const result = await callback("success", replay);
+      expect(result).toMatchObject({ delivered: true });
+      expect(db.fulfillment.update.mock.calls[0][0].data.delivery).toEqual({
+        kind: "provider-delivery",
+        deliveryType: "TEXT",
+        title: "Phoenix Service Tool",
+        instructions: "O fornecedor confirmou a adição de 5 créditos na conta informada no pedido.",
+      });
+      expect(orderEvents()).toEqual([
+        { status: "FULFILLED", note: "Liberação concluída pelo fornecedor." },
+        { status: "DELIVERED", note: "Entrega disponibilizada ao cliente." },
+        { status: "DELIVERED", note: CREDITS_NOTE },
+      ]);
+      expect(failedByReplay()).toBe(false);
+      expect(sendDeliveryEmail).toHaveBeenCalledTimes(1);
+    });
+
+    it("não depende do expectedDeliveryType (a sync do catálogo regrava MULTI_FIELD)", async () => {
+      state(phoenixCredits, "CREDENTIALS", { order: { items: [{ quantity: 10, product: phoenixCredits }] } });
+      await callback("success");
+      expect(db.fulfillment.update.mock.calls[0][0].data.delivery.instructions).toContain("10 créditos");
+    });
+
+    it("success com retorno textual: usa o retorno do fornecedor, sem revisão manual", async () => {
+      phoenixState(5);
+      await callback("success", b64("Credits added: 5"));
+      expect(db.fulfillment.update.mock.calls[0][0].data.delivery).toMatchObject({ deliveryType: "TEXT" });
+      expect(orderEvents().map((event) => event.note)).not.toContain(CREDITS_NOTE);
+    });
+
+    it("rejected continua FAILED (PROVIDER_REJECTED), sem e-mail", async () => {
+      phoenixState(5);
+      await callback("rejected");
+      expect(db.providerOrder.update).toHaveBeenCalledWith({
+        where: { id: "po-1" },
+        data: expect.objectContaining({ status: "FAILED", lastError: "PROVIDER_REJECTED" }),
+      });
+      expect(sendDeliveryEmail).not.toHaveBeenCalled();
+    });
+
+    it("flag desligada mantém o comportamento anterior (FAILED com REPLAY_REQUIRES_ACTION)", async () => {
+      state({ ...phoenix, acceptsSuccessWithoutText: false }, "MULTI_FIELD");
+      const result = await callback("success");
+      expect(result).toMatchObject({ delivered: false });
+      expect(failedByReplay()).toBe(true);
+    });
+
+    it("licença UnlockTool continua com o critério e o texto próprios", async () => {
+      state({ ...licenseProduct, acceptsSuccessWithoutText: true }, "LICENSE");
+      await callback("success");
+      expect(db.fulfillment.update.mock.calls[0][0].data.delivery.deliveryType).toBe("LICENSE");
+      expect(orderEvents().map((event) => event.note)).toContain(REVIEW_NOTE);
+    });
+  });
+
   describe("status diferente de success", () => {
     it.each(["failed", "rejected", "REJECTED"])("licença + %s: continua FAILED (PROVIDER_REJECTED)", async (status) => {
       const result = await callback(status);

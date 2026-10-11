@@ -51,6 +51,22 @@ describe("mapper administrativo de pedido", () => {
     expect(dto.items[1].customerFields).toEqual([]);
   });
 
+  it("itens trazem a quantidade (créditos) e item anterior à coluna vale 1", () => {
+    const date = new Date("2026-09-10T12:00:00Z");
+    const record = {
+      id:"order-3", publicToken:"public", status:"PAID", customerId:"user-1", totalCents:7450, createdAt:date, updatedAt:date,
+      customer:{id:"user-1",name:"Cliente",email:"cliente@example.test"},
+      items:[
+        {id:"item-1",unitPriceCents:1490,quantity:5,product:{id:"p",name:"Phoenix",slug:"phoenix-servicetool-nokia-hmd-frp"},productVariant:null,providerFields:null,providerProduct:null},
+        {id:"item-2",unitPriceCents:2900,product:{id:"t",name:"Tool",slug:"tool"},productVariant:null,providerFields:null,providerProduct:null},
+      ],
+      payment:null, fulfillment:null, events:[],
+    } as unknown as AdminOrderRecord;
+    const dto = adminOrderDto(record);
+    expect(dto.items.map((item) => [item.quantity, item.unitPriceCents])).toEqual([[5, 1490], [1, 2900]]);
+    expect(dto.totalCents).toBe(7450);
+  });
+
   it("expõe somente metadados seguros do callback", () => {
     const date = new Date("2026-09-10T12:00:00Z");
     const dto = adminCallbackDto({id:"callback-1",status:"success",createdAt:date,processedAt:date,payload:{reference_id:"reference-1",order_id:"provider-order-1",replay:"U0VDUkVUX1BBU1NXT1JE"}});

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { HEARTUNLOCKS_GATEWAY_TIMEOUT_MS, HeartUnlocksProviderAdapter, ProviderOrderUncertainError } from "./heartunlocks";
+import { HEARTUNLOCKS_GATEWAY_TIMEOUT_MS, HEARTUNLOCKS_MAX_ORDER_QUANTITY, HeartUnlocksProviderAdapter, ProviderOrderUncertainError } from "./heartunlocks";
 import { decodeReplay, parseCredentials, callbackEventKey, normalizeCredentialReplay } from "./heartunlocks-callback";
 import { parseProviderDelivery } from "./delivery";
 
@@ -26,9 +26,19 @@ describe("HeartUnlocks adapter", () => {
     await expect(adapter.createOrder({ providerProductId: "2194", reference: "provider-order-1", payload: { Quantity: 1 } })).resolves.toMatchObject({ externalOrderId: "hu-1", status: "PROCESSING" });
   });
 
-  it("rejects a quantity different from one", async () => {
-    const adapter = new HeartUnlocksProviderAdapter({ gatewayUrl: "https://gateway.test", gatewaySecret: "secret" });
-    await expect(adapter.createOrder({ providerProductId: "2194", reference: "ref", payload: { Quantity: 2 } })).rejects.toThrow("HEARTUNLOCKS_INVALID_QUANTITY");
+  it.each([0, -1, 1.5, "5", undefined, HEARTUNLOCKS_MAX_ORDER_QUANTITY + 1])("rejects invalid quantity %s before calling the gateway", async (quantity) => {
+    const fetcher = vi.fn();
+    const adapter = new HeartUnlocksProviderAdapter({ gatewayUrl: "https://gateway.test", gatewaySecret: "secret", fetcher });
+    await expect(adapter.createOrder({ providerProductId: "2194", reference: "ref", payload: { Quantity: quantity } })).rejects.toThrow("HEARTUNLOCKS_INVALID_QUANTITY");
+    expect(fetcher).not.toHaveBeenCalled();
+  });
+
+  it("forwards a configurable quantity (Phoenix 5 credits) to the gateway", async () => {
+    const fetcher = vi.fn(async () => new Response(JSON.stringify({ referenceId: "ref", status: "PROCESSING", externalOrderId: "ext-1" }), { status: 202, headers: { "content-type": "application/json" } }));
+    const adapter = new HeartUnlocksProviderAdapter({ gatewayUrl: "https://gateway.test", gatewaySecret: "secret", fetcher });
+    await adapter.createOrder({ providerProductId: "1808", reference: "ref", payload: { Quantity: 5, fields: { Email: "conta@exemplo.test" } } });
+    const body = JSON.parse(String((fetcher.mock.calls[0] as unknown as [string, RequestInit])[1].body));
+    expect(body).toMatchObject({ productUuid: "1808", quantity: 5, fields: { Email: "conta@exemplo.test" } });
   });
 
   it("marks an aborted request as uncertain", async () => {

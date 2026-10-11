@@ -1,6 +1,6 @@
 import { describe,expect,it } from "vitest";
 import { assertAdminRole } from "./authorization";
-import { buildProviderExecutionPayload,MAX_PROVIDER_ATTEMPTS,providerOutcome,shouldRecordPaidFulfillmentFailure,validateProviderExecution,type ExecutionSnapshot } from "./fulfillment-rules";
+import { buildProviderExecutionPayload,itemQuantity,MAX_PROVIDER_ATTEMPTS,providerOutcome,shouldRecordPaidFulfillmentFailure,validateProviderExecution,type ExecutionSnapshot } from "./fulfillment-rules";
 import { MockProviderAdapter } from "./providers/mock";
 
 const valid:ExecutionSnapshot={orderExists:true,paymentStatus:"PAID",orderStatus:"PAID",hasProviderProduct:true,providerActive:true,providerConnected:true,providerOrderStatus:undefined,attempts:0,hasDelivery:false};
@@ -35,7 +35,12 @@ describe("registro de falha pós-pagamento (provider indisponível antes da exec
 });
 describe("payload financeiro do provider",()=>{
   it.each([2000,1000])("preserva o valor server-side em centavos %i",(paidAmountCents)=>{
-    expect(buildProviderExecutionPayload("order-1",paidAmountCents,{browserPriceCents:1})).toEqual({orderId:"order-1",paidAmountCents,Quantity:1,fields:{browserPriceCents:1}});
+    expect(buildProviderExecutionPayload("order-1",paidAmountCents,1,{browserPriceCents:1})).toEqual({orderId:"order-1",paidAmountCents,Quantity:1,fields:{browserPriceCents:1}});
   });
-  it("rejeita valor não persistido",()=>expect(()=>buildProviderExecutionPayload("order-1",0,{})).toThrow("PAID_AMOUNT_REQUIRED"));
+  it("rejeita valor não persistido",()=>expect(()=>buildProviderExecutionPayload("order-1",0,1,{})).toThrow("PAID_AMOUNT_REQUIRED"));
+  it("usa a quantidade do pedido (créditos Phoenix: 5 × 1490)",()=>{
+    expect(buildProviderExecutionPayload("order-1",7450,5,{Email:"conta@exemplo.test"})).toEqual({orderId:"order-1",paidAmountCents:7450,Quantity:5,fields:{Email:"conta@exemplo.test"}});
+  });
+  it.each([0,-1,1.5,undefined])("rejeita quantidade inválida %s",(quantity)=>expect(()=>buildProviderExecutionPayload("order-1",1000,quantity,{})).toThrow("QUANTITY_REQUIRED"));
+  it("item sem quantidade (anterior à coluna) vale 1",()=>{expect(itemQuantity({})).toBe(1);expect(itemQuantity({quantity:null})).toBe(1);expect(itemQuantity({quantity:5})).toBe(5);});
 });

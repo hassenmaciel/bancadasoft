@@ -18,7 +18,10 @@ describe("DTO mappers", () => {
       id: "product-1", slug: "unlocktool-6h", name: "UnlockTool", description: "Aluguel de teste",
       type: ProductType.RENTAL, deliveryType: DeliveryType.AUTOMATIC, deliveryEstimate: "imediato", longDescription: null, duration: "6 horas", imageUrl: "https://cdn.example.test/unlocktool.png", downloadUrl: null, downloadLabel: null,
       priceCents: 2900, priceVisible: true, priceTier: null, status: ProductStatus.PUBLISHED, available: true, category: categoryDto, brand: null, checkoutFields: [], variants: [],
+      // Produto sem configuração de quantidade (todo o catálogo anterior): 1/1.
+      minQuantity: 1, maxQuantity: 1,
     });
+    expect(productDto({ ...product, category, minQuantity: 5, maxQuantity: 100 })).toMatchObject({ minQuantity: 5, maxQuantity: 100 });
     expect(productDto({ ...product, category })).not.toHaveProperty("costCents");
     expect(productDto({ ...product, category })).not.toHaveProperty("manualPriceCents");
     expect(productDto({ ...product, category })).not.toHaveProperty("suggestedPriceCents");
