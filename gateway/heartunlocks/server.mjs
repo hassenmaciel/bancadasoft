@@ -1,7 +1,7 @@
 import http from "node:http";
 import https from "node:https";
 import { URL } from "node:url";
-import { buildHeartUnlocksOrderPayload } from "./order-payload.mjs";
+import { buildHeartUnlocksOrderPayload, isValidOrderQuantity } from "./order-payload.mjs";
 import { PROVIDER_DEADLINE_MS } from "./timeouts.mjs";
 
 const port = Number(process.env.PORT || 8787);
@@ -57,7 +57,7 @@ const server = http.createServer(async (req, res) => {
     if (req.method === "POST" && url.pathname === "/orders") {
       if (!authorized(req)) return json(res, 401, { error: "UNAUTHORIZED" });
       const body = await read(req);
-      if (typeof body.productUuid !== "string" || typeof body.referenceId !== "string" || body.quantity !== 1 || !body.fields || typeof body.fields !== "object" || Array.isArray(body.fields)) return json(res, 422, { error: "INVALID_ORDER" });
+      if (typeof body.productUuid !== "string" || typeof body.referenceId !== "string" || !isValidOrderQuantity(body.quantity) || !body.fields || typeof body.fields !== "object" || Array.isArray(body.fields)) return json(res, 422, { error: "INVALID_ORDER" });
       const payload = buildHeartUnlocksOrderPayload({ productUuid: body.productUuid, referenceId: body.referenceId, quantity: body.quantity, fields: body.fields, feedbackBase, callbackSecret });
       let result;
       const startedAt = Date.now();
