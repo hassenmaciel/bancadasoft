@@ -21,10 +21,10 @@ import {
   isUnlockToolLicense,
   LICENSE_DELIVERY_TITLE,
   licenseActivationMessage,
-  providerFieldPresentation,
   showLicenseActivationMessage,
   summaryBadge,
 } from "@/lib/unlocktool-license";
+import { providerFieldPresentation } from "@/lib/provider-field-presentation";
 import PixPayment from "@/components/pix-payment";
 import NewPurchaseButton from "@/components/new-purchase-button";
 import { PIX_CANCEL_REVIEW_MESSAGE, clearStoredCheckout, showNewPurchaseButton } from "@/lib/new-purchase";
@@ -624,7 +624,7 @@ export default function CheckoutPanel({
                       </label>
                     )}
                     {checkoutFields.map((field) => {
-                      const presentation = providerFieldPresentation(licenseMode, field);
+                      const presentation = providerFieldPresentation(product, field);
                       return (
                       <label key={field.key} htmlFor={`checkout-provider-${field.key}`}>
                         {presentation.label}

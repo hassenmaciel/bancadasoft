@@ -13,37 +13,6 @@ export type LicenseSubject = {
 export const isUnlockToolLicense = (product: LicenseSubject | null | undefined) =>
   product?.brand?.name === "UnlockTool" && product?.type === "LICENSE";
 
-type FieldLike = { key: string; label: string; placeholder?: string };
-export type ProviderFieldPresentation = {
-  label: string;
-  placeholder?: string;
-  help?: string;
-  autoComplete?: "off";
-};
-
-// Só apresentação: nunca altera key nem providerFieldName do campo.
-const UNLOCKTOOL_FIELD_COPY: Record<string, Required<Omit<ProviderFieldPresentation, "autoComplete">>> = {
-  email: {
-    label: "E-mail da conta UnlockTool",
-    placeholder: "E-mail da sua conta UnlockTool",
-    help: "E-mail cadastrado na sua conta UnlockTool. Não é o e-mail de contato.",
-  },
-  username: {
-    label: "Usuário da conta UnlockTool",
-    placeholder: "Usuário da sua conta UnlockTool",
-    help: "Usuário (login) da sua conta UnlockTool, onde a licença será ativada.",
-  },
-};
-
-export function providerFieldPresentation(
-  licenseMode: boolean,
-  field: FieldLike,
-): ProviderFieldPresentation {
-  const copy = licenseMode ? UNLOCKTOOL_FIELD_COPY[field.key] : undefined;
-  if (!copy) return { label: field.label, placeholder: field.placeholder };
-  return { ...copy, autoComplete: "off" };
-}
-
 export const LICENSE_ACCOUNT_CONFIRMATION =
   "Conferi que o usuário da conta UnlockTool está correto. A licença é ativada na conta informada e a ativação não pode ser desfeita.";
 
