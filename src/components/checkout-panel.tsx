@@ -4,6 +4,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import type { DeliveryDTO, OrderDTO, ProductDTO } from "@/lib/dto";
+import type { CustomerFieldEcho } from "@/lib/customer-field-echo";
 import { isOptimizableImage } from "@/lib/image-source";
 import type { CheckoutIdentitySummary } from "@/lib/checkout-identity";
 import { initialCheckoutVariantId } from "@/lib/product-variants";
@@ -61,7 +62,8 @@ export default function CheckoutPanel({
   const [cancelling, setCancelling] = useState(false);
   const [cancelMessage, setCancelMessage] = useState("");
   const cancelGuard = useRef(false);
-  const [delivery, setDelivery] = useState<DeliveryDTO | null>(null);
+  // customerFields viaja junto da entrega (mesmo ciclo de vida/reset).
+  const [delivery, setDelivery] = useState<(DeliveryDTO & { customerFields?: CustomerFieldEcho[] }) | null>(null);
   const [variantId, setVariantId] = useState(() => initialCheckoutVariantId(product.variants, initialVariantId));
   // Fica true quando o polling entra na fase de espera (frequência reduzida,
   // ver src/lib/order-polling.ts) — o polling continua rodando, só que mais
@@ -112,7 +114,7 @@ export default function CheckoutPanel({
     if (!response.ok) return false;
     const payload = await response.json();
     if (!payload.data.delivery) return false;
-    setDelivery(payload.data.delivery);
+    setDelivery({ ...payload.data.delivery, customerFields: payload.data.customerFields });
     return true;
   }, []);
   useEffect(() => {

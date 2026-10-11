@@ -199,6 +199,42 @@ describe("licenseActivation na resposta de entrega", () => {
   });
 });
 
+describe("echo dos dados informados no checkout (/acompanhar)", () => {
+  const ecidItem = {
+    product: { name: "FRPFILE Ramdisk", type: "IMEI_SN", brand: { name: "FRPFILE" } },
+    providerFields: { ECID: "0x1A2B3C4D5E", Hidden: "nao-pode-vazar" },
+    providerProduct: {
+      fieldSchema: [
+        { key: "ecid", label: "ECID", type: "text", providerFieldName: "ECID", customerVisible: true, sensitive: false, position: 0 },
+        { key: "hidden", label: "Hidden", type: "text", providerFieldName: "Hidden", customerVisible: false, sensitive: false, position: 1 },
+      ],
+    },
+    productVariant: null,
+  };
+  beforeEach(() => {
+    vi.clearAllMocks();
+    attemptAutomaticGuestRecovery.mockResolvedValue(false);
+    db.deliveryAccessAttempt.count.mockResolvedValue(0);
+    vi.mocked(deliveryTokenMatches).mockReturnValue(true);
+  });
+
+  it("entregue: devolve só os campos customerVisible, nunca providerFields bruto", async () => {
+    db.order.findUnique.mockResolvedValue({ ...deliveredOrderFixture, items: [ecidItem] });
+    const payload = await (await GET(request, { params: Promise.resolve({ id: "order-code" }) })).json();
+    expect(payload.data.customerFields).toEqual([{ key: "ecid", label: "ECID", value: "0x1A2B3C4D5E" }]);
+    const serialized = JSON.stringify(payload);
+    expect(serialized).not.toContain("providerFields");
+    expect(serialized).not.toContain("nao-pode-vazar");
+    expect(serialized).not.toContain("fieldSchema");
+  });
+
+  it("ainda não entregue: sem echo", async () => {
+    db.order.findUnique.mockResolvedValue({ ...deliveredOrderFixture, status: "PROCESSING", items: [ecidItem] });
+    const payload = await (await GET(request, { params: Promise.resolve({ id: "order-code" }) })).json();
+    expect("customerFields" in payload.data).toBe(false);
+  });
+});
+
 describe("entrega mínima de licença na resposta de /acompanhar", () => {
   it("DELIVERED com delivery mínimo: devolve a entrega (não nula) e licenseActivation=true", async () => {
     vi.clearAllMocks();

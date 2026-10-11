@@ -108,6 +108,11 @@ export default async function OrderDetailPage({
                   {item.product.slug}
                   {item.variant ? ` · ${item.variant}` : ""}
                 </small>
+                {item.customerFields.map((field, index) => (
+                  <small className="customer-field" key={`${field.key}-${index}`}>
+                    {field.label}: <b>{field.value}</b>
+                  </small>
+                ))}
               </div>
               <span>{money(item.unitPriceCents)}</span>
             </article>

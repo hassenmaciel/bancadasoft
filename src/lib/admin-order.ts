@@ -1,5 +1,6 @@
 import type { Prisma } from "@prisma/client";
 import { maskCpf } from "./masking";
+import { orderItemFieldEcho, type CustomerFieldEcho } from "./customer-field-echo";
 
 export const adminOrderInclude = {
   customer: {
@@ -15,7 +16,10 @@ export const adminOrderInclude = {
   items: {
     include: {
       product: { select: { id: true, name: true, slug: true } },
-      productVariant: { select: { name: true } },
+      productVariant: {
+        select: { name: true, providerProduct: { select: { fieldSchema: true } } },
+      },
+      providerProduct: { select: { fieldSchema: true } },
     },
   },
   payment: { include: { events: { orderBy: { createdAt: "asc" as const } } } },
@@ -87,6 +91,7 @@ export type AdminOrderDTO = {
     unitPriceCents: number;
     product: { id: string; name: string; slug: string };
     variant: string | null;
+    customerFields: CustomerFieldEcho[];
   }>;
   payment: null | {
     id: string;
@@ -193,6 +198,7 @@ export const adminOrderDto = (order: AdminOrderRecord): AdminOrderDTO => ({
     unitPriceCents: item.unitPriceCents,
     product: item.product,
     variant: item.productVariant?.name ?? null,
+    customerFields: orderItemFieldEcho(item),
   })),
   payment: order.payment
     ? {

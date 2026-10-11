@@ -3,6 +3,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import CredentialDelivery from "@/components/credential-delivery";
 import type { DeliveryDTO } from "@/lib/dto";
+import type { CustomerFieldEcho } from "@/lib/customer-field-echo";
 import { shouldContinueGuestDeliveryPolling } from "@/lib/order-polling";
 
 type State = {
@@ -13,6 +14,8 @@ type State = {
   delivery: DeliveryDTO | null;
   // Só presente (true) para a licença UnlockTool; calculado no servidor.
   licenseActivation?: boolean;
+  // Echo do que o cliente informou no checkout (serial, ECID, conta...).
+  customerFields?: CustomerFieldEcho[];
 };
 const message = (state: State) =>
   state.delivery
@@ -83,6 +86,7 @@ export default function GuestDelivery({ orderId }: { orderId: string }) {
               <CredentialDelivery
                 {...state.delivery}
                 licenseActivation={state.licenseActivation === true}
+                customerFields={state.customerFields}
               />
             )}
           </>

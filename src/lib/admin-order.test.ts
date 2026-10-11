@@ -27,6 +27,30 @@ describe("mapper administrativo de pedido", () => {
     expect(dto.fulfillment?.status).toBe("FULFILLED");
   });
 
+  it("itens trazem o echo dos campos do cliente (só customerVisible)", () => {
+    const date = new Date("2026-09-10T12:00:00Z");
+    const schema = [
+      { key: "quantity", label: "Quantity", type: "quantity", providerFieldName: "Quantity", customerVisible: false, sensitive: false, position: 0 },
+      { key: "email", label: "Email", type: "email", providerFieldName: "Email", customerVisible: true, sensitive: false, position: 1 },
+      { key: "username", label: "Username", type: "username", providerFieldName: "Username", customerVisible: true, sensitive: false, position: 2 },
+    ];
+    const record = {
+      id:"order-2", publicToken:"public", status:"PROCESSING", customerId:"user-1", totalCents:15500, createdAt:date, updatedAt:date,
+      customer:{id:"user-1",name:"Cliente",email:"cliente@example.test"},
+      items:[
+        {id:"item-1",unitPriceCents:15500,product:{id:"p",name:"UnlockTool Licença",slug:"unlocktool-licenca-3-meses"},productVariant:null,providerFields:{Quantity:1,Email:"conta@exemplo.test",Username:"usuario_teste"},providerProduct:{fieldSchema:schema}},
+        {id:"item-2",unitPriceCents:600,product:{id:"t",name:"Tool",slug:"tool"},productVariant:null,providerFields:null,providerProduct:null},
+      ],
+      payment:null, fulfillment:null, events:[],
+    } as unknown as AdminOrderRecord;
+    const dto = adminOrderDto(record);
+    expect(dto.items[0].customerFields).toEqual([
+      { key: "email", label: "Email", value: "conta@exemplo.test" },
+      { key: "username", label: "Username", value: "usuario_teste" },
+    ]);
+    expect(dto.items[1].customerFields).toEqual([]);
+  });
+
   it("expõe somente metadados seguros do callback", () => {
     const date = new Date("2026-09-10T12:00:00Z");
     const dto = adminCallbackDto({id:"callback-1",status:"success",createdAt:date,processedAt:date,payload:{reference_id:"reference-1",order_id:"provider-order-1",replay:"U0VDUkVUX1BBU1NXT1JE"}});
