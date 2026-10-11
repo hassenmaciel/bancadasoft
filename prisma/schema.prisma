@@ -268,6 +268,11 @@ model Product {
   sortOrder           Int               @default(0)
   status              ProductStatus     @default(DRAFT)
   available           Boolean           @default(true)
+  // Quantidade por pedido (ex.: créditos Phoenix). 1/1 = quantidade fixa 1.
+  minQuantity         Int               @default(1)
+  maxQuantity         Int               @default(1)
+  // Callback "success" sem retorno textual vale como entrega (ex.: créditos).
+  acceptsSuccessWithoutText Boolean     @default(false)
   categoryId          String
   category            Category          @relation(fields: [categoryId], references: [id])
   brandId             String?
@@ -408,6 +413,7 @@ model OrderItem {
   productId         String
   product           Product          @relation(fields: [productId], references: [id])
   unitPriceCents    Int
+  quantity          Int              @default(1)
   providerFields    Json?
   productVariantId  String?
   productVariant    ProductVariant?  @relation(fields: [productVariantId], references: [id], onDelete: Restrict)
