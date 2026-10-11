@@ -16,6 +16,7 @@ const source = (resellerPriceCents: number | null) => ({
   priceCents: 2000, priceVisibility: "LOGIN_REQUIRED" as const, normalPriceCents: 2000, premiumPriceCents: 1000, resellerPriceCents,
   costCents: null, pricingMode: "MANUAL" as const, manualPriceCents: 2000, suggestedPriceCents: null, pricingStatus: "MANUAL" as const,
   pricingComputedAt: null, featured: false, sortOrder: 0, status: "DRAFT" as const, available: false,
+  minQuantity: 1, maxQuantity: 1, acceptsSuccessWithoutText: false,
   categoryId: category.id, brandId: null, createdAt: now, updatedAt: now, category, brand: null,
 });
 const resellerInput = (html: string) => html.match(/Preço de revenda \(R\$\)<input[^>]*>/)?.[0] ?? "";
