@@ -173,6 +173,8 @@ model User {
   whatsapp        String?
   active          Boolean      @default(true)
   canUseBalanceAsPayment Boolean @default(false)
+  // Sessões emitidas antes desta data deixam de valer (redefinição de senha).
+  passwordChangedAt DateTime?
   createdAt       DateTime     @default(now())
   updatedAt       DateTime     @updatedAt
   orders          Order[]
@@ -180,6 +182,32 @@ model User {
   accountBalance  AccountBalance?
   ledgerEntries   AccountLedgerEntry[]
   resellerApiKeys ResellerApiKey[]
+  passwordResetTokens PasswordResetToken[]
+}
+
+// Token de redefinição de senha: só o hash SHA-256 é gravado; uso único (usedAt).
+model PasswordResetToken {
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId, createdAt])
+}
+
+// Pedidos de redefinição para rate limit, gravados para qualquer e-mail
+// (existente ou não). Só HMACs: nunca o e-mail ou o IP em texto puro.
+model PasswordResetRequest {
+  id          String   @id @default(cuid())
+  emailHash   String
+  fingerprint String
+  createdAt   DateTime @default(now())
+
+  @@index([emailHash, createdAt])
+  @@index([fingerprint, createdAt])
 }
 
 model AccountBalance {

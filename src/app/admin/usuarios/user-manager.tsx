@@ -32,6 +32,8 @@ export default function UserManager({
     [editing, setEditing] = useState<Row | null>(null),
     [statusTarget, setStatusTarget] = useState<Row | null>(null),
     [deleting, setDeleting] = useState<Row | null>(null),
+    [purging, setPurging] = useState<Row | null>(null),
+    [purgeConfirm, setPurgeConfirm] = useState(""),
     [keysTarget, setKeysTarget] = useState<Row | null>(null);
   async function create(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -90,6 +92,38 @@ export default function UserManager({
     setBusy(false);
     setMessage(response.ok ? (enabled ? "Saldo habilitado." : "Saldo desabilitado.") : body.error);
     if (response.ok) router.refresh();
+  }
+  async function resetPassword(row: Row, form: HTMLFormElement) {
+    setBusy(true);
+    const response = await fetch(`/api/admin/users/${row.id}/password`, {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ password: new FormData(form).get("newPassword") }),
+    }),
+      body = await response.json();
+    setBusy(false);
+    setMessage(response.ok ? body.data.message : body.error);
+    if (response.ok) {
+      form.reset();
+      setEditing(null);
+      if (row.id === currentAdminId) router.push("/login");
+    }
+  }
+  async function purge(confirmEmail: string) {
+    if (!purging) return;
+    setBusy(true);
+    const response = await fetch(`/api/admin/users/${purging.id}/permanent`, {
+      method: "DELETE",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ confirmEmail }),
+    }),
+      body = await response.json();
+    setBusy(false);
+    setMessage(response.ok ? body.data.message : body.error);
+    if (response.ok) {
+      setPurging(null);
+      router.refresh();
+    }
   }
   async function remove() {
     if (!deleting) return;
@@ -238,6 +272,16 @@ export default function UserManager({
                       >
                         Excluir
                       </button>
+                      <button
+                        disabled={row.id === currentAdminId}
+                        className="danger-link"
+                        onClick={() => {
+                          setPurgeConfirm("");
+                          setPurging(row);
+                        }}
+                      >
+                        Excluir permanentemente
+                      </button>
                     </div>
                   </td>
                 </tr>
@@ -248,29 +292,121 @@ export default function UserManager({
       </div>
       {editing && (
         <div className="admin-confirm-backdrop" role="presentation">
+          <div className="admin-confirm admin-form" role="dialog" aria-label={`Editar ${editing.name}`}>
+            <form
+              onSubmit={(event) => {
+                event.preventDefault();
+                const data = new FormData(event.currentTarget);
+                const shownRole = editing.role === "CUSTOMER" ? "USER" : editing.role;
+                const next = {
+                  name: String(data.get("name") ?? "").trim(),
+                  email: String(data.get("email") ?? "").trim().toLowerCase(),
+                  role: String(data.get("role")),
+                  customerTier: String(data.get("customerTier")),
+                };
+                // Só envia o que mudou (CUSTOMER aparece como USER e não é "mudança").
+                const patch: Record<string, string> = {};
+                if (next.name !== editing.name) patch.name = next.name;
+                if (next.email !== editing.email.toLowerCase()) patch.email = next.email;
+                if (next.role !== shownRole) patch.role = next.role;
+                if (next.customerTier !== editing.customerTier) patch.customerTier = next.customerTier;
+                if (Object.keys(patch).length === 0) return setEditing(null);
+                void save(editing, patch);
+              }}
+            >
+              <h2>Editar usuário</h2>
+              <label>
+                Nome
+                <input name="name" defaultValue={editing.name} required minLength={2} maxLength={100} />
+              </label>
+              <label>
+                E-mail
+                <input name="email" type="email" defaultValue={editing.email} required />
+              </label>
+              <label>
+                Role
+                <select name="role" defaultValue={editing.role === "CUSTOMER" ? "USER" : editing.role}>
+                  <option value="USER">USER</option>
+                  <option value="RESELLER">RESELLER</option>
+                  <option value="ADMIN">ADMIN</option>
+                </select>
+              </label>
+              <label>
+                Nível comercial
+                <select name="customerTier" defaultValue={editing.customerTier}>
+                  <option value="NORMAL">Técnico Normal</option>
+                  <option value="PREMIUM">Técnico Premium</option>
+                  <option value="PREMIUM_PLUS">Técnico Premium Plus</option>
+                </select>
+              </label>
+              <div className="form-actions">
+                <button type="button" disabled={busy} onClick={() => setEditing(null)}>
+                  Cancelar
+                </button>
+                <button className="admin-primary" disabled={busy}>
+                  Salvar
+                </button>
+              </div>
+            </form>
+            <form
+              onSubmit={(event) => {
+                event.preventDefault();
+                void resetPassword(editing, event.currentTarget);
+              }}
+            >
+              <h2>Redefinir senha</h2>
+              <label>
+                Nova senha
+                <input name="newPassword" type="password" minLength={12} maxLength={128} autoComplete="new-password" required />
+                <small>12+ caracteres, com maiúscula, minúscula, número e símbolo.</small>
+              </label>
+              <p className="security-note">
+                Encerra todas as sessões abertas do usuário. Combine a entrega da nova senha por um canal seguro.
+              </p>
+              <button className="admin-primary" disabled={busy}>
+                Redefinir senha
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+      {purging && (
+        <div className="admin-confirm-backdrop" role="presentation">
           <form
             className="admin-confirm admin-form"
-            aria-label={`Editar ${editing.name}`}
+            role="alertdialog"
+            aria-label={`Excluir ${purging.name} permanentemente`}
             onSubmit={(event) => {
               event.preventDefault();
-              const data = new FormData(event.currentTarget);
-              void save(editing, { name: data.get("name") });
+              void purge(purgeConfirm);
             }}
           >
-            <h2>Editar usuário</h2>
-            <label>
-              Nome
-              <input name="name" defaultValue={editing.name} required />
-            </label>
+            <h2>Excluir {purging.name} permanentemente?</h2>
             <p className="security-note">
-              O e-mail e a senha não são alterados por esta operação.
+              <b>Esta ação é irreversível.</b> Serão apagados o usuário e todos os pedidos, pagamentos, eventos,
+              entregas, saldo, lançamentos de saldo e chaves de API vinculados a ele ({purging.orderCount} pedido(s)
+              {purging.balance ? `, saldo de ${money(purging.balance.balanceCents)}` : ""}). Fica registrado só um resumo
+              na auditoria.
             </p>
+            <label>
+              Para confirmar, digite o e-mail do usuário: <b>{purging.email}</b>
+              <input
+                value={purgeConfirm}
+                onChange={(event) => setPurgeConfirm(event.target.value)}
+                autoComplete="off"
+                spellCheck={false}
+                required
+              />
+            </label>
             <div className="form-actions">
-              <button type="button" disabled={busy} onClick={() => setEditing(null)}>
+              <button type="button" disabled={busy} onClick={() => setPurging(null)}>
                 Cancelar
               </button>
-              <button className="admin-primary" disabled={busy}>
-                Salvar
+              <button
+                className="admin-danger"
+                disabled={busy || purgeConfirm.trim().toLowerCase() !== purging.email.toLowerCase()}
+              >
+                {busy ? "Excluindo..." : "Excluir permanentemente"}
               </button>
             </div>
           </form>
@@ -301,7 +437,7 @@ export default function UserManager({
       <AdminConfirmDialog
         open={Boolean(deleting)}
         title={`Excluir ${deleting?.name}?`}
-        description="Usuários com pedidos serão desativados; o histórico comercial nunca será apagado."
+        description="Usuários com pedidos serão desativados; o histórico comercial é preservado. Para apagar tudo, use “Excluir permanentemente”."
         busy={busy}
         onCancel={() => setDeleting(null)}
         onConfirm={remove}

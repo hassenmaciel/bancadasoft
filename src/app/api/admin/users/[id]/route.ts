@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { Prisma } from "@prisma/client";
 import { requireAdmin } from "@/lib/auth";
 import { adminUserUpdateSchema } from "@/lib/admin-inputs";
 import { canChangeLastAdmin, userDeleteDecision } from "@/lib/admin-rules";
@@ -19,7 +20,7 @@ export async function PUT(request: Request, { params }: Context) {
   const { id } = await params,
     current = await prisma.user.findUnique({
       where: { id },
-      select: { id: true, name: true, role: true, customerTier: true, canUseBalanceAsPayment: true, active: true },
+      select: { id: true, name: true, email: true, role: true, customerTier: true, canUseBalanceAsPayment: true, active: true },
     });
   if (!current)
     return NextResponse.json(
@@ -51,24 +52,36 @@ export async function PUT(request: Request, { params }: Context) {
   // transação, para a conta nunca ficar sem forma de pagamento.
   const promotedToPremiumPlus =
     parsed.data.customerTier === "PREMIUM_PLUS" && current.customerTier !== "PREMIUM_PLUS";
-  const user = await prisma.$transaction(async (tx) => {
-    const updated = await tx.user.update({
-      where: { id },
-      data: parsed.data,
-      select: {
-        id: true,
-        name: true,
-        email: true,
-        role: true,
-        customerTier: true,
-        canUseBalanceAsPayment: true,
-        active: true,
-        createdAt: true,
-      },
+  if (parsed.data.email && parsed.data.email !== current.email) {
+    const taken = await prisma.user.findUnique({ where: { email: parsed.data.email }, select: { id: true } });
+    if (taken) return NextResponse.json({ error: "E-mail já cadastrado em outra conta." }, { status: 409 });
+  }
+  let user;
+  try {
+    user = await prisma.$transaction(async (tx) => {
+      const updated = await tx.user.update({
+        where: { id },
+        data: parsed.data,
+        select: {
+          id: true,
+          name: true,
+          email: true,
+          role: true,
+          customerTier: true,
+          canUseBalanceAsPayment: true,
+          active: true,
+          createdAt: true,
+        },
+      });
+      if (promotedToPremiumPlus) await setAccountBalanceEnabled(tx, id, true);
+      return updated;
     });
-    if (promotedToPremiumPlus) await setAccountBalanceEnabled(tx, id, true);
-    return updated;
-  });
+  } catch (error) {
+    // Corrida com outro cadastro usando o mesmo e-mail (unique de User.email).
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002")
+      return NextResponse.json({ error: "E-mail já cadastrado em outra conta." }, { status: 409 });
+    throw error;
+  }
   await audit(
     admin.id,
     "USER_UPDATED",

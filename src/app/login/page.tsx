@@ -85,6 +85,9 @@ export default function Login() {
               required
             />
           </label>
+          <Link href="/esqueci-senha" className={styles.forgotLink}>
+            Esqueci minha senha
+          </Link>
           {error && (
             <p className={styles.error} role="alert">
               {error}
