@@ -46,6 +46,7 @@ export async function PUT(request: Request, context: Context) {
       manualPriceCents: parsed.data.pricingMode === "MANUAL" ? parsed.data.manualPriceCents : null,
       normalPriceCents: parsed.data.normalPriceCents,
       premiumPriceCents: parsed.data.premiumPriceCents,
+      premiumPlusPriceCents: parsed.data.premiumPlusPriceCents,
     },
     include: { product: { select: { type: true } }, providerProduct: true },
   });

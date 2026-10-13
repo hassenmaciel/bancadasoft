@@ -44,7 +44,7 @@ import { expirePixIfDue } from "@/lib/payment-expiry";
 import { TERMINAL_ORDER_STATUSES } from "@/lib/order-polling";
 import { resolveAuthenticatedCheckoutIdentity } from "@/lib/checkout-identity";
 import { debitOrderPurchase } from "@/lib/account-balance";
-import { hasBalancePaymentPermission, productAcceptsBalancePayment } from "@/lib/balance-payment";
+import { hasBalancePaymentPermission, pixPaymentAllowed, productAcceptsBalancePayment } from "@/lib/balance-payment";
 
 export const catalogue = () =>
   prisma.product.findMany({
@@ -295,6 +295,10 @@ export async function createOrder(input: {
 
   // BALANCE PAYMENT VALIDATION
   const paymentMethod = input.paymentMethod ?? "pix";
+  // PREMIUM_PLUS não compra via PIX (exceto a recarga de saldo). Sem fallback:
+  // com saldo insuficiente a compra fica bloqueada até recarregar.
+  if (paymentMethod !== "balance" && !pixPaymentAllowed(authenticatedUser, product.type))
+    throw new Error("PIX_NOT_ALLOWED_FOR_TIER");
   if (paymentMethod === "balance") {
     if (!authenticatedUser) throw new Error("LOGIN_REQUIRED_FOR_BALANCE");
 

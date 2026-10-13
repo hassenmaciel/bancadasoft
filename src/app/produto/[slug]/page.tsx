@@ -12,7 +12,7 @@ import { isOptimizableImage } from "@/lib/image-source";
 import { session } from "@/lib/auth";
 import { buildCheckoutIdentitySummary } from "@/lib/checkout-identity";
 import { isUnlockToolLicense } from "@/lib/unlocktool-license";
-import { balancePaymentOption } from "@/lib/balance-payment";
+import { balancePaymentOption, pixPaymentAllowed } from "@/lib/balance-payment";
 
 export const dynamic = "force-dynamic";
 
@@ -67,6 +67,8 @@ export default async function ProductPage({ params, searchParams }: { params: Pr
   // Fase 5: só o saldo disponível vai para o client, e só quando o cliente
   // pode pagar com saldo neste produto (ver src/lib/balance-payment.ts).
   const balancePayment = balancePaymentOption(account, found.type);
+  // PREMIUM_PLUS: sem PIX (exceto recarga) — o servidor também recusa.
+  const pixAllowed = pixPaymentAllowed(account, found.type);
   const variantPrices = dto.variants.flatMap((variant) => variant.priceCents === null ? [] : [variant.priceCents]);
   const displayPrice = variantPrices.length ? Math.min(...variantPrices) : dto.priceCents;
   const money = displayPrice === null ? null : new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(displayPrice / 100);
@@ -78,8 +80,8 @@ export default async function ProductPage({ params, searchParams }: { params: Pr
         {unlockTool&&<ul className="product-guidance"><li>Produto digital com acesso temporário por 6 horas.</li><li>Liberação automática após a confirmação do pagamento e do fornecedor.</li><li>As credenciais ficam disponíveis com segurança em Meus Pedidos.</li><li>Não compartilhe as credenciais de acesso.</li></ul>}
         {dto.duration&&<div className="detail-line"><b>Modalidade</b><span>{dto.duration}</span></div>}
         <div className="detail-line"><b>Entrega</b><span>{dto.deliveryType==="ON_REQUEST"?"Sob consulta":dto.deliveryType==="AUTOMATIC"?"Automática":dto.deliveryType==="IMMEDIATE"?"Imediata":"Manual"}{dto.deliveryEstimate?` · ${dto.deliveryEstimate}`:""}</span></div>
-        <div className="detail-availability">✓ Disponível para compra</div>{money ? <strong className="detail-price">{dto.variants.length ? "A partir de " : ""}{dto.priceTier === "PREMIUM" ? "Preço Premium · " : ""}{money}</strong> : <strong className="detail-price">Preço exclusivo para cadastrados</strong>}
-        {dto.priceVisible && money ? <CheckoutPanel product={dto} identity={checkoutIdentity} balancePayment={balancePayment} initialVariantId={typeof requestedVariant === "string" ? requestedVariant : null}/> : <div className="login-price-gate"><p>Entre ou cadastre-se para ver o preço e contratar este serviço.</p><Link className="product-cta" href={`/login?next=${encodeURIComponent(`/produto/${dto.slug}`)}`}>Entrar</Link><Link href={`/cadastro?next=${encodeURIComponent(`/produto/${dto.slug}`)}`}>Criar conta</Link></div>}
+        <div className="detail-availability">✓ Disponível para compra</div>{money ? <strong className="detail-price">{dto.variants.length ? "A partir de " : ""}{dto.priceTier === "PREMIUM_PLUS" ? "Preço Premium Plus · " : dto.priceTier === "PREMIUM" ? "Preço Premium · " : ""}{money}</strong> : <strong className="detail-price">Preço exclusivo para cadastrados</strong>}
+        {dto.priceVisible && money ? <CheckoutPanel product={dto} identity={checkoutIdentity} balancePayment={balancePayment} pixAllowed={pixAllowed} initialVariantId={typeof requestedVariant === "string" ? requestedVariant : null}/> : <div className="login-price-gate"><p>Entre ou cadastre-se para ver o preço e contratar este serviço.</p><Link className="product-cta" href={`/login?next=${encodeURIComponent(`/produto/${dto.slug}`)}`}>Entrar</Link><Link href={`/cadastro?next=${encodeURIComponent(`/produto/${dto.slug}`)}`}>Criar conta</Link></div>}
         {dto.downloadUrl && <a className="product-cta product-download-link" href={dto.downloadUrl} target="_blank" rel="noopener noreferrer">{dto.downloadLabel || "Baixar ferramenta"}</a>}
         <small className="checkout-note">Pagamento processado em ambiente seguro. Confira as condições exibidas antes de concluir.</small>
       </div>

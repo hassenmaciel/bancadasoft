@@ -11,11 +11,18 @@ export async function POST(request: Request) {
   const parsed = adminUserInputSchema.safeParse(await request.json());
   if (!parsed.success) return NextResponse.json({ error: "Informe nome, e-mail válido e senha forte com 12+ caracteres, maiúscula, minúscula, número e símbolo." }, { status: 422 });
   try {
+    const passwordHash = await hashPassword(parsed.data.password);
+    // Conta criada já como PREMIUM_PLUS nasce com o saldo habilitado (compra só com saldo).
+    const premiumPlus = parsed.data.customerTier === "PREMIUM_PLUS";
     const user = await prisma.user.create({
-      data: { name: parsed.data.name, email: parsed.data.email, passwordHash: await hashPassword(parsed.data.password), role: parsed.data.role, customerTier: parsed.data.customerTier },
+      data: {
+        name: parsed.data.name, email: parsed.data.email, passwordHash, role: parsed.data.role, customerTier: parsed.data.customerTier,
+        ...(premiumPlus ? { accountBalance: { create: { enabled: true } } } : {}),
+      },
       select: { id: true, name: true, email: true, role: true, customerTier: true, active: true, createdAt: true },
     });
     await audit(admin.id, "USER_CREATED", "User", user.id, { email: user.email, role: user.role, customerTier: user.customerTier });
+    if (premiumPlus) await audit(admin.id, "USER_BALANCE_TOGGLED", "User", user.id, { enabled: true, reason: "PREMIUM_PLUS" });
     return NextResponse.json({ data: user }, { status: 201 });
   } catch { return NextResponse.json({ error: "E-mail já cadastrado." }, { status: 409 }); }
 }

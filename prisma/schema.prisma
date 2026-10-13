@@ -259,6 +259,8 @@ model Product {
   priceVisibility     PriceVisibility   @default(PUBLIC)
   normalPriceCents    Int?
   premiumPriceCents   Int?
+  // Preço do tier PREMIUM_PLUS; null = usa o preço Premium (ver commercial-pricing.ts).
+  premiumPlusPriceCents Int?
   resellerPriceCents  Int?
   costCents           Int?
   pricingMode         PricingMode       @default(MANUAL)
@@ -531,6 +533,7 @@ model ProductVariant {
   priceCents          Int?
   normalPriceCents    Int?
   premiumPriceCents   Int?
+  premiumPlusPriceCents Int?
   pricingMode         PricingMode     @default(AUTO_GLOBAL)
   manualPriceCents    Int?
   suggestedPriceCents Int?

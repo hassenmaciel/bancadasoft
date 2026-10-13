@@ -49,6 +49,8 @@ export function checkoutErrorMessage(
   // Só no envio por saldo: as mensagens do PIX ficam exatamente como eram.
   if (paymentMethod === "balance" && payload?.code && BALANCE_PAYMENT_ERROR_CODES.has(payload.code) && payload.error)
     return payload.error;
+  // Código exclusivo do bloqueio de PIX do PREMIUM_PLUS; nenhum outro envio PIX o recebe.
+  if (payload?.code === "PIX_NOT_ALLOWED_FOR_TIER" && payload.error) return payload.error;
   if (status === 400 || payload?.code === "INVALID_CHECKOUT" || payload?.code === "INVALID_CUSTOMER_DATA")
     return "Revise os dados informados e tente novamente.";
   if (payload?.code === "MISSING_CUSTOMER_FIELDS")

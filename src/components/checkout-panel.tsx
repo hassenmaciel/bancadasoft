@@ -49,6 +49,7 @@ export default function CheckoutPanel({
   product,
   identity = null,
   balancePayment = null,
+  pixAllowed = true,
   initialVariantId = null,
 }: {
   product: ProductDTO;
@@ -56,6 +57,8 @@ export default function CheckoutPanel({
   // Fase 5: presente só quando o cliente logado pode pagar com saldo neste
   // produto (decidido no servidor, ver src/lib/balance-payment.ts).
   balancePayment?: BalancePaymentOption | null;
+  // false = conta PREMIUM_PLUS comprando algo que não é recarga: só saldo.
+  pixAllowed?: boolean;
   initialVariantId?: string | null;
 }) {
   const router = useRouter();
@@ -117,7 +120,7 @@ export default function CheckoutPanel({
   const needsCpf = identity?.missing.includes("cpfCnpj") ?? false;
   const needsWhatsapp = identity?.missing.includes("whatsapp") ?? false;
   // Pagamento por saldo: sem balancePayment o painel é exatamente o fluxo PIX.
-  const [paymentMethod, setPaymentMethod] = useState<"pix" | "balance">("pix");
+  const [paymentMethod, setPaymentMethod] = useState<"pix" | "balance">(pixAllowed ? "pix" : "balance");
   const payingWithBalance = paymentMethod === "balance" && balancePayment !== null;
   const checkoutTotalCents = unitPriceCents * checkoutQuantity;
   const balanceShortfall = balancePayment
@@ -286,6 +289,8 @@ export default function CheckoutPanel({
   async function checkout(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (licenseMode && !accountConfirmed) return;
+    // Sem PIX para esta conta: nunca envia um checkout PIX (o servidor também recusa).
+    if (!pixAllowed && !payingWithBalance) return;
     if (!submitGuard.current.acquire()) return;
     setSubmitting(true);
     setNotice("");
@@ -473,20 +478,27 @@ export default function CheckoutPanel({
 
   return (
     <>
-      <button
-        className="product-buy"
-        disabled={!product.available}
-        onClick={() => {
-          setPaymentMethod("pix");
-          setOpen(true);
-        }}
-      >
-        {product.available ? "COMPRAR COM PIX" : "Indisponível"}
-      </button>
+      {(pixAllowed || !product.available) && (
+        <button
+          className="product-buy"
+          disabled={!product.available}
+          onClick={() => {
+            setPaymentMethod("pix");
+            setOpen(true);
+          }}
+        >
+          {product.available ? "COMPRAR COM PIX" : "Indisponível"}
+        </button>
+      )}
+      {!pixAllowed && !balancePayment && product.available && (
+        <p className="product-balance-shortfall" role="status">
+          As compras desta conta são feitas com saldo, que ainda não está habilitado. Fale com o suporte.
+        </p>
+      )}
       {balancePayment && product.available && (
         <>
           <button
-            className="product-buy product-buy--balance"
+            className={pixAllowed ? "product-buy product-buy--balance" : "product-buy"}
             disabled={!balanceCoversCheapest}
             onClick={() => {
               setPaymentMethod("balance");
@@ -558,19 +570,21 @@ export default function CheckoutPanel({
                     </p>
                   )}
                   {balancePayment && (
-                    <fieldset className="checkout-payment-methods">
-                      <legend>Forma de pagamento</legend>
-                      <label className={paymentMethod === "pix" ? "is-selected" : undefined}>
-                        <input
-                          type="radio"
-                          name="paymentMethod"
-                          value="pix"
-                          checked={paymentMethod === "pix"}
-                          onChange={() => setPaymentMethod("pix")}
-                        />
-                        <b>PIX</b>
-                        <small>QR Code na hora</small>
-                      </label>
+                    <fieldset className={pixAllowed ? "checkout-payment-methods" : "checkout-payment-methods checkout-payment-methods--single"}>
+                      <legend>{pixAllowed ? "Forma de pagamento" : "Pagamento com saldo"}</legend>
+                      {pixAllowed && (
+                        <label className={paymentMethod === "pix" ? "is-selected" : undefined}>
+                          <input
+                            type="radio"
+                            name="paymentMethod"
+                            value="pix"
+                            checked={paymentMethod === "pix"}
+                            onChange={() => setPaymentMethod("pix")}
+                          />
+                          <b>PIX</b>
+                          <small>QR Code na hora</small>
+                        </label>
+                      )}
                       <label className={paymentMethod === "balance" ? "is-selected" : undefined}>
                         <input
                           type="radio"

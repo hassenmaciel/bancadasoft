@@ -234,7 +234,8 @@ describe("painel de checkout — opção de saldo ao lado do PIX", () => {
   });
 
   it("o botão de saldo tem a mesma classe base do botão PIX (mesmo peso visual)", () => {
-    expect(source).toContain('className="product-buy product-buy--balance"');
+    // Sem PIX (PREMIUM_PLUS) o botão de saldo vira o único e perde só a margem superior.
+    expect(source).toContain('className={pixAllowed ? "product-buy product-buy--balance" : "product-buy"}');
     expect(source).toContain("PAGAR COM SALDO");
   });
 

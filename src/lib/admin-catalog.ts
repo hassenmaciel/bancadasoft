@@ -35,6 +35,7 @@ export const productInputSchema = z.object({
   priceVisibility: z.nativeEnum(PriceVisibility).default(PriceVisibility.PUBLIC),
   normalPriceCents: z.number().int().min(1).nullable().optional(),
   premiumPriceCents: z.number().int().min(1).nullable().optional(),
+  premiumPlusPriceCents: z.number().int().min(1).nullable().optional(),
   // Preço de revenda (API /api/reseller/v1). null = não vendido a revendedor.
   resellerPriceCents: z.number().int().min(1).nullable().optional(),
   costCents: z.number().int().min(0).nullable().optional(),
@@ -74,6 +75,7 @@ export const productVariantInputSchema = z.object({
   manualPriceCents: z.number().int().min(1).nullable().optional(),
   normalPriceCents: z.number().int().min(1).nullable().optional(),
   premiumPriceCents: z.number().int().min(1).nullable().optional(),
+  premiumPlusPriceCents: z.number().int().min(1).nullable().optional(),
 }).superRefine((value, context) => {
   if (value.pricingMode === PricingMode.MANUAL && !value.manualPriceCents)
     context.addIssue({ code: "custom", path: ["manualPriceCents"], message: "Informe o preço manual da variante." });
@@ -90,6 +92,7 @@ export type AdminVariantDTO = {
   manualPriceCents: number | null;
   normalPriceCents: number | null;
   premiumPriceCents: number | null;
+  premiumPlusPriceCents: number | null;
   suggestedPriceCents: number | null;
   pricingStatus: string;
   publicationBlocked: boolean;
@@ -105,7 +108,7 @@ export type AdminVariantDTO = {
   };
 };
 
-export type AdminProductDTO = Pick<Product, "id" | "slug" | "name" | "description" | "longDescription" | "type" | "deliveryType" | "deliveryEstimate" | "searchTerms" | "duration" | "priceCents" | "priceVisibility" | "normalPriceCents" | "premiumPriceCents" | "resellerPriceCents" | "costCents" | "pricingMode" | "manualPriceCents" | "suggestedPriceCents" | "pricingStatus" | "featured" | "sortOrder" | "status" | "available" | "imageUrl" | "downloadUrl" | "downloadLabel"> & {
+export type AdminProductDTO = Pick<Product, "id" | "slug" | "name" | "description" | "longDescription" | "type" | "deliveryType" | "deliveryEstimate" | "searchTerms" | "duration" | "priceCents" | "priceVisibility" | "normalPriceCents" | "premiumPriceCents" | "premiumPlusPriceCents" | "resellerPriceCents" | "costCents" | "pricingMode" | "manualPriceCents" | "suggestedPriceCents" | "pricingStatus" | "featured" | "sortOrder" | "status" | "available" | "imageUrl" | "downloadUrl" | "downloadLabel"> & {
   category: Pick<Category, "id" | "name" | "slug">;
   brand: Pick<Brand, "id" | "name" | "slug"> | null;
   updatedAt: string;
@@ -116,7 +119,7 @@ export type AdminProductDTO = Pick<Product, "id" | "slug" | "name" | "descriptio
 };
 
 type AdminProductSource=Product & {category:Category;brand:Brand|null;providerProducts?:Array<{id:string;externalProductId:string;label:string|null;providerCostCents:number|null;currency:string;active:boolean;mode:string;metadata:unknown;lastSyncedAt:Date|null;syncStatus:string|null;updatedAt:Date;automationClass:string;technicalEligibility:string;homologationStatus:string;contractSignature:string|null;fieldSchema:unknown;expectedDeliveryType:string;provider:{id:string;name:string;code:string;active:boolean}}>;
-  variants?: Array<{id:string;name:string;code:string;active:boolean;sortOrder:number;priceCents:number|null;normalPriceCents:number|null;premiumPriceCents:number|null;pricingMode:string;manualPriceCents:number|null;suggestedPriceCents:number|null;pricingStatus:string;publicationBlocked:boolean;holdReason:string|null;providerProduct:{id:string;externalProductId:string;label:string|null;providerCostCents:number|null;currency:string;active:boolean;provider:{id:string;name:string;active:boolean}}}>;
+  variants?: Array<{id:string;name:string;code:string;active:boolean;sortOrder:number;priceCents:number|null;normalPriceCents:number|null;premiumPriceCents:number|null;premiumPlusPriceCents:number|null;pricingMode:string;manualPriceCents:number|null;suggestedPriceCents:number|null;pricingStatus:string;publicationBlocked:boolean;holdReason:string|null;providerProduct:{id:string;externalProductId:string;label:string|null;providerCostCents:number|null;currency:string;active:boolean;provider:{id:string;name:string;active:boolean}}}>;
 };
 export const operationalProviderProducts = <T extends {active:boolean;mode:string;provider:{active:boolean;code:string}}>(links:T[]) =>
   links.filter(link => link.active && link.mode === "REAL" && link.provider.active && isProductionProviderCode(link.provider.code));
@@ -127,6 +130,7 @@ export const adminProductDto = (product: AdminProductSource, pricing: PricingRes
   deliveryEstimate: product.deliveryEstimate, searchTerms: product.searchTerms,
   type: product.type, duration: product.duration, priceCents: product.priceCents,
   priceVisibility: product.priceVisibility, normalPriceCents: product.normalPriceCents, premiumPriceCents: product.premiumPriceCents,
+  premiumPlusPriceCents: product.premiumPlusPriceCents,
   resellerPriceCents: product.resellerPriceCents,
   costCents: product.costCents, pricingMode: product.pricingMode, manualPriceCents: product.manualPriceCents,
   suggestedPriceCents: product.suggestedPriceCents, pricingStatus: product.pricingStatus,
@@ -140,7 +144,7 @@ export const adminProductDto = (product: AdminProductSource, pricing: PricingRes
   providerProducts:operationalProviderProducts(product.providerProducts??[]).map(link=>({...link,mode:String(link.mode),lastSyncedAt:link.lastSyncedAt?.toISOString()??null,updatedAt:link.updatedAt.toISOString()})),
   variants:(product.variants??[]).sort((a,b)=>a.sortOrder-b.sortOrder).map(variant=>({
     id:variant.id,name:variant.name,code:variant.code,active:variant.active,sortOrder:variant.sortOrder,
-    priceCents:variant.priceCents,normalPriceCents:variant.normalPriceCents,premiumPriceCents:variant.premiumPriceCents,pricingMode:variant.pricingMode,manualPriceCents:variant.manualPriceCents,
+    priceCents:variant.priceCents,normalPriceCents:variant.normalPriceCents,premiumPriceCents:variant.premiumPriceCents,premiumPlusPriceCents:variant.premiumPlusPriceCents,pricingMode:variant.pricingMode,manualPriceCents:variant.manualPriceCents,
     suggestedPriceCents:variant.suggestedPriceCents,pricingStatus:variant.pricingStatus,
     publicationBlocked:variant.publicationBlocked,holdReason:variant.holdReason,
     providerProduct:variant.providerProduct,

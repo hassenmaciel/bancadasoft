@@ -5,6 +5,7 @@ export type TieredPriceSource = {
   priceCents: number | null;
   normalPriceCents?: number | null;
   premiumPriceCents?: number | null;
+  premiumPlusPriceCents?: number | null;
 };
 
 export type PriceViewer = { customerTier: CustomerTierValue } | null;
@@ -15,6 +16,10 @@ const positive = (value: number | null | undefined) =>
 export function resolveTierPrice(source: TieredPriceSource, viewer: PriceViewer) {
   const publicPrice = positive(source.priceCents);
   if (!viewer) return publicPrice;
+  // PREMIUM_PLUS usa o preço próprio quando preenchido; vazio cai exatamente
+  // na mesma cadeia do PREMIUM (Premium → Técnico → Público).
+  if (viewer.customerTier === "PREMIUM_PLUS" && positive(source.premiumPlusPriceCents))
+    return positive(source.premiumPlusPriceCents);
   if (viewer.customerTier === "PREMIUM" || viewer.customerTier === "PREMIUM_PLUS")
     return (
       positive(source.premiumPriceCents) ??
@@ -22,6 +27,15 @@ export function resolveTierPrice(source: TieredPriceSource, viewer: PriceViewer)
       publicPrice
     );
   return positive(source.normalPriceCents) ?? publicPrice;
+}
+
+// Aviso (nunca bloqueio) do Admin: Premium Plus acima do preço que o PREMIUM
+// efetivamente paga. null = sem aviso.
+export function premiumPlusPriceWarning(source: TieredPriceSource) {
+  const premiumPlus = positive(source.premiumPlusPriceCents);
+  const premium = resolveTierPrice({ ...source, premiumPlusPriceCents: null }, { customerTier: "PREMIUM" });
+  if (!premiumPlus || !premium || premiumPlus <= premium) return null;
+  return "Atenção: preço Premium Plus maior que o Premium.";
 }
 
 export function resolveVisiblePrice(

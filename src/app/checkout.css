@@ -889,3 +889,6 @@ body:has(.checkout-modal)::before {
   color: #0878f9;
   font-weight: 800;
 }
+.checkout-payment-methods--single {
+  grid-template-columns: 1fr;
+}

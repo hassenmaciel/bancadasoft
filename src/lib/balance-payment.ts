@@ -23,6 +23,15 @@ export function productAcceptsBalancePayment(productType: string) {
   return productType !== "BALANCE_TOPUP";
 }
 
+// PREMIUM_PLUS compra só com saldo: o preço do tier vem junto da obrigação de
+// manter saldo. Exceção obrigatória: a recarga (BALANCE_TOPUP) é paga via PIX
+// por qualquer tier — senão não haveria como depositar. Visitante (null)
+// continua com PIX e paga o preço público.
+export function pixPaymentAllowed(account: Pick<BalancePaymentAccount, "customerTier"> | null, productType: string) {
+  if (!account || !productAcceptsBalancePayment(productType)) return true;
+  return account.customerTier !== "PREMIUM_PLUS";
+}
+
 // null = a opção "Pagar com saldo" não aparece para este cliente/produto.
 export function balancePaymentOption(
   account: BalancePaymentAccount | null,

@@ -66,7 +66,13 @@ export default function UserManager({
     }),
       body = await response.json();
     setBusy(false);
-    setMessage(response.ok ? "Usuário atualizado." : body.error);
+    setMessage(
+      response.ok
+        ? body.balanceEnabled
+          ? "Usuário atualizado. Saldo habilitado automaticamente (Premium Plus compra só com saldo)."
+          : "Usuário atualizado."
+        : body.error,
+    );
     if (response.ok) {
       setEditing(null);
       setStatusTarget(null);

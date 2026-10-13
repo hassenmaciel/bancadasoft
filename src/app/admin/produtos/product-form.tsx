@@ -3,6 +3,7 @@ import { FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { AdminProductDTO } from "@/lib/admin-catalog";
 import { optionalCentsToInput, optionalInputToCents } from "@/lib/admin-price-input";
+import { premiumPlusPriceWarning } from "@/lib/commercial-pricing";
 import AdminImageUpload from "@/components/admin-image-upload";
 import AdminConfirmDialog from "@/components/admin-confirm-dialog";
 import VariantManager from "./variant-manager";
@@ -53,12 +54,20 @@ export default function ProductForm({
     [publicPrice, setPublicPrice] = useState(product ? product.priceCents / 100 : 0),
     [normalPrice, setNormalPrice] = useState(product ? (product.normalPriceCents ?? product.priceCents) / 100 : 0),
     [premiumPrice, setPremiumPrice] = useState(product?.premiumPriceCents == null ? "" : String(product.premiumPriceCents / 100)),
+    [premiumPlusPrice, setPremiumPlusPrice] = useState(optionalCentsToInput(product?.premiumPlusPriceCents)),
     [resellerPrice, setResellerPrice] = useState(optionalCentsToInput(product?.resellerPriceCents)),
     [cost, setCost] = useState(
       product?.costCents == null ? "" : String(product.costCents / 100),
     ),
     [image, setImage] = useState(product?.imageUrl ?? "");
   const pricing = product?.pricing;
+  // Só aviso: salvar continua permitido mesmo com Premium Plus acima do Premium.
+  const premiumPlusWarning = premiumPlusPriceWarning({
+    priceCents: Math.round(publicPrice * 100),
+    normalPriceCents: Math.round(normalPrice * 100),
+    premiumPriceCents: optionalInputToCents(premiumPrice),
+    premiumPlusPriceCents: optionalInputToCents(premiumPlusPrice),
+  });
   async function submit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setSaving(true);
@@ -78,6 +87,7 @@ export default function ProductForm({
       priceVisibility: f.get("priceVisibility"),
       normalPriceCents: Math.round(normalPrice * 100),
       premiumPriceCents: premiumPrice === "" ? null : Math.round(Number(premiumPrice) * 100),
+      premiumPlusPriceCents: optionalInputToCents(premiumPlusPrice),
       resellerPriceCents: optionalInputToCents(resellerPrice),
       costCents: cost === "" ? null : Math.round(Number(cost) * 100),
       pricingMode,
@@ -299,6 +309,7 @@ export default function ProductForm({
             <label>Preço Público (R$)<input type="number" min="0.01" step=".01" value={publicPrice} onChange={(event)=>setPublicPrice(Number(event.target.value))} required/></label>
             <label>Preço Técnico (R$)<input type="number" min="0.01" step=".01" value={normalPrice} placeholder="Usa preço Público" onChange={(event)=>setNormalPrice(Number(event.target.value))}/></label>
             <label>Preço Premium (R$)<input type="number" min="0.01" step=".01" value={premiumPrice} placeholder="Usa preço Técnico" onChange={(event)=>setPremiumPrice(event.target.value)}/></label>
+            <label>Preço Premium Plus (R$)<input type="number" min="0.01" step=".01" value={premiumPlusPrice} placeholder="Usa preço Premium" onChange={(event)=>setPremiumPlusPrice(event.target.value)}/>{premiumPlusWarning && <small className="price-warning" role="status">{premiumPlusWarning}</small>}</label>
             <label>Preço de revenda (R$)<input type="number" min="0.01" step=".01" value={resellerPrice} placeholder="Vazio = não vendido a revendedor" onChange={(event)=>setResellerPrice(event.target.value)}/></label>
           </div>
           <div className="form-grid">

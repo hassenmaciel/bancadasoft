@@ -4,6 +4,7 @@ import { adminUserUpdateSchema } from "@/lib/admin-inputs";
 import { canChangeLastAdmin, userDeleteDecision } from "@/lib/admin-rules";
 import { prisma } from "@/lib/prisma";
 import { audit, safeChangeMetadata } from "@/lib/audit";
+import { setAccountBalanceEnabled } from "@/lib/reseller-admin";
 type Context = { params: Promise<{ id: string }> };
 export async function PUT(request: Request, { params }: Context) {
   let admin;
@@ -46,19 +47,27 @@ export async function PUT(request: Request, { params }: Context) {
       { error: "O último administrador ativo deve ser preservado." },
       { status: 409 },
     );
-  const user = await prisma.user.update({
-    where: { id },
-    data: parsed.data,
-    select: {
-      id: true,
-      name: true,
-      email: true,
-      role: true,
-      customerTier: true,
-      canUseBalanceAsPayment: true,
-      active: true,
-      createdAt: true,
-    },
+  // PREMIUM_PLUS compra só com saldo: a promoção habilita o saldo na mesma
+  // transação, para a conta nunca ficar sem forma de pagamento.
+  const promotedToPremiumPlus =
+    parsed.data.customerTier === "PREMIUM_PLUS" && current.customerTier !== "PREMIUM_PLUS";
+  const user = await prisma.$transaction(async (tx) => {
+    const updated = await tx.user.update({
+      where: { id },
+      data: parsed.data,
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        role: true,
+        customerTier: true,
+        canUseBalanceAsPayment: true,
+        active: true,
+        createdAt: true,
+      },
+    });
+    if (promotedToPremiumPlus) await setAccountBalanceEnabled(tx, id, true);
+    return updated;
   });
   await audit(
     admin.id,
@@ -67,7 +76,9 @@ export async function PUT(request: Request, { params }: Context) {
     id,
     safeChangeMetadata(current, user),
   );
-  return NextResponse.json({ data: user });
+  if (promotedToPremiumPlus)
+    await audit(admin.id, "USER_BALANCE_TOGGLED", "User", id, { enabled: true, reason: "PREMIUM_PLUS" });
+  return NextResponse.json({ data: user, balanceEnabled: promotedToPremiumPlus });
 }
 export async function DELETE(_: Request, { params }: Context) {
   let admin;
