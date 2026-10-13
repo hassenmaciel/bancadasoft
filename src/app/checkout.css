@@ -825,3 +825,67 @@ body:has(.checkout-modal)::before {
     animation: none;
   }
 }
+
+/* Fase 5: seletor PIX/Saldo — as duas opções com o mesmo peso visual. */
+.checkout-payment-methods {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin: 0 0 14px;
+  padding: 0;
+  border: 0;
+}
+.checkout-payment-methods legend {
+  margin-bottom: 7px;
+  padding: 0;
+  color: #1a3150;
+  font-size: 11px;
+  font-weight: 800;
+}
+.checkout-payment-methods label {
+  position: relative;
+  display: grid;
+  gap: 2px;
+  padding: 12px 14px;
+  border: 1px solid #d8e3ef;
+  border-radius: 10px;
+  background: #fff;
+  cursor: pointer;
+  transition:
+    border-color 0.18s,
+    box-shadow 0.18s;
+}
+.checkout-payment-methods label.is-selected {
+  border-color: #1685fb;
+  box-shadow: 0 0 0 3px #1685fb1f;
+  background: #f4f8ff;
+}
+.checkout-payment-methods input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+.checkout-payment-methods label:has(input:focus-visible) {
+  outline: 3px solid #5bc8ff;
+  outline-offset: 2px;
+}
+.checkout-payment-methods b {
+  color: #071a35;
+  font-size: 14px;
+}
+.checkout-payment-methods small {
+  color: #657994;
+  font-size: 11px;
+}
+.checkout-balance-shortfall {
+  margin: 8px 0 0;
+  padding: 9px 11px;
+  border-radius: 8px;
+  background: #fff7e6;
+  color: #8a5300;
+  font-size: 11px;
+}
+.checkout-balance-shortfall a {
+  color: #0878f9;
+  font-weight: 800;
+}

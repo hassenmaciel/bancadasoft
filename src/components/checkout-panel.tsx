@@ -2,6 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import type { DeliveryDTO, OrderDTO, ProductDTO } from "@/lib/dto";
 import type { CustomerFieldEcho } from "@/lib/customer-field-echo";
@@ -37,6 +38,7 @@ import {
   needsGuestCheckoutRecovery,
   parseSavedCheckoutReference,
 } from "@/lib/checkout-recovery";
+import { balanceShortfallCents, type BalancePaymentOption } from "@/lib/balance-payment";
 
 const money = (value: number) =>
   new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(
@@ -46,12 +48,17 @@ const money = (value: number) =>
 export default function CheckoutPanel({
   product,
   identity = null,
+  balancePayment = null,
   initialVariantId = null,
 }: {
   product: ProductDTO;
   identity?: CheckoutIdentitySummary | null;
+  // Fase 5: presente só quando o cliente logado pode pagar com saldo neste
+  // produto (decidido no servidor, ver src/lib/balance-payment.ts).
+  balancePayment?: BalancePaymentOption | null;
   initialVariantId?: string | null;
 }) {
+  const router = useRouter();
   const [open, setOpen] = useState(false);
   const [order, setOrder] = useState<OrderDTO | null>(null);
   const [notice, setNotice] = useState("");
@@ -109,6 +116,20 @@ export default function CheckoutPanel({
   // com cadastro incompleto, só os campos realmente ausentes são pedidos.
   const needsCpf = identity?.missing.includes("cpfCnpj") ?? false;
   const needsWhatsapp = identity?.missing.includes("whatsapp") ?? false;
+  // Pagamento por saldo: sem balancePayment o painel é exatamente o fluxo PIX.
+  const [paymentMethod, setPaymentMethod] = useState<"pix" | "balance">("pix");
+  const payingWithBalance = paymentMethod === "balance" && balancePayment !== null;
+  const checkoutTotalCents = unitPriceCents * checkoutQuantity;
+  const balanceShortfall = balancePayment
+    ? balanceShortfallCents(balancePayment.balanceCents, checkoutTotalCents)
+    : 0;
+  const balanceBlocked = payingWithBalance && balanceShortfall > 0;
+  // Botão da página: desabilita quando o saldo não cobre nem a opção mais barata.
+  const variantPrices = product.variants.flatMap((variant) => (variant.priceCents === null ? [] : [variant.priceCents]));
+  const cheapestPriceCents = variantPrices.length ? Math.min(...variantPrices) : (product.priceCents ?? 0);
+  const balanceCoversCheapest = balancePayment
+    ? balancePayment.balanceCents >= cheapestPriceCents * quantityLimits.min
+    : false;
 
   // GET-only: nunca cria Order/Payment, nunca chama provider. Retorna se a
   // entrega foi obtida, para permitir retry com backoff (PARTE 5).
@@ -310,6 +331,7 @@ export default function CheckoutPanel({
           ...identityFields,
           deliveryAccessToken,
           ...(quantityEnabled ? { quantity: checkoutQuantity } : {}),
+          ...(payingWithBalance ? { paymentMethod: "balance" } : {}),
           providerFields: Object.fromEntries(
             checkoutFields.map((field) => [field.key, String(form.get(`provider:${field.key}`) ?? "")]),
           ),
@@ -317,7 +339,7 @@ export default function CheckoutPanel({
       });
       const payload = await readCheckoutResponse(response);
       if (!response.ok || !payload?.data || !payload.deliveryAccessToken)
-        throw new Error(checkoutErrorMessage(response.status, payload));
+        throw new Error(checkoutErrorMessage(response.status, payload, payingWithBalance ? "balance" : "pix"));
       setOrder(payload.data);
       localStorage.setItem(
         storageKey,
@@ -331,6 +353,9 @@ export default function CheckoutPanel({
         `bancadasoft:delivery:${payload.data.id}`,
         payload.deliveryAccessToken,
       );
+      // Saldo debitado: recarrega os dados do servidor para o saldo exibido
+      // (botão e seletor) já refletir o débito numa próxima compra.
+      if (payingWithBalance) router.refresh();
     } catch (error) {
       setNotice(
         error instanceof Error
@@ -451,10 +476,33 @@ export default function CheckoutPanel({
       <button
         className="product-buy"
         disabled={!product.available}
-        onClick={() => setOpen(true)}
+        onClick={() => {
+          setPaymentMethod("pix");
+          setOpen(true);
+        }}
       >
         {product.available ? "COMPRAR COM PIX" : "Indisponível"}
       </button>
+      {balancePayment && product.available && (
+        <>
+          <button
+            className="product-buy product-buy--balance"
+            disabled={!balanceCoversCheapest}
+            onClick={() => {
+              setPaymentMethod("balance");
+              setOpen(true);
+            }}
+          >
+            PAGAR COM SALDO · disponível {money(balancePayment.balanceCents)}
+          </button>
+          {!balanceCoversCheapest && (
+            <p className="product-balance-shortfall">
+              Saldo insuficiente para este produto.{" "}
+              <Link href="/minha-conta/saldo">Recarregar saldo</Link>
+            </p>
+          )}
+        </>
+      )}
       {open && (
         <dialog
           ref={modalRef}
@@ -489,7 +537,9 @@ export default function CheckoutPanel({
                     <>
                       <p className="checkout-lead">
                         {identity.complete
-                          ? "Confirme seus dados e gere o PIX."
+                          ? payingWithBalance
+                            ? "Confirme seus dados e pague com saldo."
+                            : "Confirme seus dados e gere o PIX."
                           : "Complete os dados abaixo para continuar."}
                       </p>
                       <div className="checkout-identity-summary">
@@ -506,6 +556,33 @@ export default function CheckoutPanel({
                       <br />
                       Não é necessário criar uma conta.
                     </p>
+                  )}
+                  {balancePayment && (
+                    <fieldset className="checkout-payment-methods">
+                      <legend>Forma de pagamento</legend>
+                      <label className={paymentMethod === "pix" ? "is-selected" : undefined}>
+                        <input
+                          type="radio"
+                          name="paymentMethod"
+                          value="pix"
+                          checked={paymentMethod === "pix"}
+                          onChange={() => setPaymentMethod("pix")}
+                        />
+                        <b>PIX</b>
+                        <small>QR Code na hora</small>
+                      </label>
+                      <label className={paymentMethod === "balance" ? "is-selected" : undefined}>
+                        <input
+                          type="radio"
+                          name="paymentMethod"
+                          value="balance"
+                          checked={paymentMethod === "balance"}
+                          onChange={() => setPaymentMethod("balance")}
+                        />
+                        <b>Saldo</b>
+                        <small>Disponível {money(balancePayment.balanceCents)}</small>
+                      </label>
+                    </fieldset>
                   )}
                   <div className="checkout-fields">
                     {product.variants.length > 0 && (
@@ -662,6 +739,12 @@ export default function CheckoutPanel({
                       />
                     )}
                   </div>
+                  {balanceBlocked && balancePayment && (
+                    <p className="checkout-balance-shortfall" role="status">
+                      Saldo insuficiente: disponível {money(balancePayment.balanceCents)}, faltam{" "}
+                      {money(balanceShortfall)}. <Link href="/minha-conta/saldo">Recarregar saldo</Link>
+                    </p>
+                  )}
                   {notice && (
                     <p className="checkout-error" role="alert">
                       {notice}
@@ -669,14 +752,16 @@ export default function CheckoutPanel({
                   )}
                   <button
                     className="checkout-submit"
-                    disabled={!canSubmitCheckout({ licenseMode, confirmed: accountConfirmed, submitting })}
+                    disabled={!canSubmitCheckout({ licenseMode, confirmed: accountConfirmed, submitting }) || balanceBlocked}
                     aria-busy={submitting}
                   >
                     {submitting ? (
                       <>
                         <span className="button-spinner" />
-                        GERANDO PIX...
+                        {payingWithBalance ? "PAGANDO COM SALDO..." : "GERANDO PIX..."}
                       </>
+                    ) : payingWithBalance ? (
+                      <>PAGAR {money(checkoutTotalCents)} COM SALDO</>
                     ) : (
                       <>▣ GERAR PIX</>
                     )}
@@ -894,7 +979,9 @@ export default function CheckoutPanel({
                 )}
                 <div>
                   <dt>Pagamento</dt>
-                  <dd>PIX</dd>
+                  <dd>
+                    {(order ? order.payment?.method === "balance" : payingWithBalance) ? "Saldo" : "PIX"}
+                  </dd>
                 </div>
                 {licenseMode ? (
                   product.deliveryEstimate && (

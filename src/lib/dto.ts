@@ -67,6 +67,8 @@ export type PaymentDTO = Pick<Payment, "status" | "amountCents"> & {
   expirationDate: Date;
   /** Horário do servidor ao montar a resposta — referência do contador regressivo. */
   serverTime: string;
+  /** Forma de pagamento do pedido; ausente equivale a PIX. */
+  method?: "pix" | "balance";
 };
 export type DeliveryDTO = {
   deliveryType?: "CREDENTIALS" | "LICENSE" | "CODE" | "TEXT" | "MULTI_FIELD";
@@ -210,6 +212,7 @@ export const orderDto = (order: any, options: { includeDelivery?: boolean } = {}
       qrCodeImage: normalizeQrCodeImage(order.payment.qrCode),
       expirationDate: order.payment.expiresAt,
       serverTime: new Date().toISOString(),
+      method: order.payment.provider === "balance" ? "balance" as const : "pix" as const,
     }
     : null,
   fulfillment: order.fulfillment

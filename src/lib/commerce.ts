@@ -44,6 +44,7 @@ import { expirePixIfDue } from "@/lib/payment-expiry";
 import { TERMINAL_ORDER_STATUSES } from "@/lib/order-polling";
 import { resolveAuthenticatedCheckoutIdentity } from "@/lib/checkout-identity";
 import { debitOrderPurchase } from "@/lib/account-balance";
+import { hasBalancePaymentPermission, productAcceptsBalancePayment } from "@/lib/balance-payment";
 
 export const catalogue = () =>
   prisma.product.findMany({
@@ -212,7 +213,17 @@ export async function createOrder(input: {
   const access = createDeliveryAccess(new Date(), input.deliveryAccessToken);
   const recovered = await prisma.order.findUnique({
     where: { deliveryTokenHash: access.tokenHash },
+    include: { payment: { select: { provider: true } } },
   });
+  // Pedido pago com saldo já nasce PAID e não tem PIX a retomar: um reenvio
+  // com o mesmo token (resposta perdida, duplo clique) devolve o pedido como
+  // está — nunca cai em retryPendingPixCheckout nem debita de novo.
+  if (recovered?.payment?.provider === "balance" && !TERMINAL_ORDER_STATUSES.has(recovered.status)) {
+    return {
+      order: await getOrder(recovered.id),
+      deliveryAccessToken: access.token,
+    };
+  }
   // Um pedido TERMINAL (DELIVERED/FAILED/CANCELLED) nunca deve bloquear uma nova
   // compra: apenas pedidos ainda ativos reutilizam o token para evitar cobrança
   // duplicada (ver PARTE 1/7 do checklist de recovery).
@@ -287,17 +298,18 @@ export async function createOrder(input: {
   if (paymentMethod === "balance") {
     if (!authenticatedUser) throw new Error("LOGIN_REQUIRED_FOR_BALANCE");
 
+    if (!productAcceptsBalancePayment(product.type)) throw new Error("BALANCE_PAYMENT_NOT_ALLOWED");
+
     const userWithBalance = await prisma.user.findUnique({
       where: { id: authenticatedUser.id },
-      select: { canUseBalanceAsPayment: true, customerTier: true, accountBalance: { select: { balanceCents: true } } },
+      select: { canUseBalanceAsPayment: true, customerTier: true, accountBalance: { select: { balanceCents: true, enabled: true } } },
     });
 
-    const hasBalancePermission =
-      userWithBalance?.canUseBalanceAsPayment === true ||
-      userWithBalance?.customerTier === "PREMIUM_PLUS";
-
-    if (!hasBalancePermission) throw new Error("BALANCE_PERMISSION_REQUIRED");
-    if (!userWithBalance?.accountBalance || userWithBalance.accountBalance.balanceCents < totalCents) {
+    if (!userWithBalance || !hasBalancePaymentPermission(userWithBalance)) throw new Error("BALANCE_PERMISSION_REQUIRED");
+    // Checagem antecipada (erro claro antes de criar o pedido); o débito
+    // revalida enabled e saldo com a linha travada.
+    if (!userWithBalance.accountBalance?.enabled) throw new Error("BALANCE_NOT_ENABLED");
+    if (userWithBalance.accountBalance.balanceCents < totalCents) {
       throw new Error("INSUFFICIENT_BALANCE");
     }
   }
@@ -407,6 +419,18 @@ export async function createOrder(input: {
 
       return order;
     });
+
+    // Mesmo gatilho do PIX após a confirmação do webhook (processPayment): o
+    // pedido já está PAID, então a liberação começa aqui. Uma falha não
+    // desfaz o pagamento — fica registrada pelo engine e visível no log.
+    try {
+      await executeFulfillment(balanceOrder.id);
+    } catch (error) {
+      console.error("[fulfillment] Execução falhou após pagamento por saldo.", {
+        orderId: balanceOrder.id,
+        ...safeErrorInfo(error),
+      });
+    }
 
     return {
       order: await getOrder(balanceOrder.id),

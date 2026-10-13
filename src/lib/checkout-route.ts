@@ -76,6 +76,8 @@ export async function handleCheckoutRequest(
       return NextResponse.json({ ok: false, error: "Faça login para usar saldo como pagamento.", code: "LOGIN_REQUIRED_FOR_BALANCE" }, { status: 401 });
     if (error instanceof Error && error.message === "BALANCE_PERMISSION_REQUIRED")
       return NextResponse.json({ ok: false, error: "A sua conta não tem permissão para usar saldo como pagamento.", code: "BALANCE_PERMISSION_REQUIRED" }, { status: 403 });
+    if (error instanceof Error && error.message === "BALANCE_PAYMENT_NOT_ALLOWED")
+      return NextResponse.json({ ok: false, error: "Este produto não pode ser pago com saldo.", code: "BALANCE_PAYMENT_NOT_ALLOWED" }, { status: 422 });
     if (error instanceof Error && error.message === "INSUFFICIENT_BALANCE")
       return NextResponse.json({ ok: false, error: "Saldo insuficiente para completar a compra.", code: "INSUFFICIENT_BALANCE" }, { status: 402 });
     if (error instanceof Error && error.message === "LOGIN_REQUIRED_FOR_PRICE")
