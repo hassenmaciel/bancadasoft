@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { isValidCpf, isValidWhatsapp } from "./checkout-validation";
+
 export const checkoutSchema = z.object({
   productId: z.string().min(1),
   variantId: z.string().min(1).optional(),
@@ -21,4 +22,5 @@ export const checkoutSchema = z.object({
   providerFields: z.record(z.string(), z.string().max(500)).optional().default({}),
   // Ausente = 1. O intervalo permitido por produto é conferido em createOrder.
   quantity: z.coerce.number().int().min(1).max(1000).optional(),
+  paymentMethod: z.enum(["pix", "balance"]).default("pix"),
 });

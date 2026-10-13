@@ -146,6 +146,7 @@ enum PricingRoundingMode {
 enum CustomerTier {
   NORMAL
   PREMIUM
+  PREMIUM_PLUS
 }
 
 enum PriceVisibility {
@@ -171,6 +172,7 @@ model User {
   cpfCnpj         String?
   whatsapp        String?
   active          Boolean      @default(true)
+  canUseBalanceAsPayment Boolean @default(false)
   createdAt       DateTime     @default(now())
   updatedAt       DateTime     @updatedAt
   orders          Order[]

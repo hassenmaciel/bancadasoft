@@ -12,6 +12,7 @@ const row = (role: string) => ({
   email: `${role.toLowerCase()}@example.test`,
   role,
   customerTier: "NORMAL" as const,
+  canUseBalanceAsPayment: false,
   active: true,
   createdAt: "2026-09-25T12:00:00.000Z",
   orderCount: 0,

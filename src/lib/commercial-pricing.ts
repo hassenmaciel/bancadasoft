@@ -1,4 +1,4 @@
-export type CustomerTierValue = "NORMAL" | "PREMIUM";
+export type CustomerTierValue = "NORMAL" | "PREMIUM" | "PREMIUM_PLUS";
 export type PriceVisibilityValue = "PUBLIC" | "LOGIN_REQUIRED";
 
 export type TieredPriceSource = {
@@ -15,7 +15,7 @@ const positive = (value: number | null | undefined) =>
 export function resolveTierPrice(source: TieredPriceSource, viewer: PriceViewer) {
   const publicPrice = positive(source.priceCents);
   if (!viewer) return publicPrice;
-  if (viewer.customerTier === "PREMIUM")
+  if (viewer.customerTier === "PREMIUM" || viewer.customerTier === "PREMIUM_PLUS")
     return (
       positive(source.premiumPriceCents) ??
       positive(source.normalPriceCents) ??

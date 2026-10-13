@@ -36,7 +36,7 @@ export type ProductDTO = Pick<
 > & {
   priceCents: number | null;
   priceVisible: boolean;
-  priceTier: "NORMAL" | "PREMIUM" | null;
+  priceTier: "NORMAL" | "PREMIUM" | "PREMIUM_PLUS" | null;
   category: CategoryDTO | null;
   brand: BrandDTO | null;
   checkoutFields: DynamicField[];
@@ -144,31 +144,31 @@ export const productDto = (product: ProductWithCategory, viewer: PriceViewer = n
     }));
   const variantPrices = variants.map((variant) => variant.priceCents).filter((price): price is number => price !== null);
   return {
-  id: product.id,
-  slug: product.slug,
-  name: product.name,
-  description: product.description,
-  longDescription: product.longDescription,
-  type: product.type,
-  deliveryType: product.deliveryType,
-  deliveryEstimate: product.deliveryEstimate,
-  duration: product.duration,
-  imageUrl: product.imageUrl,
-  downloadUrl: product.downloadUrl,
-  downloadLabel: product.downloadLabel,
-  priceCents: productPrice.visible ? (variantPrices.length ? Math.min(...variantPrices) : productPrice.priceCents) : null,
-  priceVisible: productPrice.visible,
-  priceTier: productPrice.tier,
-  status: product.status,
-  available: product.available,
-  category: product.category
-    ? { id: product.category.id, slug: product.category.slug, name: product.category.name }
-    : null,
-  brand: product.brand ? { id: product.brand.id, slug: product.brand.slug, name: product.brand.name } : null,
-  checkoutFields: publicCheckoutFields(product),
-  variants,
-  minQuantity: quantityRange(product).min,
-  maxQuantity: quantityRange(product).max,
+    id: product.id,
+    slug: product.slug,
+    name: product.name,
+    description: product.description,
+    longDescription: product.longDescription,
+    type: product.type,
+    deliveryType: product.deliveryType,
+    deliveryEstimate: product.deliveryEstimate,
+    duration: product.duration,
+    imageUrl: product.imageUrl,
+    downloadUrl: product.downloadUrl,
+    downloadLabel: product.downloadLabel,
+    priceCents: productPrice.visible ? (variantPrices.length ? Math.min(...variantPrices) : productPrice.priceCents) : null,
+    priceVisible: productPrice.visible,
+    priceTier: productPrice.tier,
+    status: product.status,
+    available: product.available,
+    category: product.category
+      ? { id: product.category.id, slug: product.category.slug, name: product.category.name }
+      : null,
+    brand: product.brand ? { id: product.brand.id, slug: product.brand.slug, name: product.brand.name } : null,
+    checkoutFields: publicCheckoutFields(product),
+    variants,
+    minQuantity: quantityRange(product).min,
+    maxQuantity: quantityRange(product).max,
   };
 };
 
@@ -203,20 +203,20 @@ export const orderDto = (order: any, options: { includeDelivery?: boolean } = {}
   })),
   payment: order.payment
     ? {
-        status: order.payment.status,
-        amountCents: order.payment.amountCents,
-        externalPaymentId: order.payment.externalPaymentId,
-        pixPayload: order.payment.pixCode,
-        qrCodeImage: normalizeQrCodeImage(order.payment.qrCode),
-        expirationDate: order.payment.expiresAt,
-        serverTime: new Date().toISOString(),
-      }
+      status: order.payment.status,
+      amountCents: order.payment.amountCents,
+      externalPaymentId: order.payment.externalPaymentId,
+      pixPayload: order.payment.pixCode,
+      qrCodeImage: normalizeQrCodeImage(order.payment.qrCode),
+      expirationDate: order.payment.expiresAt,
+      serverTime: new Date().toISOString(),
+    }
     : null,
   fulfillment: order.fulfillment
     ? {
-        status: order.fulfillment.status,
-        delivery: options.includeDelivery === false ? undefined : (order.fulfillment.delivery as DeliveryDTO | null) ?? undefined,
-      }
+      status: order.fulfillment.status,
+      delivery: options.includeDelivery === false ? undefined : (order.fulfillment.delivery as DeliveryDTO | null) ?? undefined,
+    }
     : null,
   events: customerVisibleEvents(order.events ?? []),
 });

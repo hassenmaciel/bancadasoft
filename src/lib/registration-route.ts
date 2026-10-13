@@ -11,7 +11,7 @@ export type RegisteredSessionUser = {
   email: string;
   name: string;
   role: string;
-  customerTier: "NORMAL" | "PREMIUM";
+  customerTier: "NORMAL" | "PREMIUM" | "PREMIUM_PLUS";
 };
 
 export type RegistrationDeps = {

@@ -8,7 +8,8 @@ type Row = {
   name: string;
   email: string;
   role: string;
-  customerTier: "NORMAL" | "PREMIUM";
+  customerTier: "NORMAL" | "PREMIUM" | "PREMIUM_PLUS";
+  canUseBalanceAsPayment: boolean;
   active: boolean;
   createdAt: string;
   orderCount: number;
@@ -45,6 +46,7 @@ export default function UserManager({
           password: f.get("password"),
           role: f.get("role"),
           customerTier: f.get("customerTier"),
+          canUseBalanceAsPayment: f.get("canUseBalanceAsPayment") === "on",
         }),
       }),
       body = await response.json();
@@ -58,10 +60,10 @@ export default function UserManager({
   async function save(row: Row, patch: Record<string, unknown>) {
     setBusy(true);
     const response = await fetch(`/api/admin/users/${row.id}`, {
-        method: "PUT",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(patch),
-      }),
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(patch),
+    }),
       body = await response.json();
     setBusy(false);
     setMessage(response.ok ? "Usuário atualizado." : body.error);
@@ -74,10 +76,10 @@ export default function UserManager({
   async function toggleBalance(row: Row, enabled: boolean) {
     setBusy(true);
     const response = await fetch(`/api/admin/users/${row.id}/balance`, {
-        method: "PUT",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ enabled }),
-      }),
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ enabled }),
+    }),
       body = await response.json();
     setBusy(false);
     setMessage(response.ok ? (enabled ? "Saldo habilitado." : "Saldo desabilitado.") : body.error);
@@ -87,8 +89,8 @@ export default function UserManager({
     if (!deleting) return;
     setBusy(true);
     const response = await fetch(`/api/admin/users/${deleting.id}`, {
-        method: "DELETE",
-      }),
+      method: "DELETE",
+    }),
       body = await response.json();
     setBusy(false);
     setDeleting(null);
@@ -135,7 +137,12 @@ export default function UserManager({
             <select name="customerTier" defaultValue="NORMAL">
               <option value="NORMAL">Técnico Normal</option>
               <option value="PREMIUM">Técnico Premium</option>
+              <option value="PREMIUM_PLUS">Técnico Premium Plus</option>
             </select>
+          </label>
+          <label>
+            <input type="checkbox" name="canUseBalanceAsPayment" />
+            Permitir usar saldo como pagamento
           </label>
           <button className="admin-primary" disabled={busy}>
             Criar usuário
@@ -150,6 +157,7 @@ export default function UserManager({
                 <th>Nível comercial</th>
                 <th>Status</th>
                 <th>Saldo</th>
+                <th>Uso de saldo</th>
                 <th>Pedidos</th>
                 <th>Ações</th>
               </tr>
@@ -172,7 +180,13 @@ export default function UserManager({
                       <option>ADMIN</option>
                     </select>
                   </td>
-                  <td><select value={row.customerTier} disabled={busy} onChange={(e) => save(row, { customerTier: e.target.value })}><option value="NORMAL">NORMAL</option><option value="PREMIUM">PREMIUM</option></select></td>
+                  <td>
+                    <select value={row.customerTier} disabled={busy} onChange={(e) => save(row, { customerTier: e.target.value })}>
+                      <option value="NORMAL">NORMAL</option>
+                      <option value="PREMIUM">PREMIUM</option>
+                      <option value="PREMIUM_PLUS">PREMIUM_PLUS</option>
+                    </select>
+                  </td>
                   <td>{row.active ? "Ativo" : "Inativo"}</td>
                   <td>
                     <label className="check-field">
@@ -185,6 +199,18 @@ export default function UserManager({
                       Saldo habilitado
                     </label>
                     {row.balance && <small className="cell-subtitle">{money(row.balance.balanceCents)}</small>}
+                  </td>
+                  <td>
+                    <label className="check-field">
+                      <input
+                        type="checkbox"
+                        checked={row.canUseBalanceAsPayment}
+                        disabled={busy || row.customerTier === "PREMIUM_PLUS"}
+                        onChange={(e) => save(row, { canUseBalanceAsPayment: e.target.checked })}
+                      />
+                      Usar saldo
+                    </label>
+                    {row.customerTier === "PREMIUM_PLUS" && <small className="cell-subtitle">Sempre ativo</small>}
                   </td>
                   <td>{row.orderCount}</td>
                   <td>

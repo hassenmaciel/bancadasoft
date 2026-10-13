@@ -18,7 +18,7 @@ export async function PUT(request: Request, { params }: Context) {
   const { id } = await params,
     current = await prisma.user.findUnique({
       where: { id },
-      select: { id: true, name: true, role: true, customerTier: true, active: true },
+      select: { id: true, name: true, role: true, customerTier: true, canUseBalanceAsPayment: true, active: true },
     });
   if (!current)
     return NextResponse.json(
@@ -55,6 +55,7 @@ export async function PUT(request: Request, { params }: Context) {
       email: true,
       role: true,
       customerTier: true,
+      canUseBalanceAsPayment: true,
       active: true,
       createdAt: true,
     },
@@ -92,8 +93,8 @@ export async function DELETE(_: Request, { params }: Context) {
       { status: 404 },
     );
   const adminCount = await prisma.user.count({
-      where: { role: "ADMIN", active: true },
-    }),
+    where: { role: "ADMIN", active: true },
+  }),
     decision = userDeleteDecision({
       self: id === admin.id,
       adminCount,
