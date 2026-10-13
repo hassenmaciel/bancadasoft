@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+﻿import { NextResponse } from "next/server";
 import { checkoutSchema } from "./checkout-schema";
 import { orderDto } from "./dto";
 import { AsaasClientError } from "./payments/asaas-client";
@@ -96,7 +96,7 @@ export async function handleCheckoutRequest(
       return NextResponse.json(
         {
           ok: false,
-          error: `Quantidade inválida: escolha de ${error.min} a ${error.max}.`,
+          error: Quantidade inválida: escolha de  a .,
           code: "INVALID_QUANTITY",
         },
         { status: 400 },
@@ -113,7 +113,7 @@ export async function handleCheckoutRequest(
     return NextResponse.json(
       {
         ok: false,
-        error: "Não foi possível processar o checkout agora. Tente novamente em instantes.",
+        error: "Não foi possível gerar o PIX agora. Tente novamente em instantes.",
         code: "CHECKOUT_UNAVAILABLE",
       },
       { status: 500 },
