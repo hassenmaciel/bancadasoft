@@ -106,7 +106,7 @@ export async function handleCheckoutRequest(
         { ok: false, error: "Revise os dados informados e tente novamente.", code: "INVALID_CUSTOMER_DATA" },
         { status: 400 },
       );
-    log("[checkout] Falha ao processar checkout.", {
+    log("[checkout] Falha ao gerar PIX.", {
       stage: "create_order",
       ...safeCheckoutError(error),
     });
