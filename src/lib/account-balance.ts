@@ -106,6 +106,28 @@ export async function debitPurchase(
   return { entry, created: true as const };
 }
 
+// Débito de compra no checkout da loja (pagamento por saldo). Idempotente por
+// sourceOrderId: se o lançamento já existir, devolve-o sem debitar de novo.
+export async function debitOrderPurchase(
+  tx: Tx,
+  input: { userId: string; orderId: string; amountCents: number; note?: string },
+) {
+  if (!Number.isInteger(input.amountCents) || input.amountCents < 1)
+    throw new AccountBalanceError("INVALID_DEBIT_AMOUNT");
+  const locked = await lockAccountBalance(tx, input.userId);
+  const existing = await tx.accountLedgerEntry.findUnique({ where: { sourceOrderId: input.orderId } });
+  if (existing) return { entry: existing, created: false as const };
+  if (!locked.enabled) throw new AccountBalanceError("BALANCE_NOT_ENABLED");
+  const entry = await applyEntry(tx, locked, {
+    userId: input.userId,
+    type: AccountLedgerEntryType.PURCHASE,
+    amountCents: -input.amountCents,
+    sourceOrderId: input.orderId,
+    note: input.note,
+  });
+  return { entry, created: true as const };
+}
+
 // Estorno de um débito de revenda cuja falha é definitiva. A referência do
 // estorno é "refund:<externalReference original>" — o formato aceito pela API
 // para external_reference não permite ":", então não há colisão com uma

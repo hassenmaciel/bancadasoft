@@ -3,6 +3,7 @@ import type { Prisma } from "@prisma/client";
 import {
   AccountBalanceError,
   creditTopup,
+  debitOrderPurchase,
   debitPurchase,
   formatBRL,
   refundPurchase,
@@ -60,6 +61,29 @@ describe("saldo pré-pago — ledger imutável com saldo materializado", () => {
     const again = await debitPurchase(asTx(db), { userId: "u1", externalReference: "ref-1", amountCents: 1500 });
     expect(again).toMatchObject({ created: false, entry: { id: first.entry.id } });
     expect(db.state.balances[0].balanceCents).toBe(3500);
+  });
+
+  it("débito de pedido da loja grava PURCHASE com sourceOrderId e é idempotente por pedido", async () => {
+    const db = createFakeLedgerDb({ balances: [{ id: "b1", userId: "u1", balanceCents: 5000, enabled: true }] });
+    const first = await debitOrderPurchase(asTx(db), { userId: "u1", orderId: "o1", amountCents: 1500 });
+    expect(first.entry).toMatchObject({ type: "PURCHASE", amountCents: -1500, balanceAfterCents: 3500, sourceOrderId: "o1" });
+    const again = await debitOrderPurchase(asTx(db), { userId: "u1", orderId: "o1", amountCents: 1500 });
+    expect(again).toMatchObject({ created: false, entry: { id: first.entry.id } });
+    expect(db.state.entries).toHaveLength(1);
+    expect(db.state.balances[0].balanceCents).toBe(3500);
+  });
+
+  it("débito de pedido da loja exige saldo habilitado e suficiente", async () => {
+    const disabled = createFakeLedgerDb({ balances: [{ id: "b1", userId: "u1", balanceCents: 5000, enabled: false }] });
+    await expect(debitOrderPurchase(asTx(disabled), { userId: "u1", orderId: "o1", amountCents: 1000 })).rejects.toThrow(
+      "BALANCE_NOT_ENABLED",
+    );
+    const poor = createFakeLedgerDb({ balances: [{ id: "b1", userId: "u1", balanceCents: 500, enabled: true }] });
+    await expect(debitOrderPurchase(asTx(poor), { userId: "u1", orderId: "o1", amountCents: 1000 })).rejects.toThrow(
+      "INSUFFICIENT_BALANCE",
+    );
+    expect(poor.state.entries).toHaveLength(0);
+    expect(poor.state.balances[0].balanceCents).toBe(500);
   });
 
   it("estorno devolve o valor com referência refund:<ref> e é idempotente", async () => {

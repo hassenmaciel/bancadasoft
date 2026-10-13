@@ -43,6 +43,7 @@ import { pixExpiresAt } from "@/lib/payments/pix-expiry";
 import { expirePixIfDue } from "@/lib/payment-expiry";
 import { TERMINAL_ORDER_STATUSES } from "@/lib/order-polling";
 import { resolveAuthenticatedCheckoutIdentity } from "@/lib/checkout-identity";
+import { debitOrderPurchase } from "@/lib/account-balance";
 
 export const catalogue = () =>
   prisma.product.findMany({
@@ -206,6 +207,7 @@ export async function createOrder(input: {
   deliveryAccessToken: string;
   providerFields?: Record<string, string>;
   quantity?: number;
+  paymentMethod?: string;
 }, authenticatedUserId?: string) {
   const access = createDeliveryAccess(new Date(), input.deliveryAccessToken);
   const recovered = await prisma.order.findUnique({
@@ -255,12 +257,12 @@ export async function createOrder(input: {
   const quantity = assertCheckoutQuantity(product, input.quantity);
   const providerFields = providerResolution.providerProduct
     ? validateDynamicFieldValues(
-        Array.isArray(providerResolution.providerProduct.fieldSchema)
-          ? providerResolution.providerProduct.fieldSchema as unknown as DynamicField[]
-          : [],
-        input.providerFields,
-        quantity,
-      )
+      Array.isArray(providerResolution.providerProduct.fieldSchema)
+        ? providerResolution.providerProduct.fieldSchema as unknown as DynamicField[]
+        : [],
+      input.providerFields,
+      quantity,
+    )
     : {};
   const viewer = authenticatedUser ? { customerTier: authenticatedUser.customerTier } : null;
   const unitPriceCents = assertCheckoutPrice(product, variantResolution?.variant ?? null, viewer);
@@ -270,14 +272,34 @@ export async function createOrder(input: {
   if (product.type === ProductType.BALANCE_TOPUP) {
     const balance = authenticatedUser
       ? await prisma.accountBalance.findUnique({
-          where: { userId: authenticatedUser.id },
-          select: { enabled: true },
-        })
+        where: { userId: authenticatedUser.id },
+        select: { enabled: true },
+      })
       : null;
     assertBalanceTopupAllowed(product.type, {
       authenticated: Boolean(authenticatedUser),
       balanceEnabled: Boolean(balance?.enabled),
     });
+  }
+
+  // BALANCE PAYMENT VALIDATION
+  const paymentMethod = input.paymentMethod ?? "pix";
+  if (paymentMethod === "balance") {
+    if (!authenticatedUser) throw new Error("LOGIN_REQUIRED_FOR_BALANCE");
+
+    const userWithBalance = await prisma.user.findUnique({
+      where: { id: authenticatedUser.id },
+      select: { canUseBalanceAsPayment: true, customerTier: true, accountBalance: { select: { balanceCents: true } } },
+    });
+
+    const hasBalancePermission =
+      userWithBalance?.canUseBalanceAsPayment === true ||
+      userWithBalance?.customerTier === "PREMIUM_PLUS";
+
+    if (!hasBalancePermission) throw new Error("BALANCE_PERMISSION_REQUIRED");
+    if (!userWithBalance?.accountBalance || userWithBalance.accountBalance.balanceCents < totalCents) {
+      throw new Error("INSUFFICIENT_BALANCE");
+    }
   }
 
   // PARTE 3/4: cliente autenticado usa a própria conta como fonte da
@@ -296,9 +318,9 @@ export async function createOrder(input: {
     whatsapp = resolved.whatsapp;
     user = Object.keys(resolved.accountUpdates).length
       ? await prisma.user.update({
-          where: { id: authenticatedUser.id },
-          data: resolved.accountUpdates,
-        })
+        where: { id: authenticatedUser.id },
+        data: resolved.accountUpdates,
+      })
       : authenticatedUser;
   } else {
     if (!input.name || !input.email || !input.cpfCnpj || !input.whatsapp)
@@ -331,10 +353,71 @@ export async function createOrder(input: {
       },
     });
   }
+
+  const publicToken = crypto.randomUUID().replaceAll("-", "");
+
+  // BALANCE PAYMENT PATH
+  if (paymentMethod === "balance") {
+    const balanceOrder = await prisma.$transaction(async (tx) => {
+      const order = await tx.order.create({
+        data: {
+          publicToken,
+          deliveryTokenHash: access.tokenHash,
+          deliveryTokenExpiresAt: access.expiresAt,
+          deliveryTokenEncrypted: access.encryptedToken,
+          customerId: user.id,
+          totalCents,
+          status: OrderStatus.PAID,
+          items: {
+            create: {
+              productId: product.id,
+              productVariantId: variantResolution?.variant.id,
+              providerProductId: providerResolution.providerProduct?.id,
+              unitPriceCents,
+              quantity,
+              providerFields,
+            },
+          },
+          payment: {
+            create: {
+              provider: "balance",
+              providerReference: `balance:${publicToken}`,
+              amountCents: totalCents,
+              status: PaymentStatus.PAID,
+              pixCode: "",
+              expiresAt: new Date(),
+            },
+          },
+          events: {
+            create: {
+              status: OrderStatus.PAID,
+              note: "Pagamento por saldo confirmado.",
+            },
+          },
+        },
+        include: { payment: true },
+      });
+
+      await debitOrderPurchase(tx, {
+        userId: user.id,
+        orderId: order.id,
+        amountCents: totalCents,
+        note: `Compra do pedido ${order.publicToken}`,
+      });
+
+      return order;
+    });
+
+    return {
+      order: await getOrder(balanceOrder.id),
+      deliveryAccessToken: access.token,
+    };
+  }
+
+  // PIX PAYMENT PATH (original code - UNCHANGED)
   const providerCode = configuredPaymentProviderCode();
   const provider = getPaymentProvider(providerCode);
   if (!provider) throw new Error("PAYMENT_PROVIDER_UNAVAILABLE");
-  const publicToken = crypto.randomUUID().replaceAll("-", "");
   const expiresAt = pixExpiresAt();
   const pendingOrder = await prisma.order.create({
     data: {
@@ -447,6 +530,7 @@ export async function createOrder(input: {
     deliveryAccessToken: access.token,
   };
 }
+
 export const getOrder = (id: string) =>
   prisma.order.findUnique({
     where: { id },
@@ -474,9 +558,9 @@ export async function processPayment(
   const lookup = paymentWebhookLookup(event);
   let payment = lookup.external
     ? await prisma.payment.findFirst({
-        where: lookup.external,
-        include: { order: true },
-      })
+      where: lookup.external,
+      include: { order: true },
+    })
     : null;
   if (!payment && lookup.reference)
     payment = await prisma.payment.findFirst({
@@ -502,9 +586,9 @@ export async function processPayment(
     status: nextStatus,
     ...(!payment.externalPaymentId && event.externalPaymentId
       ? {
-          externalPaymentId: event.externalPaymentId,
-          providerReference: event.externalPaymentId,
-        }
+        externalPaymentId: event.externalPaymentId,
+        providerReference: event.externalPaymentId,
+      }
       : {}),
   };
   try {
