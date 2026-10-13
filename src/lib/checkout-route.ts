@@ -33,7 +33,7 @@ export async function handleCheckoutRequest(
     return NextResponse.json(
       {
         ok: false,
-        error: "Dados de checkout inválidos.",
+        error: "Dados de checkout inv+ílidos.",
         code: "INVALID_CHECKOUT",
       },
       { status: 400 },
@@ -45,7 +45,7 @@ export async function handleCheckoutRequest(
     return NextResponse.json(
       {
         ok: false,
-        error: "Dados de checkout inválidos.",
+        error: "Dados de checkout inv+ílidos.",
         code: "INVALID_CHECKOUT",
       },
       { status: 400 },
@@ -57,7 +57,7 @@ export async function handleCheckoutRequest(
       return NextResponse.json(
         {
           ok: false,
-          error: "Produto temporariamente indisponível.",
+          error: "Produto temporariamente indispon+¡vel.",
           code: "PRODUCT_UNAVAILABLE",
         },
         { status: 409 },
@@ -73,15 +73,15 @@ export async function handleCheckoutRequest(
     );
   } catch (error) {
     if (error instanceof Error && error.message === "LOGIN_REQUIRED_FOR_BALANCE")
-      return NextResponse.json({ ok: false, error: "Faça login para usar saldo como pagamento.", code: "LOGIN_REQUIRED_FOR_BALANCE" }, { status: 401 });
+      return NextResponse.json({ ok: false, error: "Fa+ºa login para usar saldo como pagamento.", code: "LOGIN_REQUIRED_FOR_BALANCE" }, { status: 401 });
     if (error instanceof Error && error.message === "BALANCE_PERMISSION_REQUIRED")
-      return NextResponse.json({ ok: false, error: "A sua conta não tem permissão para usar saldo como pagamento.", code: "BALANCE_PERMISSION_REQUIRED" }, { status: 403 });
+      return NextResponse.json({ ok: false, error: "A sua conta n+úo tem permiss+úo para usar saldo como pagamento.", code: "BALANCE_PERMISSION_REQUIRED" }, { status: 403 });
     if (error instanceof Error && error.message === "INSUFFICIENT_BALANCE")
       return NextResponse.json({ ok: false, error: "Saldo insuficiente para completar a compra.", code: "INSUFFICIENT_BALANCE" }, { status: 402 });
     if (error instanceof Error && error.message === "LOGIN_REQUIRED_FOR_PRICE")
-      return NextResponse.json({ ok: false, error: "Entre para consultar o preço e concluir a compra.", code: "LOGIN_REQUIRED" }, { status: 401 });
+      return NextResponse.json({ ok: false, error: "Entre para consultar o pre+ºo e concluir a compra.", code: "LOGIN_REQUIRED" }, { status: 401 });
     if (error instanceof Error && error.message === "BALANCE_NOT_ENABLED")
-      return NextResponse.json({ ok: false, error: "O uso de saldo ainda não está habilitado para a sua conta. Fale com o suporte.", code: "BALANCE_NOT_ENABLED" }, { status: 403 });
+      return NextResponse.json({ ok: false, error: "O uso de saldo ainda n+úo est+í habilitado para a sua conta. Fale com o suporte.", code: "BALANCE_NOT_ENABLED" }, { status: 403 });
     if (error instanceof IncompleteCheckoutIdentityError)
       return NextResponse.json(
         {
@@ -96,7 +96,7 @@ export async function handleCheckoutRequest(
       return NextResponse.json(
         {
           ok: false,
-          error: Quantidade inválida: escolha de  a .,
+          error: `Quantidade inv+ílida: escolha de ${error.min} a ${error.max}.`,
           code: "INVALID_QUANTITY",
         },
         { status: 400 },
@@ -113,10 +113,11 @@ export async function handleCheckoutRequest(
     return NextResponse.json(
       {
         ok: false,
-        error: "Não foi possível gerar o PIX agora. Tente novamente em instantes.",
+        error: "N+úo foi poss+¡vel processar o checkout agora. Tente novamente em instantes.",
         code: "CHECKOUT_UNAVAILABLE",
       },
       { status: 500 },
     );
   }
 }
+
