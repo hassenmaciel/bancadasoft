@@ -35,8 +35,17 @@ function providerRequest(path, method, body) {
   });
 }
 
+// Diagnóstico: só nomes e tipos dos campos, nunca valores (a resposta pode conter dados do cliente).
+const fieldTypes = (value) => value && typeof value === "object" && !Array.isArray(value) ? Object.fromEntries(Object.entries(value).map(([key, field]) => [key, field === null ? "null" : Array.isArray(field) ? "array" : typeof field])) : null;
+
 async function forwardCallback(payload) {
-  const response = await fetch(appCallback, { method: "POST", headers: { "content-type": "application/json", "x-internal-secret": internalSecret }, body: JSON.stringify(payload), signal: AbortSignal.timeout(12000) });
+  let response;
+  try { response = await fetch(appCallback, { method: "POST", headers: { "content-type": "application/json", "x-internal-secret": internalSecret }, body: JSON.stringify(payload), signal: AbortSignal.timeout(12000) }); }
+  catch (error) {
+    // Diferencia recusa de conexão (ECONNREFUSED), DNS (ENOTFOUND/EAI_AGAIN), TLS, reset (ECONNRESET) e timeout (TimeoutError).
+    console.error("callback forward error", { referenceId: payload?.reference_id, name: error instanceof Error ? error.name : "UNKNOWN", message: error instanceof Error ? error.message.slice(0, 200) : "UNKNOWN", causeCode: error?.cause?.code ?? null, causeName: error?.cause?.name ?? null });
+    throw error;
+  }
   if (!response.ok) throw new Error(`APP_CALLBACK_HTTP_${response.status}`);
 }
 
@@ -69,6 +78,9 @@ const server = http.createServer(async (req, res) => {
         return json(res, 202, { referenceId: body.referenceId, status: "PROCESSING", uncertain: true });
       }
       const item = Array.isArray(result?.data) ? result.data[0] : null;
+      const topTypes = fieldTypes(result);
+      const itemTypes = fieldTypes(item);
+      console.info("order response shape", { referenceId: body.referenceId, topKeys: topTypes ? Object.keys(topTypes) : null, topTypes, dataLength: Array.isArray(result?.data) ? result.data.length : null, itemKeys: itemTypes ? Object.keys(itemTypes) : null, itemTypes });
       if (result?.status !== "success" || !item?.order_uuid) {
         console.warn("order rejected", { referenceId: body.referenceId, providerStatus: String(result?.status ?? "").slice(0, 40), message: String(result?.message ?? "").slice(0, 200), hasOrderUuid: Boolean(item?.order_uuid), elapsedMs: Date.now() - startedAt });
         return json(res, 502, { error: "PROVIDER_REJECTED" });
