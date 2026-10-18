@@ -1,12 +1,13 @@
 import { prisma } from "@/lib/prisma";
 import { requireAdmin } from "@/lib/auth";
+import { buildAdminUserWhere, parseAdminUserSearch } from "@/lib/admin-user-search";
 import UserManager from "./user-manager";
 
-export default async function UsersPage({ searchParams }: { searchParams: Promise<{ q?: string }> }) {
+export default async function UsersPage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const admin = await requireAdmin();
-  const { q } = await searchParams;
+  const filters = parseAdminUserSearch(await searchParams);
   const users = await prisma.user.findMany({
-    where: q ? { OR: [{ name: { contains: q, mode: "insensitive" } }, { email: { contains: q, mode: "insensitive" } }] } : undefined,
+    where: buildAdminUserWhere(filters),
     select: {
       id: true,
       name: true,
@@ -36,9 +37,28 @@ export default async function UsersPage({ searchParams }: { searchParams: Promis
           <p>Criação, função, nível comercial e preservação de histórico.</p>
         </div>
       </header>
-      <form className="admin-filters">
-        <input name="q" defaultValue={q} placeholder="Buscar nome ou e-mail" />
-        <button className="admin-primary">Buscar</button>
+      <form className="admin-filters user-filters">
+        <input name="q" defaultValue={filters.q} placeholder="Buscar nome ou e-mail" />
+        <select name="tier" defaultValue={filters.tier ?? ""} aria-label="Tier">
+          <option value="">Todos os tiers</option>
+          <option value="NORMAL">NORMAL</option>
+          <option value="PREMIUM">PREMIUM</option>
+          <option value="PREMIUM_PLUS">PREMIUM_PLUS</option>
+        </select>
+        <select name="balance" defaultValue={filters.balance ?? ""} aria-label="Saldo">
+          <option value="">Qualquer saldo</option>
+          <option value="positive">Saldo maior que zero</option>
+        </select>
+        <select name="orders" defaultValue={filters.orders ?? ""} aria-label="Pedidos">
+          <option value="">Com ou sem pedidos</option>
+          <option value="none">Sem pedidos</option>
+        </select>
+        <select name="status" defaultValue={filters.status ?? ""} aria-label="Status">
+          <option value="">Ativos e inativos</option>
+          <option value="active">Ativos</option>
+          <option value="inactive">Inativos</option>
+        </select>
+        <button className="admin-primary">Filtrar</button>
       </form>
       <UserManager
         currentAdminId={admin.id}
