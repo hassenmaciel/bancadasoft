@@ -3,6 +3,7 @@ import https from "node:https";
 import { URL } from "node:url";
 import { buildHeartUnlocksOrderPayload, isValidOrderQuantity } from "./order-payload.mjs";
 import { PROVIDER_DEADLINE_MS } from "./timeouts.mjs";
+import { createCallbackRetrier } from "./callback-retry.mjs";
 
 const port = Number(process.env.PORT || 8787);
 const apiBase = process.env.HEARTUNLOCKS_API_BASE_URL || "https://api.heartunlocks.com";
@@ -49,6 +50,8 @@ async function forwardCallback(payload) {
   if (!response.ok) throw new Error(`APP_CALLBACK_HTTP_${response.status}`);
 }
 
+const callbackRetrier = createCallbackRetrier({ forward: forwardCallback });
+
 const server = http.createServer(async (req, res) => {
   try {
     const url = new URL(req.url || "/", `http://${req.headers.host || "localhost"}`);
@@ -92,7 +95,9 @@ const server = http.createServer(async (req, res) => {
       if (url.searchParams.get("token") !== callbackSecret) return json(res, 401, { error: "UNAUTHORIZED" });
       const body = await read(req);
       if (typeof body.reference_id !== "string" || typeof body.order_id !== "string" || typeof body.status !== "string") return json(res, 422, { error: "INVALID_CALLBACK" });
-      await forwardCallback(body);
+      // Mesmo status de antes para a Heart: falha de entrega ao app continua 500, agora com reenvio em fila.
+      const delivery = await callbackRetrier.deliver(body);
+      if (!delivery.delivered) return json(res, 500, { error: "GATEWAY_ERROR" });
       console.info("callback forwarded", { referenceId: body.reference_id, orderId: body.order_id, status: body.status });
       return json(res, 200, { received: true });
     }
