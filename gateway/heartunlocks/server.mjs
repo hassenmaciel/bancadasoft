@@ -4,6 +4,7 @@ import { URL } from "node:url";
 import { buildHeartUnlocksOrderPayload, isValidOrderQuantity } from "./order-payload.mjs";
 import { PROVIDER_DEADLINE_MS } from "./timeouts.mjs";
 import { createCallbackRetrier } from "./callback-retry.mjs";
+import { parseHeartUnlocksOrderResponse } from "./order-response.mjs";
 
 const port = Number(process.env.PORT || 8787);
 const apiBase = process.env.HEARTUNLOCKS_API_BASE_URL || "https://api.heartunlocks.com";
@@ -84,12 +85,14 @@ const server = http.createServer(async (req, res) => {
       const topTypes = fieldTypes(result);
       const itemTypes = fieldTypes(item);
       console.info("order response shape", { referenceId: body.referenceId, topKeys: topTypes ? Object.keys(topTypes) : null, topTypes, dataLength: Array.isArray(result?.data) ? result.data.length : null, itemKeys: itemTypes ? Object.keys(itemTypes) : null, itemTypes });
-      if (result?.status !== "success" || !item?.order_uuid) {
-        console.warn("order rejected", { referenceId: body.referenceId, providerStatus: String(result?.status ?? "").slice(0, 40), message: String(result?.message ?? "").slice(0, 200), hasOrderUuid: Boolean(item?.order_uuid), elapsedMs: Date.now() - startedAt });
+      const { orderId, itemType } = parseHeartUnlocksOrderResponse(result);
+      if (!orderId) {
+        console.warn("order rejected", { referenceId: body.referenceId, providerStatus: String(result?.status ?? "").slice(0, 40), message: String(result?.message ?? "").slice(0, 200), itemType, elapsedMs: Date.now() - startedAt });
         return json(res, 502, { error: "PROVIDER_REJECTED" });
       }
-      console.info("order accepted", { referenceId: body.referenceId, orderId: item.order_uuid, elapsedMs: Date.now() - startedAt });
-      return json(res, 202, { externalOrderId: String(item.order_uuid), referenceId: body.referenceId, status: "PROCESSING" });
+      // Só tipo e tamanho do orderId, nunca o valor.
+      console.info("order accepted", { referenceId: body.referenceId, itemType, orderIdLength: orderId.length, elapsedMs: Date.now() - startedAt });
+      return json(res, 202, { externalOrderId: orderId, referenceId: body.referenceId, status: "PROCESSING" });
     }
     if (req.method === "POST" && url.pathname === "/callbacks/heartunlocks") {
       if (url.searchParams.get("token") !== callbackSecret) return json(res, 401, { error: "UNAUTHORIZED" });
