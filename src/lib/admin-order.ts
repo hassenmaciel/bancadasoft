@@ -115,6 +115,7 @@ export type AdminOrderDTO = {
     providerOrders: Array<{
       id: string;
       providerName: string;
+      providerCode: string;
       providerProductId: string | null;
       externalProductId: string | null;
       externalOrderId: string | null;
@@ -231,6 +232,7 @@ export const adminOrderDto = (order: AdminOrderRecord): AdminOrderDTO => ({
           (providerOrder) => ({
             id: providerOrder.id,
             providerName: providerOrder.provider.name,
+            providerCode: providerOrder.provider.code,
             providerProductId: providerOrder.providerProductId,
             externalProductId:
               providerOrder.providerProduct?.externalProductId ?? null,

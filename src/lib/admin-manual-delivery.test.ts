@@ -31,6 +31,7 @@ type FakeProviderOrder = {
   status: string;
   lastError: string | null;
   externalOrderId: string | null;
+  provider: { code: string };
   _count: { callbackEvents: number };
 };
 type FakeState = {
@@ -46,6 +47,7 @@ const po = (status: string, extra: Partial<FakeProviderOrder> = {}): FakeProvide
   status,
   lastError: null,
   externalOrderId: null,
+  provider: { code: "heartunlocks" },
   _count: { callbackEvents: 0 },
   ...extra,
 });
@@ -247,6 +249,51 @@ describe("registerManualDelivery — sucesso no pedido de referência (rejeitado
     expect(external.resendDeliveryEmail).not.toHaveBeenCalled();
     expect(fetchSpy).not.toHaveBeenCalled();
   });
+
+  it("PROCESSING incerto: auditoria registra o fornecedor em PROCESSING sem externalOrderId", async () => {
+    const db = fakeDb(uncertainOrder());
+    await registerManualDelivery(input, db.client);
+    expect(db.state.audits).toEqual([
+      expect.objectContaining({
+        action: "ORDER_MANUAL_DELIVERY",
+        metadata: {
+          orderId: "order-1",
+          reason: REASON,
+          providerProcessing: {
+            note: "entrega manual com fornecedor em PROCESSING",
+            providerOrders: [{ providerCode: "heartunlocks", externalOrderId: null }],
+          },
+        },
+      }),
+    ]);
+  });
+
+  it("HeartUnlocks aceito (202) aguardando callback: entrega registrada e auditoria com externalOrderId", async () => {
+    const db = fakeDb({ ...uncertainOrder(), providerOrders: [po("PROCESSING", { externalOrderId: "I26101901" })] });
+    const before = structuredClone(db.state.order!.providerOrders);
+    await expect(registerManualDelivery(input, db.client)).resolves.toEqual({ status: "DELIVERED" });
+    expect(db.state.order?.status).toBe("DELIVERED");
+    expect(db.state.order?.fulfillment).toMatchObject({ status: "FULFILLED", delivery: MANUAL_DELIVERY_PAYLOAD });
+    expect(db.state.order?.providerOrders).toEqual(before);
+    for (const fn of Object.values(db.tx.providerOrder)) expect(fn).not.toHaveBeenCalled();
+    expect(external.sendDeliveryEmail).not.toHaveBeenCalled();
+    expect(db.state.audits).toEqual([
+      {
+        actorUserId: "admin-1",
+        action: "ORDER_MANUAL_DELIVERY",
+        entityType: "Order",
+        entityId: "order-1",
+        metadata: {
+          orderId: "order-1",
+          reason: REASON,
+          providerProcessing: {
+            note: "entrega manual com fornecedor em PROCESSING",
+            providerOrders: [{ providerCode: "heartunlocks", externalOrderId: "I26101901" }],
+          },
+        },
+      },
+    ]);
+  });
 });
 
 describe("registerManualDelivery — cada pré-condição recusa sem gravar nada", () => {
@@ -259,7 +306,15 @@ describe("registerManualDelivery — cada pré-condição recusa sem gravar nada
     ["PROVIDER_ORDER_COMPLETED", { ...rejectedOrder(), providerOrders: [po("COMPLETED")] }],
     [
       "PROVIDER_ORDER_PROCESSING",
-      { ...uncertainOrder(), providerOrders: [po("PROCESSING", { lastError: "PROVIDER_RESULT_UNCERTAIN", externalOrderId: "ext-1" })] },
+      { ...uncertainOrder(), providerOrders: [po("PROCESSING", { externalOrderId: "ext-1", provider: { code: "adclean" } })] },
+    ],
+    [
+      "PROVIDER_ORDER_PROCESSING",
+      { ...uncertainOrder(), providerOrders: [po("PROCESSING", { externalOrderId: "ext-1", _count: { callbackEvents: 1 } })] },
+    ],
+    [
+      "ORDER_ALREADY_DELIVERED",
+      { ...uncertainOrder(), status: "DELIVERED", providerOrders: [po("PROCESSING", { externalOrderId: "ext-1" })] },
     ],
     [
       "PROVIDER_ORDER_PROCESSING",

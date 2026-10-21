@@ -4,6 +4,7 @@ import { audit } from "./audit";
 import {
   MANUAL_DELIVERY_CUSTOMER_NOTE,
   MANUAL_DELIVERY_PAYLOAD,
+  MANUAL_DELIVERY_PROCESSING_AUDIT_NOTE,
   manualDeliveryBlocker,
   manualDeliveryInternalNote,
   type ManualDeliveryBlocker,
@@ -49,6 +50,7 @@ export async function registerManualDelivery(
               status: true,
               lastError: true,
               externalOrderId: true,
+              provider: { select: { code: true } },
               _count: { select: { callbackEvents: true } },
             },
           },
@@ -60,6 +62,7 @@ export async function registerManualDelivery(
         orderStatus: order.status,
         hasDelivery: Boolean(order.fulfillment?.delivery),
         providerOrders: order.providerOrders.map((item) => ({
+          providerCode: item.provider.code,
           status: item.status,
           lastError: item.lastError,
           externalOrderId: item.externalOrderId,
@@ -104,7 +107,21 @@ export async function registerManualDelivery(
           { orderId, status: OrderStatus.DELIVERED, note: manualDeliveryInternalNote(reason) },
         ],
       });
-      await audit(adminId, "ORDER_MANUAL_DELIVERY", "Order", orderId, { orderId, reason }, tx);
+      // Fornecedor ainda em PROCESSING: registra a identidade externa (sem
+      // payload nem credencial) para conferir um callback que chegue depois.
+      const processing = order.providerOrders
+        .filter((item) => item.status === "PROCESSING")
+        .map((item) => ({ providerCode: item.provider.code, externalOrderId: item.externalOrderId }));
+      await audit(
+        adminId,
+        "ORDER_MANUAL_DELIVERY",
+        "Order",
+        orderId,
+        processing.length
+          ? { orderId, reason, providerProcessing: { note: MANUAL_DELIVERY_PROCESSING_AUDIT_NOTE, providerOrders: processing } }
+          : { orderId, reason },
+        tx,
+      );
       return { status: "DELIVERED" as const };
     });
   } catch (error) {

@@ -40,6 +40,7 @@ export default async function OrderDetailPage({
       hasDelivery: Boolean(order.fulfillment?.delivery),
       providerOrders:
         order.fulfillment?.providerOrders.map((item) => ({
+          providerCode: item.providerCode,
           status: item.status,
           lastError: item.lastError,
           externalOrderId: item.externalOrderId,

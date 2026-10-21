@@ -4,6 +4,10 @@
 // visibilidade do botão (página do Admin) e é revalidada dentro da transação
 // (admin-manual-delivery.ts) contra o estado lido no banco.
 
+// Mesmo valor de HEARTUNLOCKS_CODE (providers/heartunlocks.ts), repetido aqui
+// porque este módulo vai para o bundle do cliente (manual-delivery-button.tsx).
+export const MANUAL_DELIVERY_HEARTUNLOCKS_CODE = "heartunlocks";
+
 export const MANUAL_DELIVERY_REASON_MIN = 10;
 export const MANUAL_DELIVERY_REASON_MAX = 500;
 
@@ -24,6 +28,10 @@ export const MANUAL_DELIVERY_CUSTOMER_NOTE = "Entrega registrada pelo suporte.";
 export const manualDeliveryInternalNote = (reason: string) =>
   `REVISÃO MANUAL: entrega manual registrada pelo Admin. Motivo: ${reason}`;
 
+// Motivo de auditoria quando o fornecedor ainda estava em PROCESSING.
+export const MANUAL_DELIVERY_PROCESSING_AUDIT_NOTE =
+  "entrega manual com fornecedor em PROCESSING";
+
 export type ManualDeliveryBlocker =
   | "PAYMENT_NOT_PAID"
   | "ORDER_ALREADY_DELIVERED"
@@ -33,6 +41,7 @@ export type ManualDeliveryBlocker =
   | "DELIVERY_ALREADY_EXISTS";
 
 export type ManualDeliveryProviderOrder = {
+  providerCode: string;
   status: string;
   lastError: string | null;
   externalOrderId: string | null;
@@ -46,15 +55,16 @@ export type ManualDeliveryState = {
   providerOrders: ManualDeliveryProviderOrder[];
 };
 
-// Envio incerto (timeout/erro do gateway) sem nenhuma evidência de que o
-// fornecedor aceitou: sem externalOrderId e sem callback. Único PROCESSING
-// que não bloqueia — um callback tardio encontra a Delivery e não sobrescreve
-// (heartunlocks-callback.ts).
-const uncertainWithoutEvidence = (item: ManualDeliveryProviderOrder) =>
+// HeartUnlocks em PROCESSING sem callback: envio incerto (timeout/erro do
+// gateway) ou aceito pelo fornecedor (externalOrderId) aguardando o callback.
+// Único PROCESSING que não bloqueia — um callback tardio encontra a Delivery e
+// não sobrescreve (heartunlocks-callback.ts). Sem lastError e sem
+// externalOrderId é criação em andamento: continua bloqueado.
+const heartUnlocksAwaitingCallback = (item: ManualDeliveryProviderOrder) =>
+  item.providerCode === MANUAL_DELIVERY_HEARTUNLOCKS_CODE &&
   item.status === "PROCESSING" &&
-  item.lastError === "PROVIDER_RESULT_UNCERTAIN" &&
-  !item.externalOrderId &&
-  item.callbackEventCount === 0;
+  item.callbackEventCount === 0 &&
+  (item.lastError === "PROVIDER_RESULT_UNCERTAIN" || Boolean(item.externalOrderId));
 
 export function manualDeliveryBlocker(
   state: ManualDeliveryState,
@@ -66,7 +76,7 @@ export function manualDeliveryBlocker(
   // — registrar entrega manual agora arriscaria entregar duas vezes.
   if (
     state.providerOrders.some(
-      (item) => item.status === "PROCESSING" && !uncertainWithoutEvidence(item),
+      (item) => item.status === "PROCESSING" && !heartUnlocksAwaitingCallback(item),
     )
   )
     return "PROVIDER_ORDER_PROCESSING";
