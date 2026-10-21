@@ -66,16 +66,45 @@ export function resolveVisiblePrice(
   };
 }
 
+// Limites de toda recarga (pacote fixo ou "Outro valor"): mínimo R$ 15,00; o
+// máximo vale para o valor livre (os pacotes fixos já ficam abaixo dele).
+export const TOPUP_MIN_CENTS = 1500;
+export const TOPUP_FREE_MAX_CENTS = 500000;
+export const INVALID_TOPUP_AMOUNT_MESSAGE = "Informe um valor de recarga entre R$ 15,00 e R$ 5.000,00.";
+
+const topupMetadata = (metadata: unknown) =>
+  metadata && typeof metadata === "object" && !Array.isArray(metadata) ? (metadata as Record<string, unknown>) : {};
+
+// Pacote "Outro valor": ProviderProduct interno com metadata.freeAmount = true
+// (sem creditAmountCents). O valor é escolhido pelo cliente no checkout.
+export function isFreeAmountTopup(metadata: unknown) {
+  return topupMetadata(metadata).freeAmount === true;
+}
+
+// Valor livre válido: inteiro em centavos entre o mínimo e o máximo.
+export function validTopupAmountCents(value: unknown) {
+  return typeof value === "number" && Number.isInteger(value) && value >= TOPUP_MIN_CENTS && value <= TOPUP_FREE_MAX_CENTS
+    ? value
+    : null;
+}
+
+// Texto digitado ("15", "15,50", "1.234,56") → centavos; null se não for um
+// valor em reais com até 2 casas.
+export function parseTopupAmountInput(text: string) {
+  const normalized = text.trim().replace(/\s|R\$/g, "").replace(/\.(?=\d{3}(\D|$))/g, "").replace(",", ".");
+  if (!/^\d+(\.\d{1,2})?$/.test(normalized)) return null;
+  return Math.round(Number(normalized) * 100);
+}
+
 // Recarga de Saldo (BALANCE_TOPUP): o preço é SEMPRE o valor creditado pelo
 // pacote (ProviderProduct.metadata.creditAmountCents), em qualquer tier.
 // priceCents e os preços por tier são ignorados, então o valor cobrado nunca
-// diverge do valor creditado. null = pacote sem crédito válido (não vendável).
+// diverge do valor creditado. null = pacote sem crédito válido ou abaixo do
+// mínimo da recarga (não vendável).
 export function topupCreditCents(metadata: unknown) {
-  const value =
-    metadata && typeof metadata === "object" && !Array.isArray(metadata)
-      ? (metadata as Record<string, unknown>).creditAmountCents
-      : undefined;
-  return positive(typeof value === "number" ? value : null);
+  const value = topupMetadata(metadata).creditAmountCents;
+  const credit = positive(typeof value === "number" ? value : null);
+  return credit !== null && credit >= TOPUP_MIN_CENTS ? credit : null;
 }
 
 export function assertCheckoutPrice(
@@ -83,9 +112,16 @@ export function assertCheckoutPrice(
   variant: TieredPriceSource | null,
   viewer: PriceViewer,
   purchased?: { metadata?: unknown } | null,
+  // Só para o pacote "Outro valor": o valor escolhido (centavos).
+  topupAmountCents?: number,
 ) {
   if (product.priceVisibility === "LOGIN_REQUIRED" && !viewer)
     throw new Error("LOGIN_REQUIRED_FOR_PRICE");
+  if (product.type === "BALANCE_TOPUP" && isFreeAmountTopup(purchased?.metadata)) {
+    const amountCents = validTopupAmountCents(topupAmountCents);
+    if (!amountCents) throw new Error("INVALID_TOPUP_AMOUNT");
+    return amountCents;
+  }
   if (product.type === "BALANCE_TOPUP") {
     const creditCents = topupCreditCents(purchased?.metadata);
     if (!creditCents) throw new Error("PRICE_UNAVAILABLE");

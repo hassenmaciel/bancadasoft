@@ -39,7 +39,14 @@ import {
   parseSavedCheckoutReference,
 } from "@/lib/checkout-recovery";
 import { balanceShortfallCents, premiumPlusPayment, type BalancePaymentOption } from "@/lib/balance-payment";
-import { PIX_PRICE_UNAVAILABLE_MESSAGE } from "@/lib/commercial-pricing";
+import {
+  INVALID_TOPUP_AMOUNT_MESSAGE,
+  PIX_PRICE_UNAVAILABLE_MESSAGE,
+  TOPUP_FREE_MAX_CENTS,
+  TOPUP_MIN_CENTS,
+  parseTopupAmountInput,
+  validTopupAmountCents,
+} from "@/lib/commercial-pricing";
 
 const money = (value: number) =>
   new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(
@@ -130,9 +137,17 @@ export default function CheckoutPanel({
   const premiumPlusBalanceAvailable = premiumPlusPlans.some((plan) => plan.method === "balance");
   // PIX escolhido sem preço Premium/Técnico ativo: o servidor recusa; a tela também.
   const pixUnavailable = premiumPlusPlan?.method === "pix" && premiumPlusPlan.unitCents === null;
+  // Recarga "Outro valor": o valor digitado é o preço (e o crédito); validado
+  // aqui e de novo no servidor (INVALID_TOPUP_AMOUNT).
+  const freeAmount = selectedVariant?.freeAmount === true;
+  const [topupAmountText, setTopupAmountText] = useState("");
+  const topupAmountCents = freeAmount ? validTopupAmountCents(parseTopupAmountInput(topupAmountText)) : null;
+  const topupAmountInvalid = freeAmount && topupAmountCents === null;
   const unitPriceCents = premiumPlusPlan
     ? premiumPlusPlan.unitCents ?? 0
-    : selectedVariant?.priceCents ?? product.priceCents ?? 0;
+    : freeAmount
+      ? topupAmountCents ?? 0
+      : selectedVariant?.priceCents ?? product.priceCents ?? 0;
   const variantOptionPrice = (variant: ProductDTO["variants"][number]) =>
     variant.premiumPlus ? premiumPlusPayment(balanceSnapshot, variant.premiumPlus, checkoutQuantity).unitCents : variant.priceCents;
   // PARTE 1/3/4: cliente logado com cadastro completo pula o formulário;
@@ -315,6 +330,7 @@ export default function CheckoutPanel({
     if (licenseMode && !accountConfirmed) return;
     // PREMIUM_PLUS: nunca envia PIX sem preço Premium/Técnico (o servidor também recusa).
     if (pixUnavailable || (!pixAllowed && !payingWithBalance)) return;
+    if (topupAmountInvalid) return;
     if (!submitGuard.current.acquire()) return;
     setSubmitting(true);
     setNotice("");
@@ -361,6 +377,7 @@ export default function CheckoutPanel({
           deliveryAccessToken,
           ...(quantityEnabled ? { quantity: checkoutQuantity } : {}),
           ...(payingWithBalance ? { paymentMethod: "balance" } : {}),
+          ...(freeAmount && topupAmountCents !== null ? { topupAmountCents } : {}),
           providerFields: Object.fromEntries(
             checkoutFields.map((field) => [field.key, String(form.get(`provider:${field.key}`) ?? "")]),
           ),
@@ -641,11 +658,32 @@ export default function CheckoutPanel({
                             const price = variantOptionPrice(variant);
                             return (
                               <option key={variant.id} value={variant.id} disabled={price === null}>
-                                {variant.name} — {price === null ? "sem preço para PIX" : money(price)}
+                                {variant.name} — {variant.freeAmount
+                                  ? `${money(TOPUP_MIN_CENTS)} a ${money(TOPUP_FREE_MAX_CENTS)}`
+                                  : price === null ? "sem preço para PIX" : money(price)}
                               </option>
                             );
                           })}
                         </select>
+                      </label>
+                    )}
+                    {freeAmount && (
+                      <label htmlFor="checkout-topup-amount">
+                        Valor da recarga (R$) <em>obrigatório</em>
+                        <input
+                          id="checkout-topup-amount"
+                          name="topupAmount"
+                          type="number"
+                          inputMode="decimal"
+                          min={TOPUP_MIN_CENTS / 100}
+                          max={TOPUP_FREE_MAX_CENTS / 100}
+                          step="0.01"
+                          value={topupAmountText}
+                          onChange={(event) => setTopupAmountText(event.target.value)}
+                          placeholder="15,00"
+                          required
+                        />
+                        {topupAmountText !== "" && topupAmountInvalid && <small role="alert">{INVALID_TOPUP_AMOUNT_MESSAGE}</small>}
                       </label>
                     )}
                     {!identity && (
@@ -802,7 +840,7 @@ export default function CheckoutPanel({
                   )}
                   <button
                     className="checkout-submit"
-                    disabled={!canSubmitCheckout({ licenseMode, confirmed: accountConfirmed, submitting }) || balanceBlocked || pixUnavailable}
+                    disabled={!canSubmitCheckout({ licenseMode, confirmed: accountConfirmed, submitting }) || balanceBlocked || pixUnavailable || topupAmountInvalid}
                     aria-busy={submitting}
                   >
                     {submitting ? (

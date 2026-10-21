@@ -11,7 +11,15 @@ import type {
 import type { DynamicField } from "./providers/automation";
 import { publicVariantFields } from "./product-variants";
 import { isProductionProviderCode } from "./providers/selection";
-import { premiumPlusPixPrice, resolveTierPrice, resolveVisiblePrice, topupCreditCents, type PriceViewer } from "./commercial-pricing";
+import {
+  TOPUP_MIN_CENTS,
+  isFreeAmountTopup,
+  premiumPlusPixPrice,
+  resolveTierPrice,
+  resolveVisiblePrice,
+  topupCreditCents,
+  type PriceViewer,
+} from "./commercial-pricing";
 import { premiumPlusPayment, productAcceptsBalancePayment } from "./balance-payment";
 import { quantityRange } from "./checkout-quantity";
 
@@ -60,6 +68,8 @@ export type ProductVariantDTO = {
   name: string;
   priceCents: number | null;
   premiumPlus?: PremiumPlusPricesDTO;
+  // Recarga "Outro valor": o cliente digita o valor (priceCents = mínimo).
+  freeAmount?: true;
   checkoutFields: DynamicField[];
 };
 
@@ -174,7 +184,9 @@ export const productDto = (
     premiumPlusPayment(balance, premiumPlusPrices(source), minQuantity);
   const variantPrice = (variant: NonNullable<ProductWithCategory["variants"]>[number]) =>
     topup
-      ? topupCreditCents(variant.providerProduct.metadata)
+      ? isFreeAmountTopup(variant.providerProduct.metadata)
+        ? TOPUP_MIN_CENTS
+        : topupCreditCents(variant.providerProduct.metadata)
       : premiumPlus
         ? shownPremiumPlus(variant).unitCents
         : resolveTierPrice(variant, viewer);
@@ -195,6 +207,7 @@ export const productDto = (
       name: variant.name,
       priceCents: productPrice.visible ? variantPrice(variant) : null,
       ...(premiumPlus && productPrice.visible ? { premiumPlus: premiumPlusPrices(variant) } : {}),
+      ...(topup && isFreeAmountTopup(variant.providerProduct.metadata) ? { freeAmount: true as const } : {}),
       checkoutFields: publicVariantFields(variant.providerProduct.fieldSchema),
     }));
   const variantPrices = variants.map((variant) => variant.priceCents).filter((price): price is number => price !== null);

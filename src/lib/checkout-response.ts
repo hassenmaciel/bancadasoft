@@ -54,6 +54,7 @@ export function checkoutErrorMessage(
   if (payload?.code === "PIX_PRICE_UNAVAILABLE_FOR_TIER" && payload.error) return payload.error;
   // Recarga bloqueada pelo Admin: o texto final vem do servidor.
   if (payload?.code === "BALANCE_TOPUP_BLOCKED" && payload.error) return payload.error;
+  if (payload?.code === "INVALID_TOPUP_AMOUNT" && payload.error) return payload.error;
   if (status === 400 || payload?.code === "INVALID_CHECKOUT" || payload?.code === "INVALID_CUSTOMER_DATA")
     return "Revise os dados informados e tente novamente.";
   if (payload?.code === "MISSING_CUSTOMER_FIELDS")

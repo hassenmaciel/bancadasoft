@@ -33,7 +33,8 @@ export type CustomerLedgerRow = {
   amountCents: number;
   balanceAfterCents: number;
 };
-export type TopupOption = { key: string; label: string; priceCents: number; href: string };
+// freeAmount: pacote "Outro valor" (priceCents = mínimo; o valor é digitado no checkout).
+export type TopupOption = { key: string; label: string; priceCents: number; href: string; freeAmount?: true };
 export type CustomerBalanceView = {
   enabled: boolean;
   balanceCents: number | null;
@@ -64,7 +65,13 @@ async function loadTopupOptions(viewer: PriceViewer): Promise<TopupOption[]> {
     return dto.variants.flatMap((variant) =>
       variant.priceCents === null
         ? []
-        : [{ key: variant.id, label: variant.name, priceCents: variant.priceCents, href: topupHref(dto.slug, variant.id) }],
+        : [{
+          key: variant.id,
+          label: variant.name,
+          priceCents: variant.priceCents,
+          href: topupHref(dto.slug, variant.id),
+          ...(variant.freeAmount ? { freeAmount: true as const } : {}),
+        }],
     );
   return dto.priceCents === null
     ? []

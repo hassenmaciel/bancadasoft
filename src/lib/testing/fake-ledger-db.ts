@@ -36,6 +36,9 @@ type Order = {
   id: string;
   customerId: string;
   providerProduct: { externalProductId: string; metadata: unknown; provider: { code: string } } | null;
+  // Item gravado pelo checkout (usado pelo pacote "Outro valor").
+  unitPriceCents?: number;
+  quantity?: number;
 };
 
 // Catálogo da API de revenda com "product": um item por ProviderProduct
@@ -207,7 +210,7 @@ export function createFakeLedgerDb(initial: Partial<FakeState> = {}) {
         return {
           customerId: order.customerId,
           customer: { passwordHash: customer.passwordHash },
-          items: [{ providerProduct: order.providerProduct }],
+          items: [{ providerProduct: order.providerProduct, unitPriceCents: order.unitPriceCents ?? 0, quantity: order.quantity ?? 1 }],
         };
       },
     },

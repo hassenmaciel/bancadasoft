@@ -60,6 +60,28 @@ describe("CustomerBalancePanel", () => {
     expect(body).toContain("Nenhuma movimentação ainda.");
   });
 
+  it("botões fixos continuam e 'Outro valor' mostra a faixa permitida", () => {
+    const body = text(renderToStaticMarkup(
+      <CustomerBalancePanel
+        view={{
+          enabled: true,
+          balanceCents: 0,
+          entries: [],
+          topupOptions: [
+            { key: "v15", label: "Recarga de R$ 15,00", priceCents: 1500, href: "/produto/recarga-de-saldo?variante=v15" },
+            { key: "v30", label: "Recarga de R$ 30,00", priceCents: 3000, href: "/produto/recarga-de-saldo?variante=v30" },
+            { key: "v50", label: "Recarga de R$ 50,00", priceCents: 5000, href: "/produto/recarga-de-saldo?variante=v50" },
+            { key: "free", label: "Outro valor", priceCents: 1500, href: "/produto/recarga-de-saldo?variante=free", freeAmount: true },
+          ],
+          topupBlocked: false,
+        }}
+      />,
+    ));
+    for (const label of ["Recarga de R$ 15,00 — R$ 15,00", "Recarga de R$ 30,00 — R$ 30,00", "Recarga de R$ 50,00 — R$ 50,00"])
+      expect(body).toContain(label);
+    expect(body).toContain("Outro valor — R$ 15,00 a R$ 5.000,00");
+  });
+
   it("recarga bloqueada pelo Admin: mensagem clara, sem pacote e sem preço", () => {
     const body = text(renderToStaticMarkup(
       <CustomerBalancePanel view={{ enabled: false, balanceCents: null, entries: [], topupOptions: [], topupBlocked: true }} />,

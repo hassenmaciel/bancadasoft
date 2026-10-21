@@ -208,6 +208,7 @@ export async function createOrder(input: {
   providerFields?: Record<string, string>;
   quantity?: number;
   paymentMethod?: string;
+  topupAmountCents?: number;
 }, authenticatedUserId?: string) {
   const access = createDeliveryAccess(new Date(), input.deliveryAccessToken);
   const recovered = await prisma.order.findUnique({
@@ -280,6 +281,7 @@ export async function createOrder(input: {
     variantResolution?.variant ?? null,
     viewer,
     providerResolution.providerProduct,
+    input.topupAmountCents,
   );
   // Recarga de Saldo: qualquer conta logada, exceto com recarga bloqueada
   // pelo Admin. Nenhum outro tipo de produto é afetado.

@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { formatBRL } from "@/lib/account-balance";
-import { BALANCE_TOPUP_BLOCKED_MESSAGE } from "@/lib/commercial-pricing";
+import { BALANCE_TOPUP_BLOCKED_MESSAGE, TOPUP_FREE_MAX_CENTS, TOPUP_MIN_CENTS } from "@/lib/commercial-pricing";
 import { ledgerTypeLabel, signedBRL, type CustomerBalanceView } from "@/lib/customer-balance";
 
 export const BALANCE_DISABLED_MESSAGE = "Saldo ainda não ativado. Ele é ativado automaticamente na sua primeira recarga.";
@@ -29,7 +29,9 @@ export default function CustomerBalancePanel({ view }: { view: CustomerBalanceVi
           <div className="balance-topup-options">
             {view.topupOptions.map((option) => (
               <Link className="product-cta" href={option.href} key={option.key}>
-                {option.label} — {formatBRL(option.priceCents)}
+                {option.freeAmount
+                  ? `${option.label} — ${formatBRL(TOPUP_MIN_CENTS)} a ${formatBRL(TOPUP_FREE_MAX_CENTS)}`
+                  : `${option.label} — ${formatBRL(option.priceCents)}`}
               </Link>
             ))}
           </div>

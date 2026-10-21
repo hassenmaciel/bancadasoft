@@ -4,7 +4,7 @@ import { orderDto } from "./dto";
 import { AsaasClientError } from "./payments/asaas-client";
 import { IncompleteCheckoutIdentityError } from "./checkout-identity";
 import { CheckoutQuantityError } from "./checkout-quantity";
-import { BALANCE_TOPUP_BLOCKED_MESSAGE, PIX_PRICE_UNAVAILABLE_MESSAGE } from "./commercial-pricing";
+import { BALANCE_TOPUP_BLOCKED_MESSAGE, INVALID_TOPUP_AMOUNT_MESSAGE, PIX_PRICE_UNAVAILABLE_MESSAGE } from "./commercial-pricing";
 
 type CreateOrder = (
   input: ReturnType<typeof checkoutSchema.parse>,
@@ -87,6 +87,8 @@ export async function handleCheckoutRequest(
       return NextResponse.json({ ok: false, error: "Saldo insuficiente para completar a compra.", code: "INSUFFICIENT_BALANCE" }, { status: 402 });
     if (error instanceof Error && error.message === "LOGIN_REQUIRED_FOR_PRICE")
       return NextResponse.json({ ok: false, error: "Entre para consultar o preço e concluir a compra.", code: "LOGIN_REQUIRED" }, { status: 401 });
+    if (error instanceof Error && error.message === "INVALID_TOPUP_AMOUNT")
+      return NextResponse.json({ ok: false, error: INVALID_TOPUP_AMOUNT_MESSAGE, code: "INVALID_TOPUP_AMOUNT" }, { status: 422 });
     if (error instanceof Error && error.message === "BALANCE_TOPUP_BLOCKED")
       return NextResponse.json({ ok: false, error: BALANCE_TOPUP_BLOCKED_MESSAGE, code: "BALANCE_TOPUP_BLOCKED" }, { status: 403 });
     if (error instanceof Error && error.message === "BALANCE_NOT_ENABLED")
