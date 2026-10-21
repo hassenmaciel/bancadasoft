@@ -132,6 +132,15 @@ describe("createOrder — pagamento por saldo", () => {
     expect(createPixPayment).not.toHaveBeenCalled();
   });
 
+  it("rebaixado de PREMIUM_PLUS a NORMAL gasta o saldo que sobrou (canUseBalanceAsPayment preservado)", async () => {
+    db.user.findFirst.mockResolvedValue({ ...account, customerTier: "NORMAL", balanceTopupBlocked: true });
+    db.user.findUnique.mockResolvedValue(permission({ customerTier: "NORMAL", canUseBalanceAsPayment: true }));
+    const result = await createOrder(balanceInput, "u1");
+    expect(result?.order).toMatchObject({ id: "o1", status: "PAID" });
+    expect(ledger.state.balances[0].balanceCents).toBe(4000);
+    expect(createPixPayment).not.toHaveBeenCalled();
+  });
+
   it("falha na entrega não desfaz o pagamento: o pedido volta PAID e o erro vai para o log", async () => {
     executeFulfillment.mockRejectedValueOnce(new Error("provider down"));
     const error = vi.spyOn(console, "error").mockImplementation(() => {});

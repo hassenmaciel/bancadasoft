@@ -20,7 +20,7 @@ export async function PUT(request: Request, { params }: Context) {
   const { id } = await params,
     current = await prisma.user.findUnique({
       where: { id },
-      select: { id: true, name: true, email: true, role: true, customerTier: true, canUseBalanceAsPayment: true, active: true },
+      select: { id: true, name: true, email: true, role: true, customerTier: true, canUseBalanceAsPayment: true, balanceTopupBlocked: true, active: true },
     });
   if (!current)
     return NextResponse.json(
@@ -48,10 +48,17 @@ export async function PUT(request: Request, { params }: Context) {
       { error: "O último administrador ativo deve ser preservado." },
       { status: 409 },
     );
-  // PREMIUM_PLUS compra só com saldo: a promoção habilita o saldo na mesma
-  // transação, para a conta nunca ficar sem forma de pagamento.
+  // Promoção a PREMIUM_PLUS: habilita o saldo e grava o uso de saldo como
+  // pagamento na mesma transação (mesma regra da promoção por recarga).
   const promotedToPremiumPlus =
     parsed.data.customerTier === "PREMIUM_PLUS" && current.customerTier !== "PREMIUM_PLUS";
+  // Rebaixamento não mexe em saldo nem em canUseBalanceAsPayment: o cliente
+  // continua gastando o que sobrou. O painel oferece ligar balanceTopupBlocked
+  // na mesma requisição para a próxima recarga não promover de volta.
+  const demotedFromPremiumPlus =
+    current.customerTier === "PREMIUM_PLUS" && parsed.data.customerTier !== undefined && parsed.data.customerTier !== "PREMIUM_PLUS";
+  const topupBlockChanged =
+    parsed.data.balanceTopupBlocked !== undefined && parsed.data.balanceTopupBlocked !== current.balanceTopupBlocked;
   if (parsed.data.email && parsed.data.email !== current.email) {
     const taken = await prisma.user.findUnique({ where: { email: parsed.data.email }, select: { id: true } });
     if (taken) return NextResponse.json({ error: "E-mail já cadastrado em outra conta." }, { status: 409 });
@@ -61,7 +68,7 @@ export async function PUT(request: Request, { params }: Context) {
     user = await prisma.$transaction(async (tx) => {
       const updated = await tx.user.update({
         where: { id },
-        data: parsed.data,
+        data: promotedToPremiumPlus ? { ...parsed.data, canUseBalanceAsPayment: true } : parsed.data,
         select: {
           id: true,
           name: true,
@@ -69,6 +76,7 @@ export async function PUT(request: Request, { params }: Context) {
           role: true,
           customerTier: true,
           canUseBalanceAsPayment: true,
+          balanceTopupBlocked: true,
           active: true,
           createdAt: true,
         },
@@ -91,7 +99,12 @@ export async function PUT(request: Request, { params }: Context) {
   );
   if (promotedToPremiumPlus)
     await audit(admin.id, "USER_BALANCE_TOGGLED", "User", id, { enabled: true, reason: "PREMIUM_PLUS" });
-  return NextResponse.json({ data: user, balanceEnabled: promotedToPremiumPlus });
+  if (topupBlockChanged)
+    await audit(admin.id, "USER_TOPUP_BLOCK_TOGGLED", "User", id, {
+      blocked: user.balanceTopupBlocked,
+      ...(demotedFromPremiumPlus ? { reason: "DEMOTED_FROM_PREMIUM_PLUS" } : {}),
+    });
+  return NextResponse.json({ data: user, balanceEnabled: promotedToPremiumPlus, demotedFromPremiumPlus });
 }
 export async function DELETE(_: Request, { params }: Context) {
   let admin;

@@ -12,12 +12,13 @@ export async function POST(request: Request) {
   if (!parsed.success) return NextResponse.json({ error: "Informe nome, e-mail válido e senha forte com 12+ caracteres, maiúscula, minúscula, número e símbolo." }, { status: 422 });
   try {
     const passwordHash = await hashPassword(parsed.data.password);
-    // Conta criada já como PREMIUM_PLUS nasce com o saldo habilitado (compra só com saldo).
+    // Conta criada já como PREMIUM_PLUS nasce com o saldo habilitado e o uso de
+    // saldo liberado, igual à promoção (Admin ou recarga).
     const premiumPlus = parsed.data.customerTier === "PREMIUM_PLUS";
     const user = await prisma.user.create({
       data: {
         name: parsed.data.name, email: parsed.data.email, passwordHash, role: parsed.data.role, customerTier: parsed.data.customerTier,
-        ...(premiumPlus ? { accountBalance: { create: { enabled: true } } } : {}),
+        ...(premiumPlus ? { canUseBalanceAsPayment: true, accountBalance: { create: { enabled: true } } } : {}),
       },
       select: { id: true, name: true, email: true, role: true, customerTier: true, active: true, createdAt: true },
     });
