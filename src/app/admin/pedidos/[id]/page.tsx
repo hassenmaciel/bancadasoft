@@ -20,6 +20,7 @@ const date = (value: string) =>
   new Intl.DateTimeFormat("pt-BR", {
     dateStyle: "medium",
     timeStyle: "short",
+    timeZone: "America/Sao_Paulo",
   }).format(new Date(value));
 
 export default async function OrderDetailPage({
@@ -40,6 +41,7 @@ export default async function OrderDetailPage({
       hasDelivery: Boolean(order.fulfillment?.delivery),
       providerOrders:
         order.fulfillment?.providerOrders.map((item) => ({
+          providerCode: item.providerCode,
           status: item.status,
           lastError: item.lastError,
           externalOrderId: item.externalOrderId,
