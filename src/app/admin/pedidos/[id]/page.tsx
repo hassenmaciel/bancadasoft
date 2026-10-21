@@ -20,6 +20,7 @@ const date = (value: string) =>
   new Intl.DateTimeFormat("pt-BR", {
     dateStyle: "medium",
     timeStyle: "short",
+    timeZone: "America/Sao_Paulo",
   }).format(new Date(value));
 
 export default async function OrderDetailPage({
