@@ -25,7 +25,7 @@ export default async function IntegrationsPage() {
         {isHeartUnlocks && <ProviderCatalogSync providerId={provider.id} />}
         <dl><div><dt>API Base</dt><dd>{provider.apiBaseUrl ?? "Não configurada"}</dd></div><div><dt>Produtos sincronizados</dt><dd>{provider.productCount}</dd></div><div><dt>Pedidos externos</dt><dd>{provider.orderCount}</dd></div></dl>
         <ProviderProductCatalog products={provider.products} />
-        {isHeartUnlocks && <div className="integration-note"><b>Catálogo do fornecedor</b><span>{provider.lastCatalogSync ? `Última sincronização: ${new Intl.DateTimeFormat("pt-BR", { dateStyle: "short", timeStyle: "medium" }).format(new Date(provider.lastCatalogSync))}` : "Ainda não sincronizado"}</span></div>}
+        {isHeartUnlocks && <div className="integration-note"><b>Catálogo do fornecedor</b><span>{provider.lastCatalogSync ? `Última sincronização: ${new Intl.DateTimeFormat("pt-BR", { dateStyle: "short", timeStyle: "medium", timeZone: "America/Sao_Paulo" }).format(new Date(provider.lastCatalogSync))}` : "Ainda não sincronizado"}</span></div>}
         {isHeartUnlocks && <div className="integration-note"><b>Gateway {heartGateway.configured ? "configurado" : "não configurado"}</b><span>{heartGateway.configured ? heartGateway.online ? "Gateway online" : "Gateway offline" : "Configure o gateway para habilitar o health."}</span></div>}
       </article>;
     })}</section>

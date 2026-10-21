@@ -163,6 +163,11 @@ export async function processHeartUnlocksCallback(input: HeartUnlocksCallback) {
     },
   });
   if (!providerOrder) return { matched: false, duplicate: false };
+  // Só observação: orderId da criação diverge do callback. Loga sem valores e segue o fluxo normal.
+  if (providerOrder.externalOrderId && providerOrder.externalOrderId !== input.order_id)
+    console.error("[heartunlocks] callback orderId diverge do pedido criado", {
+      referenceId: input.reference_id,
+    });
   const eventKey = callbackEventKey(input);
   const normalized = input.status.toLowerCase();
   const replay = decodeReplay(input.replay);

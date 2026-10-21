@@ -28,9 +28,11 @@ type FakeOrder = {
 };
 // Mesmo formato do select de registerManualDelivery.
 type FakeProviderOrder = {
+  id: string;
   status: string;
   lastError: string | null;
   externalOrderId: string | null;
+  provider: { code: string };
   _count: { callbackEvents: number };
 };
 type FakeState = {
@@ -43,9 +45,11 @@ const REASON = "Acesso comprado no painel do fornecedor e entregue pelo WhatsApp
 const input = { orderId: "order-1", adminId: "admin-1", reason: REASON };
 
 const po = (status: string, extra: Partial<FakeProviderOrder> = {}): FakeProviderOrder => ({
+  id: "po-1",
   status,
   lastError: null,
   externalOrderId: null,
+  provider: { code: "heartunlocks" },
   _count: { callbackEvents: 0 },
   ...extra,
 });
@@ -100,7 +104,20 @@ function fakeDb(order: FakeOrder | null) {
         return state.order!.fulfillment;
       }),
     },
-    providerOrder: { update: vi.fn(), updateMany: vi.fn(), upsert: vi.fn(), create: vi.fn() },
+    providerOrder: {
+      update: vi.fn(),
+      updateMany: vi.fn(
+        async ({ where, data }: { where: { id: string; status: string }; data: { status: string; lastError: null } }) => {
+          const current = state.order?.providerOrders.find((item) => item.id === where.id);
+          if (!current || current.status !== where.status) return { count: 0 };
+          current.status = data.status;
+          current.lastError = data.lastError;
+          return { count: 1 };
+        },
+      ),
+      upsert: vi.fn(),
+      create: vi.fn(),
+    },
     orderEvent: {
       createMany: vi.fn(async ({ data }: { data: FakeState["events"] }) => {
         state.events.push(...data);
@@ -234,18 +251,110 @@ describe("registerManualDelivery — sucesso no pedido de referência (rejeitado
     await expect(registerManualDelivery(input, db.client)).resolves.toEqual({ status: "DELIVERED" });
   });
 
-  it("PROCESSING incerto sem evidência: entrega manual registrada, ProviderOrder intacto, sem fornecedor/e-mail", async () => {
+  it("PROCESSING incerto (UNCERTAIN, sem externalOrderId): entrega registrada e ProviderOrder vira COMPLETED, sem fornecedor/e-mail", async () => {
     const db = fakeDb(uncertainOrder());
-    const before = structuredClone(db.state.order!.providerOrders);
     await expect(registerManualDelivery(input, db.client)).resolves.toEqual({ status: "DELIVERED" });
     expect(db.state.order?.status).toBe("DELIVERED");
     expect(db.state.order?.fulfillment).toMatchObject({ status: "FULFILLED", delivery: MANUAL_DELIVERY_PAYLOAD });
-    expect(db.state.order?.providerOrders).toEqual(before);
-    for (const fn of Object.values(db.tx.providerOrder)) expect(fn).not.toHaveBeenCalled();
+    expect(db.state.order?.providerOrders).toEqual([po("COMPLETED", { lastError: null })]);
+    expect(db.tx.providerOrder.updateMany).toHaveBeenCalledWith({
+      where: { id: "po-1", status: "PROCESSING" },
+      data: { status: "COMPLETED", lastError: null },
+    });
+    for (const fn of [db.tx.providerOrder.update, db.tx.providerOrder.upsert, db.tx.providerOrder.create])
+      expect(fn).not.toHaveBeenCalled();
     expect(external.resolveProviderAdapter).not.toHaveBeenCalled();
     expect(external.sendDeliveryEmail).not.toHaveBeenCalled();
     expect(external.resendDeliveryEmail).not.toHaveBeenCalled();
     expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("PROCESSING incerto: auditoria registra o fornecedor em PROCESSING sem externalOrderId", async () => {
+    const db = fakeDb(uncertainOrder());
+    await registerManualDelivery(input, db.client);
+    expect(db.state.audits).toEqual([
+      expect.objectContaining({
+        action: "ORDER_MANUAL_DELIVERY",
+        metadata: {
+          orderId: "order-1",
+          reason: REASON,
+          providerProcessing: {
+            note: "entrega manual com fornecedor em PROCESSING",
+            providerOrders: [{ providerCode: "heartunlocks", externalOrderId: null }],
+          },
+          providerFinalized: {
+            note: "finalizado pela entrega manual pelo admin, após conferência prévia no painel do fornecedor; conclusão do fornecedor não verificada automaticamente pelo sistema",
+            providerOrders: [
+              { providerCode: "heartunlocks", externalOrderId: null, lastErrorAntes: "PROVIDER_RESULT_UNCERTAIN", statusAntes: "PROCESSING", statusDepois: "COMPLETED" },
+            ],
+          },
+        },
+      }),
+    ]);
+  });
+
+  it("HeartUnlocks aceito (202) aguardando callback: ProviderOrder com externalOrderId vira COMPLETED e auditoria registra a finalização", async () => {
+    const db = fakeDb({ ...uncertainOrder(), providerOrders: [po("PROCESSING", { externalOrderId: "I26101901" })] });
+    await expect(registerManualDelivery(input, db.client)).resolves.toEqual({ status: "DELIVERED" });
+    expect(db.state.order?.status).toBe("DELIVERED");
+    expect(db.state.order?.fulfillment).toMatchObject({ status: "FULFILLED", delivery: MANUAL_DELIVERY_PAYLOAD });
+    expect(db.state.order?.providerOrders).toEqual([po("COMPLETED", { externalOrderId: "I26101901" })]);
+    expect(external.sendDeliveryEmail).not.toHaveBeenCalled();
+    expect(db.state.audits).toEqual([
+      {
+        actorUserId: "admin-1",
+        action: "ORDER_MANUAL_DELIVERY",
+        entityType: "Order",
+        entityId: "order-1",
+        metadata: {
+          orderId: "order-1",
+          reason: REASON,
+          providerProcessing: {
+            note: "entrega manual com fornecedor em PROCESSING",
+            providerOrders: [{ providerCode: "heartunlocks", externalOrderId: "I26101901" }],
+          },
+          providerFinalized: {
+            note: "finalizado pela entrega manual pelo admin, após conferência prévia no painel do fornecedor; conclusão do fornecedor não verificada automaticamente pelo sistema",
+            providerOrders: [
+              { providerCode: "heartunlocks", externalOrderId: "I26101901", lastErrorAntes: null, statusAntes: "PROCESSING", statusDepois: "COMPLETED" },
+            ],
+          },
+        },
+      },
+    ]);
+    expect(JSON.stringify(db.state.audits)).not.toMatch(/replay|password|credential|username/i);
+  });
+
+  it("ProviderOrder FAILED (histórico do fornecedor) nunca é finalizado pela entrega manual", async () => {
+    const db = fakeDb(rejectedOrder());
+    await registerManualDelivery(input, db.client);
+    expect(db.state.order?.providerOrders).toEqual([po("FAILED")]);
+    expect(db.tx.providerOrder.updateMany).not.toHaveBeenCalled();
+    expect(db.state.audits[0].metadata).toEqual({ orderId: "order-1", reason: REASON });
+  });
+
+  it("AdClean em PROCESSING nunca vira COMPLETED: entrega manual recusada e ProviderOrder intacto", async () => {
+    const adclean = po("PROCESSING", { externalOrderId: "bancadasoft:order-1", provider: { code: "adclean" } });
+    const db = fakeDb({ ...uncertainOrder(), providerOrders: [adclean] });
+    await expectCode(registerManualDelivery(input, db.client), "PROVIDER_ORDER_PROCESSING");
+    expect(db.state.order?.providerOrders).toEqual([adclean]);
+    expect(db.tx.providerOrder.updateMany).not.toHaveBeenCalled();
+    expectNothingWritten(db);
+  });
+
+  it("callback concluiu o ProviderOrder entre a leitura e o claim → CONCURRENT_MANUAL_DELIVERY, sem eventos nem auditoria", async () => {
+    const db = fakeDb(uncertainOrder());
+    db.tx.order.findUnique.mockImplementationOnce(async () => {
+      const snapshot = structuredClone(db.state.order);
+      db.state.order!.providerOrders[0].status = "COMPLETED";
+      return snapshot;
+    });
+    await expectCode(registerManualDelivery(input, db.client), "CONCURRENT_MANUAL_DELIVERY");
+    // Em produção o $transaction desfaz Order/Fulfillment; aqui conferimos que
+    // o claim do ProviderOrder falhou e nada depois dele foi gravado.
+    expect(db.state.order?.providerOrders[0].status).toBe("COMPLETED");
+    expect(db.state.events).toEqual([]);
+    expect(db.state.audits).toEqual([]);
   });
 });
 
@@ -259,7 +368,15 @@ describe("registerManualDelivery — cada pré-condição recusa sem gravar nada
     ["PROVIDER_ORDER_COMPLETED", { ...rejectedOrder(), providerOrders: [po("COMPLETED")] }],
     [
       "PROVIDER_ORDER_PROCESSING",
-      { ...uncertainOrder(), providerOrders: [po("PROCESSING", { lastError: "PROVIDER_RESULT_UNCERTAIN", externalOrderId: "ext-1" })] },
+      { ...uncertainOrder(), providerOrders: [po("PROCESSING", { externalOrderId: "ext-1", provider: { code: "adclean" } })] },
+    ],
+    [
+      "PROVIDER_ORDER_PROCESSING",
+      { ...uncertainOrder(), providerOrders: [po("PROCESSING", { externalOrderId: "ext-1", _count: { callbackEvents: 1 } })] },
+    ],
+    [
+      "ORDER_ALREADY_DELIVERED",
+      { ...uncertainOrder(), status: "DELIVERED", providerOrders: [po("PROCESSING", { externalOrderId: "ext-1" })] },
     ],
     [
       "PROVIDER_ORDER_PROCESSING",

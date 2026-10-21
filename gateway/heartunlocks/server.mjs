@@ -3,6 +3,8 @@ import https from "node:https";
 import { URL } from "node:url";
 import { buildHeartUnlocksOrderPayload, isValidOrderQuantity } from "./order-payload.mjs";
 import { PROVIDER_DEADLINE_MS } from "./timeouts.mjs";
+import { createCallbackRetrier } from "./callback-retry.mjs";
+import { parseHeartUnlocksOrderResponse } from "./order-response.mjs";
 
 const port = Number(process.env.PORT || 8787);
 const apiBase = process.env.HEARTUNLOCKS_API_BASE_URL || "https://api.heartunlocks.com";
@@ -35,10 +37,21 @@ function providerRequest(path, method, body) {
   });
 }
 
+// Diagnóstico: só nomes e tipos dos campos, nunca valores (a resposta pode conter dados do cliente).
+const fieldTypes = (value) => value && typeof value === "object" && !Array.isArray(value) ? Object.fromEntries(Object.entries(value).map(([key, field]) => [key, field === null ? "null" : Array.isArray(field) ? "array" : typeof field])) : null;
+
 async function forwardCallback(payload) {
-  const response = await fetch(appCallback, { method: "POST", headers: { "content-type": "application/json", "x-internal-secret": internalSecret }, body: JSON.stringify(payload), signal: AbortSignal.timeout(12000) });
+  let response;
+  try { response = await fetch(appCallback, { method: "POST", headers: { "content-type": "application/json", "x-internal-secret": internalSecret }, body: JSON.stringify(payload), signal: AbortSignal.timeout(12000) }); }
+  catch (error) {
+    // Diferencia recusa de conexão (ECONNREFUSED), DNS (ENOTFOUND/EAI_AGAIN), TLS, reset (ECONNRESET) e timeout (TimeoutError).
+    console.error("callback forward error", { referenceId: payload?.reference_id, name: error instanceof Error ? error.name : "UNKNOWN", message: error instanceof Error ? error.message.slice(0, 200) : "UNKNOWN", causeCode: error?.cause?.code ?? null, causeName: error?.cause?.name ?? null });
+    throw error;
+  }
   if (!response.ok) throw new Error(`APP_CALLBACK_HTTP_${response.status}`);
 }
+
+const callbackRetrier = createCallbackRetrier({ forward: forwardCallback });
 
 const server = http.createServer(async (req, res) => {
   try {
@@ -69,18 +82,25 @@ const server = http.createServer(async (req, res) => {
         return json(res, 202, { referenceId: body.referenceId, status: "PROCESSING", uncertain: true });
       }
       const item = Array.isArray(result?.data) ? result.data[0] : null;
-      if (result?.status !== "success" || !item?.order_uuid) {
-        console.warn("order rejected", { referenceId: body.referenceId, providerStatus: String(result?.status ?? "").slice(0, 40), message: String(result?.message ?? "").slice(0, 200), hasOrderUuid: Boolean(item?.order_uuid), elapsedMs: Date.now() - startedAt });
+      const topTypes = fieldTypes(result);
+      const itemTypes = fieldTypes(item);
+      console.info("order response shape", { referenceId: body.referenceId, topKeys: topTypes ? Object.keys(topTypes) : null, topTypes, dataLength: Array.isArray(result?.data) ? result.data.length : null, itemKeys: itemTypes ? Object.keys(itemTypes) : null, itemTypes });
+      const { orderId, itemType } = parseHeartUnlocksOrderResponse(result);
+      if (!orderId) {
+        console.warn("order rejected", { referenceId: body.referenceId, providerStatus: String(result?.status ?? "").slice(0, 40), message: String(result?.message ?? "").slice(0, 200), itemType, elapsedMs: Date.now() - startedAt });
         return json(res, 502, { error: "PROVIDER_REJECTED" });
       }
-      console.info("order accepted", { referenceId: body.referenceId, orderId: item.order_uuid, elapsedMs: Date.now() - startedAt });
-      return json(res, 202, { externalOrderId: String(item.order_uuid), referenceId: body.referenceId, status: "PROCESSING" });
+      // Só tipo e tamanho do orderId, nunca o valor.
+      console.info("order accepted", { referenceId: body.referenceId, itemType, orderIdLength: orderId.length, elapsedMs: Date.now() - startedAt });
+      return json(res, 202, { externalOrderId: orderId, referenceId: body.referenceId, status: "PROCESSING" });
     }
     if (req.method === "POST" && url.pathname === "/callbacks/heartunlocks") {
       if (url.searchParams.get("token") !== callbackSecret) return json(res, 401, { error: "UNAUTHORIZED" });
       const body = await read(req);
       if (typeof body.reference_id !== "string" || typeof body.order_id !== "string" || typeof body.status !== "string") return json(res, 422, { error: "INVALID_CALLBACK" });
-      await forwardCallback(body);
+      // Mesmo status de antes para a Heart: falha de entrega ao app continua 500, agora com reenvio em fila.
+      const delivery = await callbackRetrier.deliver(body);
+      if (!delivery.delivered) return json(res, 500, { error: "GATEWAY_ERROR" });
       console.info("callback forwarded", { referenceId: body.reference_id, orderId: body.order_id, status: body.status });
       return json(res, 200, { received: true });
     }

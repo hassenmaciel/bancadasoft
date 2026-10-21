@@ -94,4 +94,91 @@ describe("HeartUnlocks callback — entrega automática sanitizada", () => {
     expect(db.fulfillment.update).not.toHaveBeenCalled();
     expect(db.order.update).not.toHaveBeenCalled();
   });
+
+  it.each(["success", "rejected"])(
+    "callback %s depois da entrega manual (ProviderOrder COMPLETED, Delivery TEXT) não altera nada nem reentrega",
+    async (status) => {
+      db.providerOrder.findUniqueOrThrow.mockResolvedValue({
+        id: "provider-order-sanitized",
+        orderId: "order-sanitized",
+        fulfillmentId: "fulfillment-sanitized",
+        status: "COMPLETED",
+        fulfillment: {
+          delivery: {
+            deliveryType: "TEXT",
+            title: "Entrega manual",
+            instructions: "Seu acesso foi entregue pelo suporte da BancadaSoft.",
+          },
+        },
+        order: { items: [{ product: { name: "UnlockTool 7h" } }] },
+        providerProduct: { expectedDeliveryType: "CREDENTIALS" },
+      });
+
+      await expect(
+        processHeartUnlocksCallback({
+          reference_id: "provider-order-sanitized",
+          order_id: "external-sanitized",
+          status,
+          replay: Buffer.from("Username: u\nPassword: p").toString("base64"),
+        }),
+      ).resolves.toEqual({ matched: true, duplicate: false, final: true });
+      expect(db.providerOrder.update).not.toHaveBeenCalled();
+      expect(db.fulfillment.update).not.toHaveBeenCalled();
+      expect(db.order.update).not.toHaveBeenCalled();
+      expect(db.providerCallbackEvent.update).toHaveBeenCalledWith(
+        expect.objectContaining({ data: { processedAt: expect.any(Date) } }),
+      );
+    },
+  );
+
+  it("callback com orderId diferente do criado loga o erro e entrega normalmente", async () => {
+    db.providerOrder.findFirst.mockResolvedValue({
+      id: "provider-order-sanitized",
+      externalOrderId: "I26101901-criado",
+    });
+    const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    const result = await processHeartUnlocksCallback({
+      reference_id: "provider-order-sanitized",
+      order_id: "H26101902-outro",
+      status: "success",
+      replay: Buffer.from("Username: u\nPassword: p").toString("base64"),
+    });
+    expect(result).toMatchObject({ matched: true, delivered: true, orderId: "order-sanitized" });
+    expect(result).not.toHaveProperty("orderIdMismatch");
+    expect(db.providerCallbackEvent.create).toHaveBeenCalled();
+    expect(db.providerOrder.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ status: "COMPLETED", externalOrderId: "H26101902-outro" }),
+      }),
+    );
+    expect(db.fulfillment.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ status: "FULFILLED" }) }),
+    );
+    expect(db.order.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ status: "DELIVERED" }) }),
+    );
+    expect(error).toHaveBeenCalledWith(
+      "[heartunlocks] callback orderId diverge do pedido criado",
+      { referenceId: "provider-order-sanitized" },
+    );
+    expect(JSON.stringify(error.mock.calls)).not.toMatch(/I26101901|H26101902/);
+    error.mockRestore();
+  });
+
+  it("callback com o mesmo orderId do criado segue o fluxo normal", async () => {
+    db.providerOrder.findFirst.mockResolvedValue({
+      id: "provider-order-sanitized",
+      externalOrderId: "external-sanitized",
+    });
+
+    await expect(
+      processHeartUnlocksCallback({
+        reference_id: "provider-order-sanitized",
+        order_id: "external-sanitized",
+        status: "success",
+        replay: Buffer.from("Username: u\nPassword: p").toString("base64"),
+      }),
+    ).resolves.toMatchObject({ delivered: true });
+  });
 });

@@ -1,14 +1,17 @@
 import { describe, expect, it } from "vitest";
 import {
+  MANUAL_DELIVERY_HEARTUNLOCKS_CODE,
   manualDeliveryBlocker,
   type ManualDeliveryProviderOrder,
   type ManualDeliveryState,
 } from "./manual-delivery-rules";
+import { HEARTUNLOCKS_CODE } from "./providers/heartunlocks";
 
 const po = (
   status: string,
   extra: Partial<ManualDeliveryProviderOrder> = {},
 ): ManualDeliveryProviderOrder => ({
+  providerCode: "heartunlocks",
   status,
   lastError: null,
   externalOrderId: null,
@@ -48,18 +51,34 @@ describe("manualDeliveryBlocker — visibilidade do botão e pré-condição da 
   });
 });
 
-describe("manualDeliveryBlocker — PROCESSING incerto sem evidência do fornecedor", () => {
-  it("libera PROCESSING incerto sem externalOrderId e sem callback (#9KJH34LN)", () => {
+describe("manualDeliveryBlocker — HeartUnlocks em PROCESSING sem callback", () => {
+  it("usa o mesmo código do adapter HeartUnlocks", () => {
+    expect(MANUAL_DELIVERY_HEARTUNLOCKS_CODE).toBe(HEARTUNLOCKS_CODE);
+  });
+
+  it("libera PROCESSING incerto sem externalOrderId e sem callback (#9KJH34LN), como antes", () => {
     expect(
       manualDeliveryBlocker({ ...base, orderStatus: "PROCESSING", providerOrders: [uncertain] }),
     ).toBeNull();
   });
 
   it.each([
-    ["com externalOrderId", { ...uncertain, externalOrderId: "ext-1" }],
-    ["com callback registrado", { ...uncertain, callbackEventCount: 1 }],
-    ["sem lastError", po("PROCESSING")],
-    ["com outro lastError", po("PROCESSING", { lastError: "PROVIDER_TIMEOUT" })],
+    ["aceito pelo gateway (202): externalOrderId, lastError nulo", po("PROCESSING", { externalOrderId: "I26101901" })],
+    ["incerto e com externalOrderId", { ...uncertain, externalOrderId: "I26101901" }],
+  ] as Array<[string, ManualDeliveryProviderOrder]>)("libera %s, sem callback", (_, item) => {
+    expect(
+      manualDeliveryBlocker({ ...base, orderStatus: "PROCESSING", providerOrders: [item] }),
+    ).toBeNull();
+  });
+
+  it.each([
+    ["sem lastError e sem externalOrderId (criação em andamento)", po("PROCESSING")],
+    ["com outro lastError e sem externalOrderId", po("PROCESSING", { lastError: "PROVIDER_TIMEOUT" })],
+    ["incerto com callback registrado", { ...uncertain, callbackEventCount: 1 }],
+    ["com externalOrderId e callback registrado", po("PROCESSING", { externalOrderId: "I26101901", callbackEventCount: 1 })],
+    ["AdClean com externalOrderId", po("PROCESSING", { providerCode: "adclean", externalOrderId: "bancadasoft:order-1" })],
+    ["AdClean incerto", { ...uncertain, providerCode: "adclean" }],
+    ["AdClean licença com externalOrderId", po("PROCESSING", { providerCode: "adclean-license", externalOrderId: "x" })],
   ] as Array<[string, ManualDeliveryProviderOrder]>)("PROCESSING %s continua bloqueado", (_, item) => {
     expect(manualDeliveryBlocker({ ...base, providerOrders: [item] })).toBe(
       "PROVIDER_ORDER_PROCESSING",
@@ -70,6 +89,16 @@ describe("manualDeliveryBlocker — PROCESSING incerto sem evidência do fornece
     expect(
       manualDeliveryBlocker({ ...base, providerOrders: [uncertain, po("PROCESSING")] }),
     ).toBe("PROVIDER_ORDER_PROCESSING");
+  });
+
+  it("HeartUnlocks com externalOrderId em pedido já DELIVERED → ORDER_ALREADY_DELIVERED", () => {
+    expect(
+      manualDeliveryBlocker({
+        ...base,
+        orderStatus: "DELIVERED",
+        providerOrders: [po("PROCESSING", { externalOrderId: "I26101901" })],
+      }),
+    ).toBe("ORDER_ALREADY_DELIVERED");
   });
 
   it("incerto junto de COMPLETED → PROVIDER_ORDER_COMPLETED", () => {
