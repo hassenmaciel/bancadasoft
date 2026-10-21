@@ -5,6 +5,8 @@ import { BALANCE_TOPUP_BLOCKED_MESSAGE } from "@/lib/commercial-pricing";
 import type { CustomerBalanceView } from "@/lib/customer-balance";
 
 const text = (html: string) => html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").replace(/&amp;/g, "&");
+// Texto de cada botão de recarga (os <a> do painel), na ordem.
+const topupButtons = (html: string) => [...html.matchAll(/<a [^>]*>(.*?)<\/a>/g)].map((link) => text(link[1]).trim());
 
 const entries: CustomerBalanceView["entries"] = [
   { id: "e4", createdAt: new Date("2026-09-20T15:00:00Z"), type: "ADJUSTMENT", amountCents: -500, balanceAfterCents: 7000 },
@@ -37,7 +39,8 @@ describe("CustomerBalancePanel", () => {
     expect(rows[3]).toMatch(/Recarga \+R\$ 75,00 R\$ 75,00$/);
     expect(rows[3]).toContain("17/09/2026");
     expect(html).toContain('href="/produto/recarga-de-saldo?variante=v50"');
-    expect(body).toContain("Pacote R$ 50 — R$ 50,00");
+    expect(topupButtons(html)).toEqual(["R$ 50,00"]);
+    expect(body).not.toContain("Pacote R$ 50");
   });
 
   it("saldo ainda não ativado: mostra o aviso em vez do saldo, mas oferece a recarga", () => {
@@ -56,12 +59,12 @@ describe("CustomerBalancePanel", () => {
     expect(body).toContain(BALANCE_DISABLED_MESSAGE);
     expect(BALANCE_DISABLED_MESSAGE).toBe("Saldo ainda não ativado. Ele é ativado automaticamente na sua primeira recarga.");
     expect(body).toContain("Recarregar");
-    expect(body).toContain("Recarga Mínima — R$ 15,00");
+    expect(topupButtons(html)).toEqual(["R$ 15,00"]);
     expect(body).toContain("Nenhuma movimentação ainda.");
   });
 
-  it("botões fixos continuam e 'Outro valor' mostra a faixa permitida", () => {
-    const body = text(renderToStaticMarkup(
+  it("botões fixos mostram só o valor e 'Outro valor' mostra título e a faixa permitida", () => {
+    const html = renderToStaticMarkup(
       <CustomerBalancePanel
         view={{
           enabled: true,
@@ -76,10 +79,11 @@ describe("CustomerBalancePanel", () => {
           topupBlocked: false,
         }}
       />,
-    ));
-    for (const label of ["Recarga de R$ 15,00 — R$ 15,00", "Recarga de R$ 30,00 — R$ 30,00", "Recarga de R$ 50,00 — R$ 50,00"])
-      expect(body).toContain(label);
-    expect(body).toContain("Outro valor — R$ 15,00 a R$ 5.000,00");
+    );
+    expect(topupButtons(html)).toEqual(["R$ 15,00", "R$ 30,00", "R$ 50,00", "Outro valor Mínimo R$ 15,00 · Máximo R$ 5.000,00"]);
+    // Título e faixa em elementos separados (duas linhas no botão).
+    expect(html).toMatch(/<span>Outro valor<\/span><small>Mínimo R\$\s15,00 · Máximo R\$\s5\.000,00<\/small>/);
+    expect(text(html)).not.toContain("Recarga de");
   });
 
   it("recarga bloqueada pelo Admin: mensagem clara, sem pacote e sem preço", () => {

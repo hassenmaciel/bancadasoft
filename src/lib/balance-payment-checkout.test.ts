@@ -235,7 +235,8 @@ describe("respostas de erro do pagamento por saldo", () => {
 });
 
 describe("painel de checkout — opção de saldo ao lado do PIX", () => {
-  const source = readFileSync(path.resolve(__dirname, "../components/checkout-panel.tsx"), "utf8");
+  // Normaliza CRLF (checkout no Windows com core.autocrlf) para os trechos com "\n".
+  const source = readFileSync(path.resolve(__dirname, "../components/checkout-panel.tsx"), "utf8").replace(/\r\n/g, "\n");
 
   it("mantém o botão e os rótulos do PIX", () => {
     expect(source).toContain('"COMPRAR COM PIX"');

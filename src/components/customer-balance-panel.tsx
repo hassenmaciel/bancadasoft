@@ -27,11 +27,15 @@ export default function CustomerBalancePanel({ view }: { view: CustomerBalanceVi
           <p className="notice balance-disabled">{BALANCE_TOPUP_BLOCKED_MESSAGE}</p>
         ) : view.topupOptions.length ? (
           <div className="balance-topup-options">
-            {view.topupOptions.map((option) => (
+            {/* Fixos: só o valor. "Outro valor": título e a faixa permitida embaixo. */}
+            {view.topupOptions.map((option) => option.freeAmount ? (
+              <Link className="product-cta balance-topup-free" href={option.href} key={option.key}>
+                <span>Outro valor</span>
+                <small>Mínimo {formatBRL(TOPUP_MIN_CENTS)} · Máximo {formatBRL(TOPUP_FREE_MAX_CENTS)}</small>
+              </Link>
+            ) : (
               <Link className="product-cta" href={option.href} key={option.key}>
-                {option.freeAmount
-                  ? `${option.label} — ${formatBRL(TOPUP_MIN_CENTS)} a ${formatBRL(TOPUP_FREE_MAX_CENTS)}`
-                  : `${option.label} — ${formatBRL(option.priceCents)}`}
+                {formatBRL(option.priceCents)}
               </Link>
             ))}
           </div>
