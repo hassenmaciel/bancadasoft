@@ -145,3 +145,15 @@ export function initialCheckoutVariantId(
   if (requested && variants.some((variant) => variant.id === requested && variant.priceCents !== null)) return requested;
   return variants.length === 1 ? variants[0].id : "";
 }
+
+// Recarga aberta por um botão de /minha-conta/saldo (?variante= válido): o
+// pacote já foi escolhido, então o checkout esconde o seletor e envia sempre
+// essa variante. null (seletor como antes) sem ?variante= válido ou em
+// qualquer produto que não seja BALANCE_TOPUP.
+export function lockedCheckoutVariantId(
+  product: { type: string; variants: Array<{ id: string; priceCents: number | null }> },
+  requested?: string | null,
+) {
+  if (product.type !== "BALANCE_TOPUP" || !requested) return null;
+  return product.variants.some((variant) => variant.id === requested && variant.priceCents !== null) ? requested : null;
+}

@@ -9,7 +9,7 @@ import type { CustomerFieldEcho } from "@/lib/customer-field-echo";
 import { allowsQuantity, quantityPriceLabel, quantityRange } from "@/lib/checkout-quantity";
 import { isOptimizableImage } from "@/lib/image-source";
 import type { CheckoutIdentitySummary } from "@/lib/checkout-identity";
-import { initialCheckoutVariantId } from "@/lib/product-variants";
+import { initialCheckoutVariantId, lockedCheckoutVariantId } from "@/lib/product-variants";
 import {
   createOrderPoller,
   isFailedCheckoutOrder,
@@ -80,7 +80,10 @@ export default function CheckoutPanel({
   const cancelGuard = useRef(false);
   // customerFields viaja junto da entrega (mesmo ciclo de vida/reset).
   const [delivery, setDelivery] = useState<(DeliveryDTO & { customerFields?: CustomerFieldEcho[] }) | null>(null);
-  const [variantId, setVariantId] = useState(() => initialCheckoutVariantId(product.variants, initialVariantId));
+  const [chosenVariantId, setVariantId] = useState(() => initialCheckoutVariantId(product.variants, initialVariantId));
+  // Recarga com ?variante= válido: sem seletor e sempre essa variante.
+  const lockedVariantId = lockedCheckoutVariantId(product, initialVariantId);
+  const variantId = lockedVariantId ?? chosenVariantId;
   // Fica true quando o polling entra na fase de espera (frequência reduzida,
   // ver src/lib/order-polling.ts) — o polling continua rodando, só que mais
   // devagar; isso NÃO é um erro/timeout de pagamento.
@@ -644,7 +647,7 @@ export default function CheckoutPanel({
                     </fieldset>
                   )}
                   <div className="checkout-fields">
-                    {product.variants.length > 0 && (
+                    {product.variants.length > 0 && !lockedVariantId && (
                       <label htmlFor="checkout-variant">
                         Variante
                         <select
