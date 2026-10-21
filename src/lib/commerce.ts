@@ -276,7 +276,12 @@ export async function createOrder(input: {
     )
     : {};
   const viewer = authenticatedUser ? { customerTier: authenticatedUser.customerTier } : null;
-  const unitPriceCents = assertCheckoutPrice(product, variantResolution?.variant ?? null, viewer);
+  const unitPriceCents = assertCheckoutPrice(
+    product,
+    variantResolution?.variant ?? null,
+    viewer,
+    providerResolution.providerProduct,
+  );
   const totalCents = orderTotalCents(unitPriceCents, quantity);
   // Recarga de Saldo: só conta logada com saldo habilitado. A consulta extra
   // acontece apenas para BALANCE_TOPUP; nenhum outro tipo é afetado.

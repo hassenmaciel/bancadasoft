@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { topupProviderProduct } from "./testing/topup-fixtures";
 import { createFakeLedgerDb } from "./testing/fake-ledger-db";
 
 const db = vi.hoisted(() => ({
@@ -42,7 +43,7 @@ const product = (type = "TOOL") => ({
   normalPriceCents: null,
   premiumPriceCents: null,
   priceVisibility: "LOGIN_REQUIRED",
-  providerProducts: [],
+  providerProducts: type === "BALANCE_TOPUP" ? [topupProviderProduct(1500)] : [],
   variants: [],
 });
 // Conta com cadastro completo: o checkout segue até o caminho de pagamento.

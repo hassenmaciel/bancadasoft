@@ -52,13 +52,31 @@ export function resolveVisiblePrice(
   };
 }
 
+// Recarga de Saldo (BALANCE_TOPUP): o preço é SEMPRE o valor creditado pelo
+// pacote (ProviderProduct.metadata.creditAmountCents), em qualquer tier.
+// priceCents e os preços por tier são ignorados, então o valor cobrado nunca
+// diverge do valor creditado. null = pacote sem crédito válido (não vendável).
+export function topupCreditCents(metadata: unknown) {
+  const value =
+    metadata && typeof metadata === "object" && !Array.isArray(metadata)
+      ? (metadata as Record<string, unknown>).creditAmountCents
+      : undefined;
+  return positive(typeof value === "number" ? value : null);
+}
+
 export function assertCheckoutPrice(
-  product: TieredPriceSource & { priceVisibility: PriceVisibilityValue },
+  product: TieredPriceSource & { priceVisibility: PriceVisibilityValue; type?: string },
   variant: TieredPriceSource | null,
   viewer: PriceViewer,
+  purchased?: { metadata?: unknown } | null,
 ) {
   if (product.priceVisibility === "LOGIN_REQUIRED" && !viewer)
     throw new Error("LOGIN_REQUIRED_FOR_PRICE");
+  if (product.type === "BALANCE_TOPUP") {
+    const creditCents = topupCreditCents(purchased?.metadata);
+    if (!creditCents) throw new Error("PRICE_UNAVAILABLE");
+    return creditCents;
+  }
   const priceCents = resolveTierPrice(variant ?? product, viewer);
   if (!priceCents) throw new Error("PRICE_UNAVAILABLE");
   return priceCents;

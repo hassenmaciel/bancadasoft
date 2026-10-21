@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { topupProviderProduct } from "./testing/topup-fixtures";
 
 const db = vi.hoisted(() => ({
   order: { findUnique: vi.fn(), create: vi.fn() },
@@ -31,7 +32,7 @@ const product = (type: string) => ({
   normalPriceCents: null,
   premiumPriceCents: null,
   priceVisibility: "LOGIN_REQUIRED",
-  providerProducts: [],
+  providerProducts: type === "BALANCE_TOPUP" ? [topupProviderProduct(1500)] : [],
   variants: [],
 });
 // Conta sem CPF/WhatsApp: se o guard deixar passar, o próximo passo do

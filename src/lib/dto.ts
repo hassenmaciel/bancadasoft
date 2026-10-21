@@ -11,7 +11,7 @@ import type {
 import type { DynamicField } from "./providers/automation";
 import { publicVariantFields } from "./product-variants";
 import { isProductionProviderCode } from "./providers/selection";
-import { resolveTierPrice, resolveVisiblePrice, type PriceViewer } from "./commercial-pricing";
+import { resolveTierPrice, resolveVisiblePrice, topupCreditCents, type PriceViewer } from "./commercial-pricing";
 import { quantityRange } from "./checkout-quantity";
 
 export type CategoryDTO = Pick<Category, "id" | "slug" | "name">;
@@ -91,7 +91,7 @@ export type UserSessionDTO = Pick<User, "id" | "email" | "name" | "role" | "cust
 type ProductWithCategory = Product & {
   category?: Category | null;
   brand?: Brand | null;
-  providerProducts?: Array<{ active: boolean; mode: string; technicalEligibility?: string; fieldSchema?: unknown; provider?: { active: boolean; code: string } }>;
+  providerProducts?: Array<{ active: boolean; mode: string; technicalEligibility?: string; fieldSchema?: unknown; metadata?: unknown; provider?: { active: boolean; code: string } }>;
   variants?: Array<{
     id: string;
     name: string;
@@ -106,6 +106,7 @@ type ProductWithCategory = Product & {
       mode: string;
       technicalEligibility?: string;
       fieldSchema?: unknown;
+      metadata?: unknown;
       provider: { active: boolean; code: string };
       providerCostCents?: number | null;
       contractSignature?: string | null;
@@ -124,13 +125,35 @@ export const normalizeQrCodeImage = (encodedImage: string | null | undefined) =>
   return encodedImage.startsWith("data:image/") ? encodedImage : `data:image/png;base64,${encodedImage}`;
 };
 
+// Recarga de Saldo sem variantes: o pacote é o único ProviderProduct REAL
+// ativo do produto (o mesmo que o checkout resolve no modo REAL).
+const productTopupCreditCents = (product: ProductWithCategory) => {
+  const links = (product.providerProducts ?? []).filter((link) =>
+    link.active &&
+    link.mode === "REAL" &&
+    link.provider?.active &&
+    isProductionProviderCode(link.provider.code) &&
+    (link.technicalEligibility === undefined || link.technicalEligibility === "READY"),
+  );
+  return links.length === 1 ? topupCreditCents(links[0].metadata) : null;
+};
+
 export const productDto = (product: ProductWithCategory, viewer: PriceViewer = null): ProductDTO => {
-  const productPrice = resolveVisiblePrice(product, viewer);
+  // BALANCE_TOPUP exibe sempre o valor creditado pelo pacote, igual ao que o
+  // checkout cobra (assertCheckoutPrice); priceCents e tiers não entram.
+  // A visibilidade segue só o LOGIN_REQUIRED (o preço vem das variantes).
+  const topup = product.type === "BALANCE_TOPUP";
+  const topupVisible = !(product.priceVisibility === "LOGIN_REQUIRED" && !viewer);
+  const productPrice = topup
+    ? { visible: topupVisible, priceCents: topupVisible ? productTopupCreditCents(product) : null, tier: topupVisible ? viewer?.customerTier ?? null : null }
+    : resolveVisiblePrice(product, viewer);
+  const variantPrice = (variant: NonNullable<ProductWithCategory["variants"]>[number]) =>
+    topup ? topupCreditCents(variant.providerProduct.metadata) : resolveTierPrice(variant, viewer);
   const variants = (product.variants ?? [])
     .filter((variant) =>
       variant.active &&
       !variant.publicationBlocked &&
-      Boolean(resolveTierPrice(variant, viewer)) &&
+      Boolean(variantPrice(variant)) &&
       variant.providerProduct.active &&
       variant.providerProduct.mode === "REAL" &&
       variant.providerProduct.provider.active &&
@@ -141,7 +164,7 @@ export const productDto = (product: ProductWithCategory, viewer: PriceViewer = n
     .map((variant) => ({
       id: variant.id,
       name: variant.name,
-      priceCents: productPrice.visible ? resolveTierPrice(variant, viewer) : null,
+      priceCents: productPrice.visible ? variantPrice(variant) : null,
       checkoutFields: publicVariantFields(variant.providerProduct.fieldSchema),
     }));
   const variantPrices = variants.map((variant) => variant.priceCents).filter((price): price is number => price !== null);

@@ -12,8 +12,11 @@ import { initialCheckoutVariantId } from "./product-variants";
 
 const user = { id: "u1", customerTier: "NORMAL" as const };
 const readyProvider = { active: true, mode: "REAL", technicalEligibility: "READY", fieldSchema: [], provider: { active: true, code: "internal-balance" } };
-const variant = (id: string, name: string, priceCents: number, sortOrder: number, extra: Record<string, unknown> = {}) => ({
-  id, name, sortOrder, priceCents, active: true, publicationBlocked: false, providerProduct: readyProvider, ...extra,
+// O preço exibido do pacote é o crédito do ProviderProduct; priceCents da
+// variante fica propositalmente diferente para provar que é ignorado.
+const variant = (id: string, name: string, creditAmountCents: number, sortOrder: number, extra: Record<string, unknown> = {}) => ({
+  id, name, sortOrder, priceCents: creditAmountCents - 1, active: true, publicationBlocked: false,
+  providerProduct: { ...readyProvider, metadata: { creditAmountCents } }, ...extra,
 });
 const topupProduct = {
   id: "p-topup",

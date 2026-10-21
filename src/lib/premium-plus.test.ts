@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { topupProviderProduct } from "./testing/topup-fixtures";
 import { createFakeLedgerDb } from "./testing/fake-ledger-db";
 
 const db = vi.hoisted(() => ({
@@ -110,7 +111,8 @@ describe("preço Premium Plus", () => {
 describe("PREMIUM_PLUS compra só com saldo (exceto recarga)", () => {
   const product = (type = "TOOL") => ({
     id: "p1", type, deliveryType: "MANUAL", priceCents: 3000, normalPriceCents: 2500, premiumPriceCents: 2000,
-    premiumPlusPriceCents: 1700, priceVisibility: "LOGIN_REQUIRED", providerProducts: [], variants: [],
+    premiumPlusPriceCents: 1700, priceVisibility: "LOGIN_REQUIRED",
+    providerProducts: type === "BALANCE_TOPUP" ? [topupProviderProduct(1500)] : [], variants: [],
   });
   // Conta sem CPF/WhatsApp: passar da regra de PIX leva a MISSING_CUSTOMER_FIELDS
   // — prova de que o bloqueio não disparou, sem simular o PIX inteiro.
