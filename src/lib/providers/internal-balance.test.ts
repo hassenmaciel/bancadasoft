@@ -57,6 +57,24 @@ describe("BalanceTopupAdapter — provider interno da Recarga de Saldo", () => {
     );
   });
 
+  it("NORMAL que recarrega vira PREMIUM_PLUS com saldo ativado, na transação do crédito", async () => {
+    const { db, adapter } = setup({
+      users: [{ id: "buyer", role: "USER", active: true, passwordHash: "hash", customerTier: "NORMAL", canUseBalanceAsPayment: false }],
+    });
+    await run(adapter);
+    expect(db.state.users[0]).toMatchObject({ customerTier: "PREMIUM_PLUS", canUseBalanceAsPayment: true });
+    expect(db.state.balances[0]).toMatchObject({ balanceCents: 1000, enabled: true });
+  });
+
+  it("recarga recusada pelo adapter (pacote errado) não credita nem promove", async () => {
+    const { db, adapter } = setup({
+      users: [{ id: "buyer", role: "USER", active: true, passwordHash: "hash", customerTier: "NORMAL" }],
+    });
+    await expect(run(adapter, 1000, "topup-9999")).rejects.toThrow("BALANCE_TOPUP_PROVIDER_PRODUCT_MISMATCH");
+    expect(db.state.entries).toHaveLength(0);
+    expect(db.state.users[0].customerTier).toBe("NORMAL");
+  });
+
   it("o valor creditado vem do metadata do ProviderProduct, nunca do valor pago", async () => {
     const { db, adapter } = setup({
       orders: [{ id: "order-1", customerId: "buyer", providerProduct: topupProduct(3000, "topup-3000") }],
