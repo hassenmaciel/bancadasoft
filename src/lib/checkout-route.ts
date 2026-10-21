@@ -4,7 +4,7 @@ import { orderDto } from "./dto";
 import { AsaasClientError } from "./payments/asaas-client";
 import { IncompleteCheckoutIdentityError } from "./checkout-identity";
 import { CheckoutQuantityError } from "./checkout-quantity";
-import { BALANCE_TOPUP_BLOCKED_MESSAGE } from "./commercial-pricing";
+import { BALANCE_TOPUP_BLOCKED_MESSAGE, PIX_PRICE_UNAVAILABLE_MESSAGE } from "./commercial-pricing";
 
 type CreateOrder = (
   input: ReturnType<typeof checkoutSchema.parse>,
@@ -78,7 +78,9 @@ export async function handleCheckoutRequest(
     if (error instanceof Error && error.message === "BALANCE_PERMISSION_REQUIRED")
       return NextResponse.json({ ok: false, error: "A sua conta não tem permissão para usar saldo como pagamento.", code: "BALANCE_PERMISSION_REQUIRED" }, { status: 403 });
     if (error instanceof Error && error.message === "PIX_NOT_ALLOWED_FOR_TIER")
-      return NextResponse.json({ ok: false, error: "Sua conta usa apenas saldo para compras. Recarregue seu saldo para continuar.", code: "PIX_NOT_ALLOWED_FOR_TIER" }, { status: 403 });
+      return NextResponse.json({ ok: false, error: "Seu saldo cobre esta compra: conclua o pagamento com saldo.", code: "PIX_NOT_ALLOWED_FOR_TIER" }, { status: 403 });
+    if (error instanceof Error && error.message === "PIX_PRICE_UNAVAILABLE_FOR_TIER")
+      return NextResponse.json({ ok: false, error: PIX_PRICE_UNAVAILABLE_MESSAGE, code: "PIX_PRICE_UNAVAILABLE_FOR_TIER" }, { status: 422 });
     if (error instanceof Error && error.message === "BALANCE_PAYMENT_NOT_ALLOWED")
       return NextResponse.json({ ok: false, error: "Este produto não pode ser pago com saldo.", code: "BALANCE_PAYMENT_NOT_ALLOWED" }, { status: 422 });
     if (error instanceof Error && error.message === "INSUFFICIENT_BALANCE")

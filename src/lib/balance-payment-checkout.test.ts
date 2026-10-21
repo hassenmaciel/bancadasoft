@@ -255,8 +255,9 @@ describe("painel de checkout — opção de saldo ao lado do PIX", () => {
   });
 
   it("a opção de saldo só é renderizada quando o servidor a forneceu", () => {
-    expect(source).toContain("{balancePayment && product.available && (");
-    expect(source).toContain("{balancePayment && (\n                    <fieldset");
-    expect(source).toContain('const payingWithBalance = paymentMethod === "balance" && balancePayment !== null;');
+    expect(source).toContain("{balancePayment && product.available && (!premiumPlusMode || premiumPlusBalanceAvailable) && (");
+    expect(source).toContain(") : balancePayment && (\n                    <fieldset");
+    // Fora do PREMIUM_PLUS (cuja forma vem do saldo), saldo só com balancePayment.
+    expect(source).toContain(': paymentMethod === "balance" && balancePayment !== null;');
   });
 });

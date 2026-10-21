@@ -29,6 +29,20 @@ export function resolveTierPrice(source: TieredPriceSource, viewer: PriceViewer)
   return positive(source.normalPriceCents) ?? publicPrice;
 }
 
+// PREMIUM_PLUS pagando por PIX (o saldo não cobre o total ao preço Premium
+// Plus): menor preço ATIVO entre Premium e Técnico (normalPriceCents) da fonte —
+// a variante, ou o produto sem variante. Nunca o Premium Plus nem o Público.
+// null = sem preço para PIX (a compra por PIX é recusada).
+export const PIX_PRICE_UNAVAILABLE_MESSAGE =
+  "Este produto não tem preço para PIX na sua conta. Recarregue o saldo para comprar com saldo.";
+
+export function premiumPlusPixPrice(source: TieredPriceSource) {
+  const prices = [positive(source.premiumPriceCents), positive(source.normalPriceCents)].filter(
+    (price): price is number => price !== null,
+  );
+  return prices.length ? Math.min(...prices) : null;
+}
+
 // Aviso (nunca bloqueio) do Admin: Premium Plus acima do preço que o PREMIUM
 // efetivamente paga. null = sem aviso.
 export function premiumPlusPriceWarning(source: TieredPriceSource) {
