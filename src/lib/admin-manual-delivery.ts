@@ -1,8 +1,10 @@
-import { FulfillmentStatus, OrderStatus, Prisma } from "@prisma/client";
+import { FulfillmentStatus, OrderStatus, Prisma, ProviderOrderStatus } from "@prisma/client";
 import { prisma } from "./prisma";
 import { audit } from "./audit";
 import {
+  heartUnlocksAwaitingCallback,
   MANUAL_DELIVERY_CUSTOMER_NOTE,
+  MANUAL_DELIVERY_FINALIZED_AUDIT_NOTE,
   MANUAL_DELIVERY_PAYLOAD,
   MANUAL_DELIVERY_PROCESSING_AUDIT_NOTE,
   manualDeliveryBlocker,
@@ -24,9 +26,10 @@ export class ManualDeliveryError extends Error {
 
 type ManualDeliveryClient = Pick<typeof prisma, "$transaction">;
 
-// Registra que o acesso foi entregue FORA do sistema. Nunca chama fornecedor,
-// nunca envia e-mail e nunca toca no ProviderOrder (o histórico real do
-// fornecedor — ex.: PROVIDER_REJECTED — é preservado).
+// Registra que o acesso foi entregue FORA do sistema. Nunca chama fornecedor e
+// nunca envia e-mail. O histórico real do fornecedor (ex.: PROVIDER_REJECTED)
+// é preservado: o único ProviderOrder alterado é o HeartUnlocks em PROCESSING
+// liberado por heartUnlocksAwaitingCallback, que vira COMPLETED.
 //
 // Tudo numa única transação: pré-condições relidas aqui dentro e claim
 // atômico (updateMany condicionado ao status lido). Duas chamadas
@@ -47,6 +50,7 @@ export async function registerManualDelivery(
           fulfillment: { select: { id: true, status: true, delivery: true } },
           providerOrders: {
             select: {
+              id: true,
               status: true,
               lastError: true,
               externalOrderId: true,
@@ -57,17 +61,19 @@ export async function registerManualDelivery(
         },
       });
       if (!order) throw new ManualDeliveryError("ORDER_NOT_FOUND");
+      const ruleItems = order.providerOrders.map((item) => ({
+        id: item.id,
+        providerCode: item.provider.code,
+        status: item.status,
+        lastError: item.lastError,
+        externalOrderId: item.externalOrderId,
+        callbackEventCount: item._count.callbackEvents,
+      }));
       const blocker = manualDeliveryBlocker({
         paymentStatus: order.payment?.status,
         orderStatus: order.status,
         hasDelivery: Boolean(order.fulfillment?.delivery),
-        providerOrders: order.providerOrders.map((item) => ({
-          providerCode: item.provider.code,
-          status: item.status,
-          lastError: item.lastError,
-          externalOrderId: item.externalOrderId,
-          callbackEventCount: item._count.callbackEvents,
-        })),
+        providerOrders: ruleItems,
       });
       if (blocker) throw new ManualDeliveryError(blocker);
 
@@ -101,6 +107,19 @@ export async function registerManualDelivery(
         });
       }
 
+      // HeartUnlocks aguardando callback vira COMPLETED. Claim condicionado ao
+      // PROCESSING lido: se um callback concluiu ou falhou o pedido no meio,
+      // count 0 e a transação inteira é desfeita.
+      const finalized = ruleItems.filter(heartUnlocksAwaitingCallback);
+      for (const item of finalized) {
+        const providerClaim = await tx.providerOrder.updateMany({
+          where: { id: item.id, status: ProviderOrderStatus.PROCESSING },
+          data: { status: ProviderOrderStatus.COMPLETED, lastError: null },
+        });
+        if (providerClaim.count !== 1)
+          throw new ManualDeliveryError("CONCURRENT_MANUAL_DELIVERY");
+      }
+
       await tx.orderEvent.createMany({
         data: [
           { orderId, status: OrderStatus.DELIVERED, note: MANUAL_DELIVERY_CUSTOMER_NOTE },
@@ -118,7 +137,21 @@ export async function registerManualDelivery(
         "Order",
         orderId,
         processing.length
-          ? { orderId, reason, providerProcessing: { note: MANUAL_DELIVERY_PROCESSING_AUDIT_NOTE, providerOrders: processing } }
+          ? {
+              orderId,
+              reason,
+              providerProcessing: { note: MANUAL_DELIVERY_PROCESSING_AUDIT_NOTE, providerOrders: processing },
+              providerFinalized: {
+                note: MANUAL_DELIVERY_FINALIZED_AUDIT_NOTE,
+                providerOrders: finalized.map((item) => ({
+                  providerCode: item.providerCode,
+                  externalOrderId: item.externalOrderId,
+                  lastErrorAntes: item.lastError,
+                  statusAntes: ProviderOrderStatus.PROCESSING,
+                  statusDepois: ProviderOrderStatus.COMPLETED,
+                })),
+              },
+            }
           : { orderId, reason },
         tx,
       );

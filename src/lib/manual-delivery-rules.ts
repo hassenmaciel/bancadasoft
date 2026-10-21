@@ -31,6 +31,8 @@ export const manualDeliveryInternalNote = (reason: string) =>
 // Motivo de auditoria quando o fornecedor ainda estava em PROCESSING.
 export const MANUAL_DELIVERY_PROCESSING_AUDIT_NOTE =
   "entrega manual com fornecedor em PROCESSING";
+export const MANUAL_DELIVERY_FINALIZED_AUDIT_NOTE =
+  "finalizado pela entrega manual pelo admin, após conferência prévia no painel do fornecedor; conclusão do fornecedor não verificada automaticamente pelo sistema";
 
 export type ManualDeliveryBlocker =
   | "PAYMENT_NOT_PAID"
@@ -59,8 +61,9 @@ export type ManualDeliveryState = {
 // gateway) ou aceito pelo fornecedor (externalOrderId) aguardando o callback.
 // Único PROCESSING que não bloqueia — um callback tardio encontra a Delivery e
 // não sobrescreve (heartunlocks-callback.ts). Sem lastError e sem
-// externalOrderId é criação em andamento: continua bloqueado.
-const heartUnlocksAwaitingCallback = (item: ManualDeliveryProviderOrder) =>
+// externalOrderId é criação em andamento: continua bloqueado. É também o único
+// ProviderOrder que a entrega manual finaliza como COMPLETED.
+export const heartUnlocksAwaitingCallback = (item: ManualDeliveryProviderOrder) =>
   item.providerCode === MANUAL_DELIVERY_HEARTUNLOCKS_CODE &&
   item.status === "PROCESSING" &&
   item.callbackEventCount === 0 &&

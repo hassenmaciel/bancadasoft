@@ -95,6 +95,42 @@ describe("HeartUnlocks callback — entrega automática sanitizada", () => {
     expect(db.order.update).not.toHaveBeenCalled();
   });
 
+  it.each(["success", "rejected"])(
+    "callback %s depois da entrega manual (ProviderOrder COMPLETED, Delivery TEXT) não altera nada nem reentrega",
+    async (status) => {
+      db.providerOrder.findUniqueOrThrow.mockResolvedValue({
+        id: "provider-order-sanitized",
+        orderId: "order-sanitized",
+        fulfillmentId: "fulfillment-sanitized",
+        status: "COMPLETED",
+        fulfillment: {
+          delivery: {
+            deliveryType: "TEXT",
+            title: "Entrega manual",
+            instructions: "Seu acesso foi entregue pelo suporte da BancadaSoft.",
+          },
+        },
+        order: { items: [{ product: { name: "UnlockTool 7h" } }] },
+        providerProduct: { expectedDeliveryType: "CREDENTIALS" },
+      });
+
+      await expect(
+        processHeartUnlocksCallback({
+          reference_id: "provider-order-sanitized",
+          order_id: "external-sanitized",
+          status,
+          replay: Buffer.from("Username: u\nPassword: p").toString("base64"),
+        }),
+      ).resolves.toEqual({ matched: true, duplicate: false, final: true });
+      expect(db.providerOrder.update).not.toHaveBeenCalled();
+      expect(db.fulfillment.update).not.toHaveBeenCalled();
+      expect(db.order.update).not.toHaveBeenCalled();
+      expect(db.providerCallbackEvent.update).toHaveBeenCalledWith(
+        expect.objectContaining({ data: { processedAt: expect.any(Date) } }),
+      );
+    },
+  );
+
   it("callback com orderId diferente do criado loga o erro e entrega normalmente", async () => {
     db.providerOrder.findFirst.mockResolvedValue({
       id: "provider-order-sanitized",
