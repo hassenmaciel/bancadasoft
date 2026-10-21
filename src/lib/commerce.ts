@@ -3,7 +3,6 @@ import {
   OrderStatus,
   PaymentStatus,
   Prisma,
-  ProductType,
   ProviderMode,
 } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
@@ -283,20 +282,12 @@ export async function createOrder(input: {
     providerResolution.providerProduct,
   );
   const totalCents = orderTotalCents(unitPriceCents, quantity);
-  // Recarga de Saldo: só conta logada com saldo habilitado. A consulta extra
-  // acontece apenas para BALANCE_TOPUP; nenhum outro tipo é afetado.
-  if (product.type === ProductType.BALANCE_TOPUP) {
-    const balance = authenticatedUser
-      ? await prisma.accountBalance.findUnique({
-        where: { userId: authenticatedUser.id },
-        select: { enabled: true },
-      })
-      : null;
-    assertBalanceTopupAllowed(product.type, {
-      authenticated: Boolean(authenticatedUser),
-      balanceEnabled: Boolean(balance?.enabled),
-    });
-  }
+  // Recarga de Saldo: qualquer conta logada, exceto com recarga bloqueada
+  // pelo Admin. Nenhum outro tipo de produto é afetado.
+  assertBalanceTopupAllowed(product.type, {
+    authenticated: Boolean(authenticatedUser),
+    topupBlocked: authenticatedUser?.balanceTopupBlocked === true,
+  });
 
   // BALANCE PAYMENT VALIDATION
   const paymentMethod = input.paymentMethod ?? "pix";

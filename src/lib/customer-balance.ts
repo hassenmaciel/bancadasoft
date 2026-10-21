@@ -39,6 +39,8 @@ export type CustomerBalanceView = {
   balanceCents: number | null;
   entries: CustomerLedgerRow[];
   topupOptions: TopupOption[];
+  // Recarga bloqueada pelo Admin (User.balanceTopupBlocked): sem pacotes.
+  topupBlocked: boolean;
 };
 
 // Mesmo filtro de publicação da página /produto/[slug]; productDto aplica as
@@ -72,7 +74,7 @@ async function loadTopupOptions(viewer: PriceViewer): Promise<TopupOption[]> {
 export async function loadCustomerBalance(
   user: { id: string; customerTier: NonNullable<PriceViewer>["customerTier"] },
 ): Promise<CustomerBalanceView> {
-  const [balance, entries] = await Promise.all([
+  const [balance, entries, account] = await Promise.all([
     prisma.accountBalance.findUnique({ where: { userId: user.id }, select: { balanceCents: true, enabled: true } }),
     prisma.accountLedgerEntry.findMany({
       where: { userId: user.id },
@@ -80,10 +82,13 @@ export async function loadCustomerBalance(
       orderBy: { createdAt: "desc" },
       take: LEDGER_PAGE_SIZE,
     }),
+    prisma.user.findUnique({ where: { id: user.id }, select: { balanceTopupBlocked: true } }),
   ]);
   const enabled = balance?.enabled === true;
-  // Recarga só é oferecida com saldo habilitado: o checkout recusa
-  // BALANCE_TOPUP com BALANCE_NOT_ENABLED nos demais casos.
-  const topupOptions = enabled ? await loadTopupOptions(user) : [];
-  return { enabled, balanceCents: enabled ? balance!.balanceCents : null, entries, topupOptions };
+  // Recarga aberta a qualquer conta logada (o saldo é ativado pelo crédito);
+  // só o bloqueio do Admin a esconde — o checkout recusa com
+  // BALANCE_TOPUP_BLOCKED pela mesma regra.
+  const topupBlocked = account?.balanceTopupBlocked === true;
+  const topupOptions = topupBlocked ? [] : await loadTopupOptions(user);
+  return { enabled, balanceCents: enabled ? balance!.balanceCents : null, entries, topupOptions, topupBlocked };
 }

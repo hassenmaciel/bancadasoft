@@ -1,8 +1,11 @@
 import Link from "next/link";
 import { formatBRL } from "@/lib/account-balance";
+import { BALANCE_TOPUP_BLOCKED_MESSAGE } from "@/lib/commercial-pricing";
 import { ledgerTypeLabel, signedBRL, type CustomerBalanceView } from "@/lib/customer-balance";
 
-export const BALANCE_DISABLED_MESSAGE = "Uso de saldo ainda não habilitado para sua conta. Fale com o suporte.";
+export const BALANCE_DISABLED_MESSAGE = "Saldo ainda não ativado. Ele é ativado automaticamente na sua primeira recarga.";
+// Saldo não ativado e recarga bloqueada pelo Admin: não promete ativação.
+export const BALANCE_UNAVAILABLE_MESSAGE = "Uso de saldo não habilitado para sua conta.";
 
 const dateTime = new Intl.DateTimeFormat("pt-BR", { dateStyle: "short", timeStyle: "short", timeZone: "America/Sao_Paulo" });
 
@@ -14,26 +17,26 @@ export default function CustomerBalancePanel({ view }: { view: CustomerBalanceVi
         {view.enabled && view.balanceCents !== null ? (
           <strong className="balance-amount">{formatBRL(view.balanceCents)}</strong>
         ) : (
-          <p className="notice balance-disabled">{BALANCE_DISABLED_MESSAGE}</p>
+          <p className="notice balance-disabled">{view.topupBlocked ? BALANCE_UNAVAILABLE_MESSAGE : BALANCE_DISABLED_MESSAGE}</p>
         )}
       </section>
 
-      {view.enabled && (
-        <section className="order-detail-card balance-topup">
-          <h2>Recarregar</h2>
-          {view.topupOptions.length ? (
-            <div className="balance-topup-options">
-              {view.topupOptions.map((option) => (
-                <Link className="product-cta" href={option.href} key={option.key}>
-                  {option.label} — {formatBRL(option.priceCents)}
-                </Link>
-              ))}
-            </div>
-          ) : (
-            <p>Nenhum pacote de recarga disponível no momento.</p>
-          )}
-        </section>
-      )}
+      <section className="order-detail-card balance-topup">
+        <h2>Recarregar</h2>
+        {view.topupBlocked ? (
+          <p className="notice balance-disabled">{BALANCE_TOPUP_BLOCKED_MESSAGE}</p>
+        ) : view.topupOptions.length ? (
+          <div className="balance-topup-options">
+            {view.topupOptions.map((option) => (
+              <Link className="product-cta" href={option.href} key={option.key}>
+                {option.label} — {formatBRL(option.priceCents)}
+              </Link>
+            ))}
+          </div>
+        ) : (
+          <p>Nenhum pacote de recarga disponível no momento.</p>
+        )}
+      </section>
 
       <section className="order-history balance-ledger">
         <h2>Extrato</h2>

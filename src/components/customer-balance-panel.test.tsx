@@ -1,6 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import CustomerBalancePanel, { BALANCE_DISABLED_MESSAGE } from "./customer-balance-panel";
+import CustomerBalancePanel, { BALANCE_DISABLED_MESSAGE, BALANCE_UNAVAILABLE_MESSAGE } from "./customer-balance-panel";
+import { BALANCE_TOPUP_BLOCKED_MESSAGE } from "@/lib/commercial-pricing";
 import type { CustomerBalanceView } from "@/lib/customer-balance";
 
 const text = (html: string) => html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").replace(/&amp;/g, "&");
@@ -21,6 +22,7 @@ describe("CustomerBalancePanel", () => {
           balanceCents: 7000,
           entries,
           topupOptions: [{ key: "v50", label: "Pacote R$ 50", priceCents: 5000, href: "/produto/recarga-de-saldo?variante=v50" }],
+          topupBlocked: false,
         }}
       />,
     );
@@ -38,22 +40,53 @@ describe("CustomerBalancePanel", () => {
     expect(body).toContain("Pacote R$ 50 — R$ 50,00");
   });
 
-  it("mostra o aviso em vez do saldo quando desabilitado e não oferece recarga", () => {
+  it("saldo ainda não ativado: mostra o aviso em vez do saldo, mas oferece a recarga", () => {
     const html = renderToStaticMarkup(
-      <CustomerBalancePanel view={{ enabled: false, balanceCents: null, entries: [], topupOptions: [] }} />,
+      <CustomerBalancePanel
+        view={{
+          enabled: false,
+          balanceCents: null,
+          entries: [],
+          topupOptions: [{ key: "v15", label: "Recarga Mínima", priceCents: 1500, href: "/produto/recarga-de-saldo?variante=v15" }],
+          topupBlocked: false,
+        }}
+      />,
     );
     const body = text(html);
     expect(body).toContain(BALANCE_DISABLED_MESSAGE);
-    expect(BALANCE_DISABLED_MESSAGE).toBe("Uso de saldo ainda não habilitado para sua conta. Fale com o suporte.");
-    expect(body).not.toContain("R$");
-    expect(body).not.toContain("Recarregar");
+    expect(BALANCE_DISABLED_MESSAGE).toBe("Saldo ainda não ativado. Ele é ativado automaticamente na sua primeira recarga.");
+    expect(body).toContain("Recarregar");
+    expect(body).toContain("Recarga Mínima — R$ 15,00");
     expect(body).toContain("Nenhuma movimentação ainda.");
+  });
+
+  it("recarga bloqueada pelo Admin: mensagem clara, sem pacote e sem preço", () => {
+    const body = text(renderToStaticMarkup(
+      <CustomerBalancePanel view={{ enabled: false, balanceCents: null, entries: [], topupOptions: [], topupBlocked: true }} />,
+    ));
+    expect(body).toContain(BALANCE_TOPUP_BLOCKED_MESSAGE);
+    expect(body).toContain(BALANCE_UNAVAILABLE_MESSAGE);
+    expect(body).not.toContain(BALANCE_DISABLED_MESSAGE);
+    expect(body).not.toContain("R$");
+    expect(body).not.toContain("Nenhum pacote");
   });
 
   it("não exibe nada administrativo (chave de API, token)", () => {
     const body = text(renderToStaticMarkup(
-      <CustomerBalancePanel view={{ enabled: true, balanceCents: 0, entries, topupOptions: [] }} />,
+      <CustomerBalancePanel view={{ enabled: true, balanceCents: 0, entries, topupOptions: [], topupBlocked: false }} />,
     )).toLowerCase();
     for (const word of ["chave", "api", "token", "admin"]) expect(body).not.toContain(word);
+  });
+
+  it("saldo ativo e recarga bloqueada: mostra o saldo e a mensagem de bloqueio, sem pacotes", () => {
+    const body = text(renderToStaticMarkup(
+      <CustomerBalancePanel view={{ enabled: true, balanceCents: 1500, entries: [], topupOptions: [], topupBlocked: true }} />,
+    ));
+    expect(body).toContain("Saldo atual R$ 15,00");
+    expect(body).toContain(BALANCE_TOPUP_BLOCKED_MESSAGE);
+    expect(body).not.toContain(BALANCE_DISABLED_MESSAGE);
+    expect(body).not.toContain(BALANCE_UNAVAILABLE_MESSAGE);
+    expect(body).not.toContain("Nenhum pacote");
+    expect(body).not.toContain(" — ");
   });
 });

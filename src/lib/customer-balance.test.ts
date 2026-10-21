@@ -4,6 +4,7 @@ const db = vi.hoisted(() => ({
   accountBalance: { findUnique: vi.fn() },
   accountLedgerEntry: { findMany: vi.fn() },
   product: { findFirst: vi.fn() },
+  user: { findUnique: vi.fn() },
 }));
 vi.mock("@/lib/prisma", () => ({ prisma: db }));
 
@@ -42,6 +43,7 @@ describe("loadCustomerBalance", () => {
     for (const model of Object.values(db)) for (const fn of Object.values(model)) fn.mockReset();
     db.accountLedgerEntry.findMany.mockResolvedValue([]);
     db.product.findFirst.mockResolvedValue(topupProduct);
+    db.user.findUnique.mockResolvedValue({ balanceTopupBlocked: false });
   });
 
   it("mostra o saldo quando habilitado e lista só os pacotes ativos, na ordem, apontando para produto/variante", async () => {
@@ -56,12 +58,21 @@ describe("loadCustomerBalance", () => {
     expect(db.product.findFirst.mock.calls[0][0].where).toMatchObject({ type: "BALANCE_TOPUP", status: "PUBLISHED", available: true });
   });
 
-  it("desabilitado ou sem linha: não expõe saldo nem oferece recarga", async () => {
-    db.accountBalance.findUnique.mockResolvedValue({ balanceCents: 999, enabled: false });
-    expect(await loadCustomerBalance(user)).toMatchObject({ enabled: false, balanceCents: null, topupOptions: [] });
-    db.accountBalance.findUnique.mockResolvedValue(null);
-    expect(await loadCustomerBalance(user)).toMatchObject({ enabled: false, balanceCents: null, topupOptions: [] });
+  it("desabilitado ou sem linha: não expõe saldo, mas oferece a recarga (qualquer cliente logado)", async () => {
+    for (const balance of [{ balanceCents: 999, enabled: false }, null]) {
+      db.accountBalance.findUnique.mockResolvedValueOnce(balance);
+      const view = await loadCustomerBalance(user);
+      expect(view).toMatchObject({ enabled: false, balanceCents: null, topupBlocked: false });
+      expect(view.topupOptions.map((option) => option.key)).toEqual(["v50", "v100"]);
+    }
+  });
+
+  it("recarga bloqueada pelo Admin: nenhum pacote nem preço, nem consulta ao produto", async () => {
+    db.accountBalance.findUnique.mockResolvedValue({ balanceCents: 999, enabled: true });
+    db.user.findUnique.mockResolvedValue({ balanceTopupBlocked: true });
+    expect(await loadCustomerBalance(user)).toMatchObject({ enabled: true, balanceCents: 999, topupOptions: [], topupBlocked: true });
     expect(db.product.findFirst).not.toHaveBeenCalled();
+    expect(db.user.findUnique).toHaveBeenCalledWith({ where: { id: "u1" }, select: { balanceTopupBlocked: true } });
   });
 
   it("busca só os últimos 20 lançamentos do próprio usuário, sem campos internos", async () => {

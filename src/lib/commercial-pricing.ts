@@ -82,15 +82,18 @@ export function assertCheckoutPrice(
   return priceCents;
 }
 
-// Recarga de Saldo (ProductType.BALANCE_TOPUP): além do LOGIN_REQUIRED do
-// produto, exige conta logada com AccountBalance.enabled=true. Chamado em
-// commerce.createOrder antes de criar Order/Payment. Qualquer outro tipo de
-// produto passa direto, sem consulta adicional.
+export const BALANCE_TOPUP_BLOCKED_MESSAGE = "A recarga de saldo está bloqueada para a sua conta. Fale com o suporte.";
+
+// Recarga de Saldo (ProductType.BALANCE_TOPUP): aberta a qualquer conta
+// logada (AccountBalance.enabled não é exigido — o saldo é ativado pelo
+// crédito da recarga), exceto quando o Admin bloqueou a recarga
+// (User.balanceTopupBlocked). Chamado em commerce.createOrder antes de criar
+// Order/Payment. Qualquer outro tipo de produto passa direto.
 export function assertBalanceTopupAllowed(
   productType: string,
-  account: { authenticated: boolean; balanceEnabled: boolean },
+  account: { authenticated: boolean; topupBlocked: boolean },
 ) {
   if (productType !== "BALANCE_TOPUP") return;
   if (!account.authenticated) throw new Error("LOGIN_REQUIRED_FOR_PRICE");
-  if (!account.balanceEnabled) throw new Error("BALANCE_NOT_ENABLED");
+  if (account.topupBlocked) throw new Error("BALANCE_TOPUP_BLOCKED");
 }

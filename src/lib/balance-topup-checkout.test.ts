@@ -21,7 +21,8 @@ vi.mock("@/lib/payments/registry", () => ({
 }));
 
 import { createOrder } from "./commerce";
-import { assertBalanceTopupAllowed } from "./commercial-pricing";
+import { assertBalanceTopupAllowed, BALANCE_TOPUP_BLOCKED_MESSAGE } from "./commercial-pricing";
+import { checkoutErrorMessage } from "./checkout-response";
 import { handleCheckoutRequest } from "./checkout-route";
 
 const product = (type: string) => ({
@@ -38,7 +39,7 @@ const product = (type: string) => ({
 // Conta sem CPF/WhatsApp: se o guard deixar passar, o próximo passo do
 // checkout lança IncompleteCheckoutIdentityError — prova de que o guard passou
 // sem precisar simular o resto do fluxo (PIX etc.).
-const account = { id: "u1", name: "Cliente", email: "c@example.test", customerTier: "NORMAL", cpfCnpj: null, whatsapp: null, asaasCustomerId: null, active: true };
+const account = { id: "u1", name: "Cliente", email: "c@example.test", customerTier: "NORMAL", cpfCnpj: null, whatsapp: null, asaasCustomerId: null, active: true, balanceTopupBlocked: false };
 const input = { productId: "p1", deliveryAccessToken: "token-with-enough-characters-000000" };
 
 describe("guard de checkout da Recarga de Saldo (BALANCE_TOPUP)", () => {
@@ -50,34 +51,54 @@ describe("guard de checkout da Recarga de Saldo (BALANCE_TOPUP)", () => {
     db.user.findFirst.mockResolvedValue(account);
   });
 
-  it("função pura: só age em BALANCE_TOPUP; exige login e saldo habilitado", () => {
-    expect(() => assertBalanceTopupAllowed("TOOL", { authenticated: false, balanceEnabled: false })).not.toThrow();
-    expect(() => assertBalanceTopupAllowed("BALANCE_TOPUP", { authenticated: false, balanceEnabled: true })).toThrow("LOGIN_REQUIRED_FOR_PRICE");
-    expect(() => assertBalanceTopupAllowed("BALANCE_TOPUP", { authenticated: true, balanceEnabled: false })).toThrow("BALANCE_NOT_ENABLED");
-    expect(() => assertBalanceTopupAllowed("BALANCE_TOPUP", { authenticated: true, balanceEnabled: true })).not.toThrow();
+  it("função pura: só age em BALANCE_TOPUP; exige login e recarga não bloqueada", () => {
+    expect(() => assertBalanceTopupAllowed("TOOL", { authenticated: false, topupBlocked: true })).not.toThrow();
+    expect(() => assertBalanceTopupAllowed("BALANCE_TOPUP", { authenticated: false, topupBlocked: false })).toThrow("LOGIN_REQUIRED_FOR_PRICE");
+    expect(() => assertBalanceTopupAllowed("BALANCE_TOPUP", { authenticated: true, topupBlocked: true })).toThrow("BALANCE_TOPUP_BLOCKED");
+    expect(() => assertBalanceTopupAllowed("BALANCE_TOPUP", { authenticated: true, topupBlocked: false })).not.toThrow();
   });
 
-  it("bloqueia com BALANCE_NOT_ENABLED antes de criar Order/Payment quando o saldo está desabilitado ou sem linha", async () => {
+  it("qualquer cliente logado recarrega, com saldo desabilitado ou sem linha: AccountBalance nem é consultado", async () => {
     db.product.findFirst.mockResolvedValue(product("BALANCE_TOPUP"));
-    for (const balance of [{ enabled: false }, null]) {
-      db.accountBalance.findUnique.mockResolvedValueOnce(balance);
-      await expect(createOrder(input, "u1")).rejects.toThrow("BALANCE_NOT_ENABLED");
+    for (const customerTier of ["NORMAL", "PREMIUM", "PREMIUM_PLUS"]) {
+      db.user.findFirst.mockResolvedValueOnce({ ...account, customerTier, balanceTopupBlocked: false });
+      await expect(createOrder(input, "u1")).rejects.toThrow("MISSING_CUSTOMER_FIELDS");
     }
+    expect(db.accountBalance.findUnique).not.toHaveBeenCalled();
+  });
+
+  it("recarga bloqueada pelo Admin: BALANCE_TOPUP_BLOCKED antes de criar Order/Payment", async () => {
+    db.product.findFirst.mockResolvedValue(product("BALANCE_TOPUP"));
+    db.user.findFirst.mockResolvedValue({ ...account, balanceTopupBlocked: true });
+    await expect(createOrder(input, "u1")).rejects.toThrow("BALANCE_TOPUP_BLOCKED");
     expect(db.order.create).not.toHaveBeenCalled();
     expect(createPixPayment).not.toHaveBeenCalled();
   });
 
-  it("deixa seguir quando o saldo está habilitado", async () => {
+  it("visitante continua sem recarga (login obrigatório)", async () => {
     db.product.findFirst.mockResolvedValue(product("BALANCE_TOPUP"));
-    db.accountBalance.findUnique.mockResolvedValue({ enabled: true });
-    await expect(createOrder(input, "u1")).rejects.toThrow("MISSING_CUSTOMER_FIELDS");
-    expect(db.accountBalance.findUnique).toHaveBeenCalledWith({ where: { userId: "u1" }, select: { enabled: true } });
+    await expect(createOrder(input)).rejects.toThrow("LOGIN_REQUIRED_FOR_PRICE");
+    expect(db.order.create).not.toHaveBeenCalled();
   });
 
-  it("não afeta outros tipos de produto: nenhuma consulta de saldo", async () => {
+  it("bloqueio não afeta outros tipos de produto", async () => {
     db.product.findFirst.mockResolvedValue(product("TOOL"));
+    db.user.findFirst.mockResolvedValue({ ...account, balanceTopupBlocked: true });
     await expect(createOrder(input, "u1")).rejects.toThrow("MISSING_CUSTOMER_FIELDS");
     expect(db.accountBalance.findUnique).not.toHaveBeenCalled();
+  });
+
+  it("a rota de checkout traduz BALANCE_TOPUP_BLOCKED em 403 com mensagem clara", async () => {
+    const request = new Request("https://test/api/checkout", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ ...input, deliveryAccessToken: "isolated-delivery-token-with-32-characters" }),
+    });
+    const response = await handleCheckoutRequest(request, async () => { throw new Error("BALANCE_TOPUP_BLOCKED"); });
+    expect(response.status).toBe(403);
+    const body = await response.json();
+    expect(body).toEqual({ ok: false, code: "BALANCE_TOPUP_BLOCKED", error: BALANCE_TOPUP_BLOCKED_MESSAGE });
+    expect(checkoutErrorMessage(403, body)).toBe(BALANCE_TOPUP_BLOCKED_MESSAGE);
   });
 
   it("a rota de checkout traduz BALANCE_NOT_ENABLED em 403 com código claro", async () => {
