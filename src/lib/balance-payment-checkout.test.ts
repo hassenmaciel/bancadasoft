@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { topupProviderProduct } from "./testing/topup-fixtures";
 import { createFakeLedgerDb } from "./testing/fake-ledger-db";
 
 const db = vi.hoisted(() => ({
@@ -42,7 +43,7 @@ const product = (type = "TOOL") => ({
   normalPriceCents: null,
   premiumPriceCents: null,
   priceVisibility: "LOGIN_REQUIRED",
-  providerProducts: [],
+  providerProducts: type === "BALANCE_TOPUP" ? [topupProviderProduct(1500)] : [],
   variants: [],
 });
 // Conta com cadastro completo: o checkout segue até o caminho de pagamento.
@@ -128,6 +129,15 @@ describe("createOrder — pagamento por saldo", () => {
     ]);
     expect(ledger.state.balances[0].balanceCents).toBe(4000);
     expect(executeFulfillment).toHaveBeenCalledExactlyOnceWith("o1");
+    expect(createPixPayment).not.toHaveBeenCalled();
+  });
+
+  it("rebaixado de PREMIUM_PLUS a NORMAL gasta o saldo que sobrou (canUseBalanceAsPayment preservado)", async () => {
+    db.user.findFirst.mockResolvedValue({ ...account, customerTier: "NORMAL", balanceTopupBlocked: true });
+    db.user.findUnique.mockResolvedValue(permission({ customerTier: "NORMAL", canUseBalanceAsPayment: true }));
+    const result = await createOrder(balanceInput, "u1");
+    expect(result?.order).toMatchObject({ id: "o1", status: "PAID" });
+    expect(ledger.state.balances[0].balanceCents).toBe(4000);
     expect(createPixPayment).not.toHaveBeenCalled();
   });
 
@@ -245,8 +255,9 @@ describe("painel de checkout — opção de saldo ao lado do PIX", () => {
   });
 
   it("a opção de saldo só é renderizada quando o servidor a forneceu", () => {
-    expect(source).toContain("{balancePayment && product.available && (");
-    expect(source).toContain("{balancePayment && (\n                    <fieldset");
-    expect(source).toContain('const payingWithBalance = paymentMethod === "balance" && balancePayment !== null;');
+    expect(source).toContain("{balancePayment && product.available && (!premiumPlusMode || premiumPlusBalanceAvailable) && (");
+    expect(source).toContain(") : balancePayment && (\n                    <fieldset");
+    // Fora do PREMIUM_PLUS (cuja forma vem do saldo), saldo só com balancePayment.
+    expect(source).toContain(': paymentMethod === "balance" && balancePayment !== null;');
   });
 });

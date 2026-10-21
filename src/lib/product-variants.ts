@@ -7,6 +7,7 @@ import {
 
 export type VariantProviderProduct = ProviderProductCandidate & {
   fieldSchema?: unknown;
+  metadata?: unknown;
   technicalEligibility?: "READY" | "REVIEW" | "UNSUPPORTED";
 };
 

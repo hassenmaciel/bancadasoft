@@ -49,8 +49,12 @@ export function checkoutErrorMessage(
   // Só no envio por saldo: as mensagens do PIX ficam exatamente como eram.
   if (paymentMethod === "balance" && payload?.code && BALANCE_PAYMENT_ERROR_CODES.has(payload.code) && payload.error)
     return payload.error;
-  // Código exclusivo do bloqueio de PIX do PREMIUM_PLUS; nenhum outro envio PIX o recebe.
+  // Códigos exclusivos do PIX do PREMIUM_PLUS; nenhum outro envio PIX os recebe.
   if (payload?.code === "PIX_NOT_ALLOWED_FOR_TIER" && payload.error) return payload.error;
+  if (payload?.code === "PIX_PRICE_UNAVAILABLE_FOR_TIER" && payload.error) return payload.error;
+  // Recarga bloqueada pelo Admin: o texto final vem do servidor.
+  if (payload?.code === "BALANCE_TOPUP_BLOCKED" && payload.error) return payload.error;
+  if (payload?.code === "INVALID_TOPUP_AMOUNT" && payload.error) return payload.error;
   if (status === 400 || payload?.code === "INVALID_CHECKOUT" || payload?.code === "INVALID_CUSTOMER_DATA")
     return "Revise os dados informados e tente novamente.";
   if (payload?.code === "MISSING_CUSTOMER_FIELDS")

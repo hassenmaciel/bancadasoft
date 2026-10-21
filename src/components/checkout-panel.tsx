@@ -38,7 +38,15 @@ import {
   needsGuestCheckoutRecovery,
   parseSavedCheckoutReference,
 } from "@/lib/checkout-recovery";
-import { balanceShortfallCents, type BalancePaymentOption } from "@/lib/balance-payment";
+import { balanceShortfallCents, premiumPlusPayment, type BalancePaymentOption } from "@/lib/balance-payment";
+import {
+  INVALID_TOPUP_AMOUNT_MESSAGE,
+  PIX_PRICE_UNAVAILABLE_MESSAGE,
+  TOPUP_FREE_MAX_CENTS,
+  TOPUP_MIN_CENTS,
+  parseTopupAmountInput,
+  validTopupAmountCents,
+} from "@/lib/commercial-pricing";
 
 const money = (value: number) =>
   new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(
@@ -49,7 +57,6 @@ export default function CheckoutPanel({
   product,
   identity = null,
   balancePayment = null,
-  pixAllowed = true,
   initialVariantId = null,
 }: {
   product: ProductDTO;
@@ -57,8 +64,6 @@ export default function CheckoutPanel({
   // Fase 5: presente só quando o cliente logado pode pagar com saldo neste
   // produto (decidido no servidor, ver src/lib/balance-payment.ts).
   balancePayment?: BalancePaymentOption | null;
-  // false = conta PREMIUM_PLUS comprando algo que não é recarga: só saldo.
-  pixAllowed?: boolean;
   initialVariantId?: string | null;
 }) {
   const router = useRouter();
@@ -114,14 +119,46 @@ export default function CheckoutPanel({
   const quantityEnabled = allowsQuantity(product);
   const [quantity, setQuantity] = useState(quantityLimits.min);
   const checkoutQuantity = quantityEnabled ? quantity : 1;
-  const unitPriceCents = selectedVariant?.priceCents ?? product.priceCents ?? 0;
+  // PREMIUM_PLUS (exceto recarga): a forma de pagamento não é escolha do
+  // cliente — o saldo decide, pela mesma regra do servidor (premiumPlusPayment):
+  // saldo que cobre o total ao preço Premium Plus → só saldo; senão → só PIX,
+  // ao preço Premium/Técnico (nunca o Plus).
+  const premiumPlusMode = product.priceTier === "PREMIUM_PLUS" &&
+    Boolean(product.premiumPlus || product.variants.some((variant) => variant.premiumPlus));
+  const balanceSnapshot = balancePayment ? { enabled: true, balanceCents: balancePayment.balanceCents } : null;
+  const premiumPlusPrices = selectedVariant ? selectedVariant.premiumPlus : product.variants.length ? undefined : product.premiumPlus;
+  const premiumPlusPlan = premiumPlusPrices ? premiumPlusPayment(balanceSnapshot, premiumPlusPrices, checkoutQuantity) : null;
+  // Opções da página (quantidade mínima): quais botões aparecem.
+  const premiumPlusPlans = (product.variants.length
+    ? product.variants.flatMap((variant) => (variant.premiumPlus ? [variant.premiumPlus] : []))
+    : product.premiumPlus ? [product.premiumPlus] : []
+  ).map((prices) => premiumPlusPayment(balanceSnapshot, prices, quantityLimits.min));
+  const pixAllowed = !premiumPlusMode || premiumPlusPlans.some((plan) => plan.method === "pix" && plan.unitCents !== null);
+  const premiumPlusBalanceAvailable = premiumPlusPlans.some((plan) => plan.method === "balance");
+  // PIX escolhido sem preço Premium/Técnico ativo: o servidor recusa; a tela também.
+  const pixUnavailable = premiumPlusPlan?.method === "pix" && premiumPlusPlan.unitCents === null;
+  // Recarga "Outro valor": o valor digitado é o preço (e o crédito); validado
+  // aqui e de novo no servidor (INVALID_TOPUP_AMOUNT).
+  const freeAmount = selectedVariant?.freeAmount === true;
+  const [topupAmountText, setTopupAmountText] = useState("");
+  const topupAmountCents = freeAmount ? validTopupAmountCents(parseTopupAmountInput(topupAmountText)) : null;
+  const topupAmountInvalid = freeAmount && topupAmountCents === null;
+  const unitPriceCents = premiumPlusPlan
+    ? premiumPlusPlan.unitCents ?? 0
+    : freeAmount
+      ? topupAmountCents ?? 0
+      : selectedVariant?.priceCents ?? product.priceCents ?? 0;
+  const variantOptionPrice = (variant: ProductDTO["variants"][number]) =>
+    variant.premiumPlus ? premiumPlusPayment(balanceSnapshot, variant.premiumPlus, checkoutQuantity).unitCents : variant.priceCents;
   // PARTE 1/3/4: cliente logado com cadastro completo pula o formulário;
   // com cadastro incompleto, só os campos realmente ausentes são pedidos.
   const needsCpf = identity?.missing.includes("cpfCnpj") ?? false;
   const needsWhatsapp = identity?.missing.includes("whatsapp") ?? false;
   // Pagamento por saldo: sem balancePayment o painel é exatamente o fluxo PIX.
   const [paymentMethod, setPaymentMethod] = useState<"pix" | "balance">(pixAllowed ? "pix" : "balance");
-  const payingWithBalance = paymentMethod === "balance" && balancePayment !== null;
+  const payingWithBalance = premiumPlusPlan
+    ? premiumPlusPlan.method === "balance"
+    : paymentMethod === "balance" && balancePayment !== null;
   const checkoutTotalCents = unitPriceCents * checkoutQuantity;
   const balanceShortfall = balancePayment
     ? balanceShortfallCents(balancePayment.balanceCents, checkoutTotalCents)
@@ -130,9 +167,11 @@ export default function CheckoutPanel({
   // Botão da página: desabilita quando o saldo não cobre nem a opção mais barata.
   const variantPrices = product.variants.flatMap((variant) => (variant.priceCents === null ? [] : [variant.priceCents]));
   const cheapestPriceCents = variantPrices.length ? Math.min(...variantPrices) : (product.priceCents ?? 0);
-  const balanceCoversCheapest = balancePayment
-    ? balancePayment.balanceCents >= cheapestPriceCents * quantityLimits.min
-    : false;
+  const balanceCoversCheapest = premiumPlusMode
+    ? premiumPlusBalanceAvailable
+    : balancePayment
+      ? balancePayment.balanceCents >= cheapestPriceCents * quantityLimits.min
+      : false;
 
   // GET-only: nunca cria Order/Payment, nunca chama provider. Retorna se a
   // entrega foi obtida, para permitir retry com backoff (PARTE 5).
@@ -289,8 +328,9 @@ export default function CheckoutPanel({
   async function checkout(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (licenseMode && !accountConfirmed) return;
-    // Sem PIX para esta conta: nunca envia um checkout PIX (o servidor também recusa).
-    if (!pixAllowed && !payingWithBalance) return;
+    // PREMIUM_PLUS: nunca envia PIX sem preço Premium/Técnico (o servidor também recusa).
+    if (pixUnavailable || (!pixAllowed && !payingWithBalance)) return;
+    if (topupAmountInvalid) return;
     if (!submitGuard.current.acquire()) return;
     setSubmitting(true);
     setNotice("");
@@ -337,6 +377,7 @@ export default function CheckoutPanel({
           deliveryAccessToken,
           ...(quantityEnabled ? { quantity: checkoutQuantity } : {}),
           ...(payingWithBalance ? { paymentMethod: "balance" } : {}),
+          ...(freeAmount && topupAmountCents !== null ? { topupAmountCents } : {}),
           providerFields: Object.fromEntries(
             checkoutFields.map((field) => [field.key, String(form.get(`provider:${field.key}`) ?? "")]),
           ),
@@ -490,12 +531,7 @@ export default function CheckoutPanel({
           {product.available ? "COMPRAR COM PIX" : "Indisponível"}
         </button>
       )}
-      {!pixAllowed && !balancePayment && product.available && (
-        <p className="product-balance-shortfall" role="status">
-          As compras desta conta são feitas com saldo, que ainda não está habilitado. Fale com o suporte.
-        </p>
-      )}
-      {balancePayment && product.available && (
+      {balancePayment && product.available && (!premiumPlusMode || premiumPlusBalanceAvailable) && (
         <>
           <button
             className={pixAllowed ? "product-buy product-buy--balance" : "product-buy"}
@@ -569,7 +605,16 @@ export default function CheckoutPanel({
                       Não é necessário criar uma conta.
                     </p>
                   )}
-                  {balancePayment && (
+                  {premiumPlusMode ? (
+                    <fieldset className="checkout-payment-methods checkout-payment-methods--single">
+                      <legend>{payingWithBalance ? "Pagamento com saldo" : "Pagamento por PIX"}</legend>
+                      <small>
+                        {payingWithBalance
+                          ? `Preço Premium Plus. Saldo disponível ${money(balancePayment?.balanceCents ?? 0)}.`
+                          : "Seu saldo não cobre esta compra ao preço Premium Plus; o PIX usa o preço Premium (ou Técnico)."}
+                      </small>
+                    </fieldset>
+                  ) : balancePayment && (
                     <fieldset className={pixAllowed ? "checkout-payment-methods" : "checkout-payment-methods checkout-payment-methods--single"}>
                       <legend>{pixAllowed ? "Forma de pagamento" : "Pagamento com saldo"}</legend>
                       {pixAllowed && (
@@ -609,12 +654,36 @@ export default function CheckoutPanel({
                           required
                         >
                           <option value="">Selecione a variante</option>
-                          {product.variants.filter((variant) => variant.priceCents !== null).map((variant) => (
-                            <option key={variant.id} value={variant.id}>
-                              {variant.name} — {money(variant.priceCents!)}
-                            </option>
-                          ))}
+                          {product.variants.filter((variant) => variant.priceCents !== null).map((variant) => {
+                            const price = variantOptionPrice(variant);
+                            return (
+                              <option key={variant.id} value={variant.id} disabled={price === null}>
+                                {variant.name} — {variant.freeAmount
+                                  ? `${money(TOPUP_MIN_CENTS)} a ${money(TOPUP_FREE_MAX_CENTS)}`
+                                  : price === null ? "sem preço para PIX" : money(price)}
+                              </option>
+                            );
+                          })}
                         </select>
+                      </label>
+                    )}
+                    {freeAmount && (
+                      <label htmlFor="checkout-topup-amount">
+                        Valor da recarga (R$) <em>obrigatório</em>
+                        <input
+                          id="checkout-topup-amount"
+                          name="topupAmount"
+                          type="number"
+                          inputMode="decimal"
+                          min={TOPUP_MIN_CENTS / 100}
+                          max={TOPUP_FREE_MAX_CENTS / 100}
+                          step="0.01"
+                          value={topupAmountText}
+                          onChange={(event) => setTopupAmountText(event.target.value)}
+                          placeholder="15,00"
+                          required
+                        />
+                        {topupAmountText !== "" && topupAmountInvalid && <small role="alert">{INVALID_TOPUP_AMOUNT_MESSAGE}</small>}
                       </label>
                     )}
                     {!identity && (
@@ -759,6 +828,11 @@ export default function CheckoutPanel({
                       {money(balanceShortfall)}. <Link href="/minha-conta/saldo">Recarregar saldo</Link>
                     </p>
                   )}
+                  {pixUnavailable && (
+                    <p className="checkout-balance-shortfall" role="status">
+                      {PIX_PRICE_UNAVAILABLE_MESSAGE} <Link href="/minha-conta/saldo">Recarregar saldo</Link>
+                    </p>
+                  )}
                   {notice && (
                     <p className="checkout-error" role="alert">
                       {notice}
@@ -766,7 +840,7 @@ export default function CheckoutPanel({
                   )}
                   <button
                     className="checkout-submit"
-                    disabled={!canSubmitCheckout({ licenseMode, confirmed: accountConfirmed, submitting }) || balanceBlocked}
+                    disabled={!canSubmitCheckout({ licenseMode, confirmed: accountConfirmed, submitting }) || balanceBlocked || pixUnavailable || topupAmountInvalid}
                     aria-busy={submitting}
                   >
                     {submitting ? (

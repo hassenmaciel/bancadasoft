@@ -10,6 +10,8 @@ type Row = {
   role: string;
   customerTier: "NORMAL" | "PREMIUM" | "PREMIUM_PLUS";
   canUseBalanceAsPayment: boolean;
+  // Recarga bloqueada pelo Admin: o cliente não recarrega e uma recarga não promove.
+  balanceTopupBlocked: boolean;
   active: boolean;
   createdAt: string;
   orderCount: number;
@@ -34,7 +36,9 @@ export default function UserManager({
     [deleting, setDeleting] = useState<Row | null>(null),
     [purging, setPurging] = useState<Row | null>(null),
     [purgeConfirm, setPurgeConfirm] = useState(""),
-    [keysTarget, setKeysTarget] = useState<Row | null>(null);
+    [keysTarget, setKeysTarget] = useState<Row | null>(null),
+    [demoting, setDemoting] = useState<{ row: Row; patch: Record<string, string> } | null>(null),
+    [blockTopupOnDemote, setBlockTopupOnDemote] = useState(true);
   async function create(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setBusy(true);
@@ -71,7 +75,7 @@ export default function UserManager({
     setMessage(
       response.ok
         ? body.balanceEnabled
-          ? "Usuário atualizado. Saldo habilitado automaticamente (Premium Plus compra só com saldo)."
+          ? "Usuário atualizado. Saldo e uso de saldo como pagamento habilitados (Premium Plus)."
           : "Usuário atualizado."
         : body.error,
     );
@@ -80,6 +84,19 @@ export default function UserManager({
       setStatusTarget(null);
       router.refresh();
     }
+  }
+  // Rebaixar um PREMIUM_PLUS (tabela ou edição) passa pelo diálogo que oferece
+  // bloquear a recarga na mesma requisição — sem isso, a próxima recarga paga
+  // promove de volta. Os demais saves seguem direto.
+  function requestSave(row: Row, patch: Record<string, string>) {
+    const demotes =
+      row.customerTier === "PREMIUM_PLUS" && patch.customerTier !== undefined && patch.customerTier !== "PREMIUM_PLUS";
+    if (demotes && !row.balanceTopupBlocked) {
+      setBlockTopupOnDemote(true);
+      setDemoting({ row, patch });
+      return;
+    }
+    void save(row, patch);
   }
   async function toggleBalance(row: Row, enabled: boolean) {
     setBusy(true);
@@ -198,6 +215,7 @@ export default function UserManager({
                 <th>Status</th>
                 <th>Saldo</th>
                 <th>Uso de saldo</th>
+                <th>Recarga</th>
                 <th>Pedidos</th>
                 <th>Ações</th>
               </tr>
@@ -221,7 +239,7 @@ export default function UserManager({
                     </select>
                   </td>
                   <td>
-                    <select value={row.customerTier} disabled={busy} onChange={(e) => save(row, { customerTier: e.target.value })}>
+                    <select value={row.customerTier} disabled={busy} onChange={(e) => requestSave(row, { customerTier: e.target.value })}>
                       <option value="NORMAL">NORMAL</option>
                       <option value="PREMIUM">PREMIUM</option>
                       <option value="PREMIUM_PLUS">PREMIUM_PLUS</option>
@@ -251,6 +269,17 @@ export default function UserManager({
                       Usar saldo
                     </label>
                     {row.customerTier === "PREMIUM_PLUS" && <small className="cell-subtitle">Sempre ativo</small>}
+                  </td>
+                  <td>
+                    <label className="check-field">
+                      <input
+                        type="checkbox"
+                        checked={row.balanceTopupBlocked}
+                        disabled={busy}
+                        onChange={(e) => save(row, { balanceTopupBlocked: e.target.checked })}
+                      />
+                      Bloquear recarga
+                    </label>
                   </td>
                   <td>{row.orderCount}</td>
                   <td>
@@ -311,7 +340,7 @@ export default function UserManager({
                 if (next.role !== shownRole) patch.role = next.role;
                 if (next.customerTier !== editing.customerTier) patch.customerTier = next.customerTier;
                 if (Object.keys(patch).length === 0) return setEditing(null);
-                void save(editing, patch);
+                requestSave(editing, patch);
               }}
             >
               <h2>Editar usuário</h2>
@@ -410,6 +439,42 @@ export default function UserManager({
               </button>
             </div>
           </form>
+        </div>
+      )}
+      {demoting && (
+        <div className="admin-confirm-backdrop" role="presentation">
+          <section className="admin-confirm admin-form" role="alertdialog" aria-modal="true" aria-labelledby="demote-title">
+            <h2 id="demote-title">Rebaixar {demoting.row.name} de Premium Plus?</h2>
+            <p>
+              O saldo restante e o uso de saldo como pagamento continuam. Sem bloqueio, a próxima recarga paga promove o
+              cliente de volta a Premium Plus.
+            </p>
+            <label className="check-field">
+              <input
+                type="checkbox"
+                checked={blockTopupOnDemote}
+                onChange={(event) => setBlockTopupOnDemote(event.target.checked)}
+              />
+              Bloquear também a recarga deste cliente
+            </label>
+            <div className="form-actions">
+              <button type="button" disabled={busy} onClick={() => setDemoting(null)}>
+                Cancelar
+              </button>
+              <button
+                type="button"
+                className="admin-primary"
+                disabled={busy}
+                onClick={() => {
+                  const { row, patch } = demoting;
+                  setDemoting(null);
+                  void save(row, blockTopupOnDemote ? { ...patch, balanceTopupBlocked: true } : patch);
+                }}
+              >
+                {busy ? "Processando..." : "Rebaixar"}
+              </button>
+            </div>
+          </section>
         </div>
       )}
       {statusTarget && (

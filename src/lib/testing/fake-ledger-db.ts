@@ -13,7 +13,15 @@ type Entry = {
   note: string | null;
   createdAt: Date;
 };
-type User = { id: string; role: string; active: boolean; passwordHash: string };
+type User = {
+  id: string;
+  role: string;
+  active: boolean;
+  passwordHash: string;
+  customerTier?: string;
+  canUseBalanceAsPayment?: boolean;
+  balanceTopupBlocked?: boolean;
+};
 type ApiKey = {
   id: string;
   userId: string;
@@ -28,6 +36,9 @@ type Order = {
   id: string;
   customerId: string;
   providerProduct: { externalProductId: string; metadata: unknown; provider: { code: string } } | null;
+  // Item gravado pelo checkout (usado pelo pacote "Outro valor").
+  unitPriceCents?: number;
+  quantity?: number;
 };
 
 // Catálogo da API de revenda com "product": um item por ProviderProduct
@@ -94,13 +105,23 @@ export function createFakeLedgerDb(initial: Partial<FakeState> = {}) {
         throw error;
       }
     },
-    async $queryRaw(_strings: TemplateStringsArray, ...values: unknown[]) {
+    async $queryRaw(strings: TemplateStringsArray, ...values: unknown[]) {
+      // Trava da linha do User (creditTopup) ou da de AccountBalance.
+      if (strings.join("").includes('FROM "User"')) {
+        const user = state.users.find((u) => u.id === values[0]);
+        return user ? [{ balanceTopupBlocked: user.balanceTopupBlocked ?? false }] : [];
+      }
       const row = state.balances.find((b) => b.userId === values[0]);
       return row ? [{ id: row.id, balanceCents: row.balanceCents, enabled: row.enabled }] : [];
     },
     user: {
       async findUnique({ where }: { where: { id: string } }) {
         return state.users.find((u) => u.id === where.id) ?? null;
+      },
+      async update({ where, data }: { where: { id: string }; data: Partial<User> }) {
+        const row = state.users.find((u) => u.id === where.id);
+        if (!row) throw new Error("NOT_FOUND");
+        return Object.assign(row, data);
       },
     },
     accountBalance: {
@@ -189,7 +210,7 @@ export function createFakeLedgerDb(initial: Partial<FakeState> = {}) {
         return {
           customerId: order.customerId,
           customer: { passwordHash: customer.passwordHash },
-          items: [{ providerProduct: order.providerProduct }],
+          items: [{ providerProduct: order.providerProduct, unitPriceCents: order.unitPriceCents ?? 0, quantity: order.quantity ?? 1 }],
         };
       },
     },

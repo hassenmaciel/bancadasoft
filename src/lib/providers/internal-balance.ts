@@ -2,6 +2,7 @@ import type { PrismaClient } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { PENDING_INVITE_HASH } from "@/lib/account-activation";
 import { creditTopup, formatBRL } from "@/lib/account-balance";
+import { isFreeAmountTopup } from "@/lib/commercial-pricing";
 import type {
   ProviderAdapter,
   ProviderBalance,
@@ -33,7 +34,9 @@ export function balanceTopupIdentity(orderId: string) {
 }
 
 // O valor creditado vem SEMPRE do ProviderProduct (metadata.creditAmountCents),
-// nunca do valor pago nem do preço por nível do comprador.
+// nunca do valor pago nem do preço por nível do comprador. Exceção: o pacote
+// "Outro valor" (metadata.freeAmount), que credita o valor que o servidor
+// validou e gravou no item do pedido (ver orderCreditCents).
 export function creditAmountFromMetadata(metadata: unknown) {
   const value =
     metadata && typeof metadata === "object" && !Array.isArray(metadata)
@@ -41,6 +44,15 @@ export function creditAmountFromMetadata(metadata: unknown) {
       : undefined;
   if (typeof value !== "number" || !Number.isInteger(value) || value < 1)
     throw new BalanceTopupError("BALANCE_TOPUP_CREDIT_AMOUNT_INVALID");
+  return value;
+}
+
+// Pacote "Outro valor": credita o total do item gravado pelo checkout
+// (unitPriceCents validado em assertCheckoutPrice × quantidade).
+export function orderCreditCents(metadata: unknown, item: { unitPriceCents: number; quantity: number | null }) {
+  if (!isFreeAmountTopup(metadata)) return creditAmountFromMetadata(metadata);
+  const value = item.unitPriceCents * (item.quantity ?? 1);
+  if (!Number.isInteger(value) || value < 1) throw new BalanceTopupError("BALANCE_TOPUP_CREDIT_AMOUNT_INVALID");
   return value;
 }
 
@@ -99,6 +111,8 @@ export class BalanceTopupAdapter implements ProviderAdapter {
           items: {
             take: 1,
             select: {
+              unitPriceCents: true,
+              quantity: true,
               providerProduct: {
                 select: { externalProductId: true, metadata: true, provider: { select: { code: true } } },
               },
@@ -111,7 +125,8 @@ export class BalanceTopupAdapter implements ProviderAdapter {
       // numa conta guest (convite pendente, sem login possível).
       if (order.customer.passwordHash === PENDING_INVITE_HASH)
         throw new BalanceTopupError("BALANCE_TOPUP_GUEST_NOT_ALLOWED");
-      const purchased = order.items[0]?.providerProduct;
+      const item = order.items[0];
+      const purchased = item?.providerProduct;
       if (
         !purchased ||
         purchased.provider.code !== INTERNAL_BALANCE_CODE ||
@@ -121,7 +136,7 @@ export class BalanceTopupAdapter implements ProviderAdapter {
       return creditTopup(tx, {
         userId: order.customerId,
         orderId,
-        amountCents: creditAmountFromMetadata(purchased.metadata),
+        amountCents: orderCreditCents(purchased.metadata, item),
         note: `Recarga via pedido ${orderId}`,
       });
     });

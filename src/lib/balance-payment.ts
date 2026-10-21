@@ -23,13 +23,29 @@ export function productAcceptsBalancePayment(productType: string) {
   return productType !== "BALANCE_TOPUP";
 }
 
-// PREMIUM_PLUS compra só com saldo: o preço do tier vem junto da obrigação de
-// manter saldo. Exceção obrigatória: a recarga (BALANCE_TOPUP) é paga via PIX
-// por qualquer tier — senão não haveria como depositar. Visitante (null)
-// continua com PIX e paga o preço público.
-export function pixPaymentAllowed(account: Pick<BalancePaymentAccount, "customerTier"> | null, productType: string) {
-  if (!account || !productAcceptsBalancePayment(productType)) return true;
-  return account.customerTier !== "PREMIUM_PLUS";
+// Compra de PREMIUM_PLUS (exceto recarga, sempre PIX). Saldo e PIX são
+// caminhos exclusivos, decididos pelo saldo:
+// - saldo habilitado que cobre o total ao preço Premium Plus → só saldo, ao
+//   preço Premium Plus;
+// - senão → só PIX, ao menor preço ativo Premium/Técnico (premiumPlusPixPrice
+//   em commercial-pricing.ts); sem esse preço, a compra por PIX é recusada.
+// O servidor (createOrder) aplica a mesma regra; a tela só a reflete.
+export function premiumPlusPaymentMethod(
+  balance: { enabled: boolean; balanceCents: number } | null | undefined,
+  plusTotalCents: number | null,
+): "balance" | "pix" {
+  return plusTotalCents !== null && balance?.enabled === true && balance.balanceCents >= plusTotalCents ? "balance" : "pix";
+}
+
+// Preço unitário e forma de pagamento de PREMIUM_PLUS para uma quantidade.
+// unitCents null = PIX sem preço (nem Premium nem Técnico ativos).
+export function premiumPlusPayment(
+  balance: { enabled: boolean; balanceCents: number } | null | undefined,
+  prices: { plusPriceCents: number | null; pixPriceCents: number | null },
+  quantity: number,
+) {
+  const method = premiumPlusPaymentMethod(balance, prices.plusPriceCents === null ? null : prices.plusPriceCents * quantity);
+  return { method, unitCents: method === "balance" ? prices.plusPriceCents : prices.pixPriceCents };
 }
 
 // null = a opção "Pagar com saldo" não aparece para este cliente/produto.

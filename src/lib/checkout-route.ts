@@ -4,6 +4,7 @@ import { orderDto } from "./dto";
 import { AsaasClientError } from "./payments/asaas-client";
 import { IncompleteCheckoutIdentityError } from "./checkout-identity";
 import { CheckoutQuantityError } from "./checkout-quantity";
+import { BALANCE_TOPUP_BLOCKED_MESSAGE, INVALID_TOPUP_AMOUNT_MESSAGE, PIX_PRICE_UNAVAILABLE_MESSAGE } from "./commercial-pricing";
 
 type CreateOrder = (
   input: ReturnType<typeof checkoutSchema.parse>,
@@ -77,13 +78,19 @@ export async function handleCheckoutRequest(
     if (error instanceof Error && error.message === "BALANCE_PERMISSION_REQUIRED")
       return NextResponse.json({ ok: false, error: "A sua conta não tem permissão para usar saldo como pagamento.", code: "BALANCE_PERMISSION_REQUIRED" }, { status: 403 });
     if (error instanceof Error && error.message === "PIX_NOT_ALLOWED_FOR_TIER")
-      return NextResponse.json({ ok: false, error: "Sua conta usa apenas saldo para compras. Recarregue seu saldo para continuar.", code: "PIX_NOT_ALLOWED_FOR_TIER" }, { status: 403 });
+      return NextResponse.json({ ok: false, error: "Seu saldo cobre esta compra: conclua o pagamento com saldo.", code: "PIX_NOT_ALLOWED_FOR_TIER" }, { status: 403 });
+    if (error instanceof Error && error.message === "PIX_PRICE_UNAVAILABLE_FOR_TIER")
+      return NextResponse.json({ ok: false, error: PIX_PRICE_UNAVAILABLE_MESSAGE, code: "PIX_PRICE_UNAVAILABLE_FOR_TIER" }, { status: 422 });
     if (error instanceof Error && error.message === "BALANCE_PAYMENT_NOT_ALLOWED")
       return NextResponse.json({ ok: false, error: "Este produto não pode ser pago com saldo.", code: "BALANCE_PAYMENT_NOT_ALLOWED" }, { status: 422 });
     if (error instanceof Error && error.message === "INSUFFICIENT_BALANCE")
       return NextResponse.json({ ok: false, error: "Saldo insuficiente para completar a compra.", code: "INSUFFICIENT_BALANCE" }, { status: 402 });
     if (error instanceof Error && error.message === "LOGIN_REQUIRED_FOR_PRICE")
       return NextResponse.json({ ok: false, error: "Entre para consultar o preço e concluir a compra.", code: "LOGIN_REQUIRED" }, { status: 401 });
+    if (error instanceof Error && error.message === "INVALID_TOPUP_AMOUNT")
+      return NextResponse.json({ ok: false, error: INVALID_TOPUP_AMOUNT_MESSAGE, code: "INVALID_TOPUP_AMOUNT" }, { status: 422 });
+    if (error instanceof Error && error.message === "BALANCE_TOPUP_BLOCKED")
+      return NextResponse.json({ ok: false, error: BALANCE_TOPUP_BLOCKED_MESSAGE, code: "BALANCE_TOPUP_BLOCKED" }, { status: 403 });
     if (error instanceof Error && error.message === "BALANCE_NOT_ENABLED")
       return NextResponse.json({ ok: false, error: "O uso de saldo ainda não está habilitado para a sua conta. Fale com o suporte.", code: "BALANCE_NOT_ENABLED" }, { status: 403 });
     if (error instanceof IncompleteCheckoutIdentityError)

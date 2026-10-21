@@ -11,11 +11,24 @@ import type {
 import type { DynamicField } from "./providers/automation";
 import { publicVariantFields } from "./product-variants";
 import { isProductionProviderCode } from "./providers/selection";
-import { resolveTierPrice, resolveVisiblePrice, type PriceViewer } from "./commercial-pricing";
+import {
+  TOPUP_MIN_CENTS,
+  isFreeAmountTopup,
+  premiumPlusPixPrice,
+  resolveTierPrice,
+  resolveVisiblePrice,
+  topupCreditCents,
+  type PriceViewer,
+} from "./commercial-pricing";
+import { premiumPlusPayment, productAcceptsBalancePayment } from "./balance-payment";
 import { quantityRange } from "./checkout-quantity";
 
 export type CategoryDTO = Pick<Category, "id" | "slug" | "name">;
 export type BrandDTO = Pick<Brand, "id" | "slug" | "name">;
+
+// Só para PREMIUM_PLUS (exceto recarga): os dois preços possíveis, para a tela
+// decidir pela quantidade escolhida (ver premiumPlusPayment).
+export type PremiumPlusPricesDTO = { plusPriceCents: number | null; pixPriceCents: number | null };
 
 export type ProductDTO = Pick<
   Product,
@@ -37,6 +50,10 @@ export type ProductDTO = Pick<
   priceCents: number | null;
   priceVisible: boolean;
   priceTier: "NORMAL" | "PREMIUM" | "PREMIUM_PLUS" | null;
+  // PREMIUM_PLUS: forma de pagamento do preço exibido (saldo = preço Premium
+  // Plus; pix = menor preço Premium/Técnico). Ausente para os demais.
+  priceMode?: "balance" | "pix";
+  premiumPlus?: PremiumPlusPricesDTO;
   category: CategoryDTO | null;
   brand: BrandDTO | null;
   checkoutFields: DynamicField[];
@@ -50,6 +67,9 @@ export type ProductVariantDTO = {
   id: string;
   name: string;
   priceCents: number | null;
+  premiumPlus?: PremiumPlusPricesDTO;
+  // Recarga "Outro valor": o cliente digita o valor (priceCents = mínimo).
+  freeAmount?: true;
   checkoutFields: DynamicField[];
 };
 
@@ -91,7 +111,7 @@ export type UserSessionDTO = Pick<User, "id" | "email" | "name" | "role" | "cust
 type ProductWithCategory = Product & {
   category?: Category | null;
   brand?: Brand | null;
-  providerProducts?: Array<{ active: boolean; mode: string; technicalEligibility?: string; fieldSchema?: unknown; provider?: { active: boolean; code: string } }>;
+  providerProducts?: Array<{ active: boolean; mode: string; technicalEligibility?: string; fieldSchema?: unknown; metadata?: unknown; provider?: { active: boolean; code: string } }>;
   variants?: Array<{
     id: string;
     name: string;
@@ -106,6 +126,7 @@ type ProductWithCategory = Product & {
       mode: string;
       technicalEligibility?: string;
       fieldSchema?: unknown;
+      metadata?: unknown;
       provider: { active: boolean; code: string };
       providerCostCents?: number | null;
       contractSignature?: string | null;
@@ -124,13 +145,56 @@ export const normalizeQrCodeImage = (encodedImage: string | null | undefined) =>
   return encodedImage.startsWith("data:image/") ? encodedImage : `data:image/png;base64,${encodedImage}`;
 };
 
-export const productDto = (product: ProductWithCategory, viewer: PriceViewer = null): ProductDTO => {
-  const productPrice = resolveVisiblePrice(product, viewer);
+// Recarga de Saldo sem variantes: o pacote é o único ProviderProduct REAL
+// ativo do produto (o mesmo que o checkout resolve no modo REAL).
+const productTopupCreditCents = (product: ProductWithCategory) => {
+  const links = (product.providerProducts ?? []).filter((link) =>
+    link.active &&
+    link.mode === "REAL" &&
+    link.provider?.active &&
+    isProductionProviderCode(link.provider.code) &&
+    (link.technicalEligibility === undefined || link.technicalEligibility === "READY"),
+  );
+  return links.length === 1 ? topupCreditCents(links[0].metadata) : null;
+};
+
+export const productDto = (
+  product: ProductWithCategory,
+  viewer: PriceViewer = null,
+  // Saldo do PREMIUM_PLUS: decide se o preço exibido é o Premium Plus (saldo
+  // cobre a quantidade mínima) ou o de PIX. Ignorado para os demais tiers.
+  balance: { enabled: boolean; balanceCents: number } | null = null,
+): ProductDTO => {
+  // BALANCE_TOPUP exibe sempre o valor creditado pelo pacote, igual ao que o
+  // checkout cobra (assertCheckoutPrice); priceCents e tiers não entram.
+  // A visibilidade segue só o LOGIN_REQUIRED (o preço vem das variantes).
+  const topup = product.type === "BALANCE_TOPUP";
+  const topupVisible = !(product.priceVisibility === "LOGIN_REQUIRED" && !viewer);
+  const productPrice = topup
+    ? { visible: topupVisible, priceCents: topupVisible ? productTopupCreditCents(product) : null, tier: topupVisible ? viewer?.customerTier ?? null : null }
+    : resolveVisiblePrice(product, viewer);
+  // PREMIUM_PLUS nunca vê o preço Premium Plus sem saldo que o cubra (R3/R4).
+  const premiumPlus = viewer?.customerTier === "PREMIUM_PLUS" && productAcceptsBalancePayment(product.type);
+  const minQuantity = quantityRange(product).min;
+  const premiumPlusPrices = (source: Parameters<typeof resolveTierPrice>[0]) => ({
+    plusPriceCents: resolveTierPrice(source, viewer),
+    pixPriceCents: premiumPlusPixPrice(source),
+  });
+  const shownPremiumPlus = (source: Parameters<typeof resolveTierPrice>[0]) =>
+    premiumPlusPayment(balance, premiumPlusPrices(source), minQuantity);
+  const variantPrice = (variant: NonNullable<ProductWithCategory["variants"]>[number]) =>
+    topup
+      ? isFreeAmountTopup(variant.providerProduct.metadata)
+        ? TOPUP_MIN_CENTS
+        : topupCreditCents(variant.providerProduct.metadata)
+      : premiumPlus
+        ? shownPremiumPlus(variant).unitCents
+        : resolveTierPrice(variant, viewer);
   const variants = (product.variants ?? [])
     .filter((variant) =>
       variant.active &&
       !variant.publicationBlocked &&
-      Boolean(resolveTierPrice(variant, viewer)) &&
+      Boolean(variantPrice(variant)) &&
       variant.providerProduct.active &&
       variant.providerProduct.mode === "REAL" &&
       variant.providerProduct.provider.active &&
@@ -141,10 +205,23 @@ export const productDto = (product: ProductWithCategory, viewer: PriceViewer = n
     .map((variant) => ({
       id: variant.id,
       name: variant.name,
-      priceCents: productPrice.visible ? resolveTierPrice(variant, viewer) : null,
+      priceCents: productPrice.visible ? variantPrice(variant) : null,
+      ...(premiumPlus && productPrice.visible ? { premiumPlus: premiumPlusPrices(variant) } : {}),
+      ...(topup && isFreeAmountTopup(variant.providerProduct.metadata) ? { freeAmount: true as const } : {}),
       checkoutFields: publicVariantFields(variant.providerProduct.fieldSchema),
     }));
   const variantPrices = variants.map((variant) => variant.priceCents).filter((price): price is number => price !== null);
+  const productShown = premiumPlus && !variants.length ? shownPremiumPlus(product) : null;
+  const cheapestVariant = variantPrices.length
+    ? variants.find((variant) => variant.priceCents === Math.min(...variantPrices))
+    : undefined;
+  const priceMode = !premiumPlus || !productPrice.visible
+    ? undefined
+    : productShown
+      ? productShown.method
+      : cheapestVariant?.premiumPlus
+        ? premiumPlusPayment(balance, cheapestVariant.premiumPlus, minQuantity).method
+        : undefined;
   return {
     id: product.id,
     slug: product.slug,
@@ -158,9 +235,13 @@ export const productDto = (product: ProductWithCategory, viewer: PriceViewer = n
     imageUrl: product.imageUrl,
     downloadUrl: product.downloadUrl,
     downloadLabel: product.downloadLabel,
-    priceCents: productPrice.visible ? (variantPrices.length ? Math.min(...variantPrices) : productPrice.priceCents) : null,
+    priceCents: productPrice.visible
+      ? (variantPrices.length ? Math.min(...variantPrices) : productShown ? productShown.unitCents : productPrice.priceCents)
+      : null,
     priceVisible: productPrice.visible,
     priceTier: productPrice.tier,
+    ...(priceMode ? { priceMode } : {}),
+    ...(productShown && productPrice.visible ? { premiumPlus: premiumPlusPrices(product) } : {}),
     status: product.status,
     available: product.available,
     category: product.category

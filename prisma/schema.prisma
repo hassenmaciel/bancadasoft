@@ -173,6 +173,8 @@ model User {
   whatsapp        String?
   active          Boolean      @default(true)
   canUseBalanceAsPayment Boolean @default(false)
+  // Admin: bloqueia a recarga e a promoção automática a PREMIUM_PLUS por recarga.
+  balanceTopupBlocked Boolean @default(false)
   // Sessões emitidas antes desta data deixam de valer (redefinição de senha).
   passwordChangedAt DateTime?
   createdAt       DateTime     @default(now())

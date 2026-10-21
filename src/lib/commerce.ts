@@ -3,7 +3,6 @@ import {
   OrderStatus,
   PaymentStatus,
   Prisma,
-  ProductType,
   ProviderMode,
 } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
@@ -37,14 +36,14 @@ import {
   isValidWhatsapp,
   normalizeWhatsapp,
 } from "@/lib/checkout-validation";
-import { assertBalanceTopupAllowed, assertCheckoutPrice } from "@/lib/commercial-pricing";
+import { assertBalanceTopupAllowed, assertCheckoutPrice, premiumPlusPixPrice } from "@/lib/commercial-pricing";
 import { assertCheckoutQuantity, orderTotalCents } from "@/lib/checkout-quantity";
 import { pixExpiresAt } from "@/lib/payments/pix-expiry";
 import { expirePixIfDue } from "@/lib/payment-expiry";
 import { TERMINAL_ORDER_STATUSES } from "@/lib/order-polling";
 import { resolveAuthenticatedCheckoutIdentity } from "@/lib/checkout-identity";
 import { debitOrderPurchase } from "@/lib/account-balance";
-import { hasBalancePaymentPermission, pixPaymentAllowed, productAcceptsBalancePayment } from "@/lib/balance-payment";
+import { hasBalancePaymentPermission, premiumPlusPayment, productAcceptsBalancePayment } from "@/lib/balance-payment";
 
 export const catalogue = () =>
   prisma.product.findMany({
@@ -209,6 +208,7 @@ export async function createOrder(input: {
   providerFields?: Record<string, string>;
   quantity?: number;
   paymentMethod?: string;
+  topupAmountCents?: number;
 }, authenticatedUserId?: string) {
   const access = createDeliveryAccess(new Date(), input.deliveryAccessToken);
   const recovered = await prisma.order.findUnique({
@@ -276,38 +276,55 @@ export async function createOrder(input: {
     )
     : {};
   const viewer = authenticatedUser ? { customerTier: authenticatedUser.customerTier } : null;
-  const unitPriceCents = assertCheckoutPrice(product, variantResolution?.variant ?? null, viewer);
-  const totalCents = orderTotalCents(unitPriceCents, quantity);
-  // Recarga de Saldo: só conta logada com saldo habilitado. A consulta extra
-  // acontece apenas para BALANCE_TOPUP; nenhum outro tipo é afetado.
-  if (product.type === ProductType.BALANCE_TOPUP) {
-    const balance = authenticatedUser
-      ? await prisma.accountBalance.findUnique({
-        where: { userId: authenticatedUser.id },
-        select: { enabled: true },
+  const tierPriceCents = assertCheckoutPrice(
+    product,
+    variantResolution?.variant ?? null,
+    viewer,
+    providerResolution.providerProduct,
+    input.topupAmountCents,
+  );
+  // Recarga de Saldo: qualquer conta logada, exceto com recarga bloqueada
+  // pelo Admin. Nenhum outro tipo de produto é afetado.
+  assertBalanceTopupAllowed(product.type, {
+    authenticated: Boolean(authenticatedUser),
+    topupBlocked: authenticatedUser?.balanceTopupBlocked === true,
+  });
+
+  const paymentMethod = input.paymentMethod ?? "pix";
+  // PREMIUM_PLUS (exceto recarga): saldo e PIX exclusivos, decididos pelo saldo
+  // (premiumPlusPayment). Saldo que cobre o total ao preço Premium Plus → só
+  // saldo; senão → só PIX, ao menor preço ativo Premium/Técnico, nunca o Plus.
+  const premiumPlusCheckout =
+    authenticatedUser?.customerTier === "PREMIUM_PLUS" && productAcceptsBalancePayment(product.type);
+  const userWithBalance =
+    authenticatedUser && (paymentMethod === "balance" || premiumPlusCheckout)
+      ? await prisma.user.findUnique({
+        where: { id: authenticatedUser.id },
+        select: { canUseBalanceAsPayment: true, customerTier: true, accountBalance: { select: { balanceCents: true, enabled: true } } },
       })
       : null;
-    assertBalanceTopupAllowed(product.type, {
-      authenticated: Boolean(authenticatedUser),
-      balanceEnabled: Boolean(balance?.enabled),
-    });
+  let unitPriceCents = tierPriceCents;
+  if (premiumPlusCheckout && paymentMethod !== "balance") {
+    const plan = premiumPlusPayment(
+      userWithBalance?.accountBalance,
+      {
+        plusPriceCents: tierPriceCents,
+        pixPriceCents: premiumPlusPixPrice(variantResolution?.variant ?? product),
+      },
+      quantity,
+    );
+    // Saldo cobre: o PIX continua bloqueado (só o caso sem saldo libera PIX).
+    if (plan.method === "balance") throw new Error("PIX_NOT_ALLOWED_FOR_TIER");
+    if (plan.unitCents === null) throw new Error("PIX_PRICE_UNAVAILABLE_FOR_TIER");
+    unitPriceCents = plan.unitCents;
   }
+  const totalCents = orderTotalCents(unitPriceCents, quantity);
 
   // BALANCE PAYMENT VALIDATION
-  const paymentMethod = input.paymentMethod ?? "pix";
-  // PREMIUM_PLUS não compra via PIX (exceto a recarga de saldo). Sem fallback:
-  // com saldo insuficiente a compra fica bloqueada até recarregar.
-  if (paymentMethod !== "balance" && !pixPaymentAllowed(authenticatedUser, product.type))
-    throw new Error("PIX_NOT_ALLOWED_FOR_TIER");
   if (paymentMethod === "balance") {
     if (!authenticatedUser) throw new Error("LOGIN_REQUIRED_FOR_BALANCE");
 
     if (!productAcceptsBalancePayment(product.type)) throw new Error("BALANCE_PAYMENT_NOT_ALLOWED");
-
-    const userWithBalance = await prisma.user.findUnique({
-      where: { id: authenticatedUser.id },
-      select: { canUseBalanceAsPayment: true, customerTier: true, accountBalance: { select: { balanceCents: true, enabled: true } } },
-    });
 
     if (!userWithBalance || !hasBalancePaymentPermission(userWithBalance)) throw new Error("BALANCE_PERMISSION_REQUIRED");
     // Checagem antecipada (erro claro antes de criar o pedido); o débito

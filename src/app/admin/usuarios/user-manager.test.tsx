@@ -13,6 +13,7 @@ const row = (role: string) => ({
   role,
   customerTier: "NORMAL" as const,
   canUseBalanceAsPayment: false,
+  balanceTopupBlocked: false,
   active: true,
   createdAt: "2026-09-25T12:00:00.000Z",
   orderCount: 0,
@@ -50,5 +51,15 @@ describe("isResellerRole", () => {
     expect(isResellerRole("RESELLER")).toBe(true);
     for (const role of ["ADMIN", "USER", "CUSTOMER", "reseller", "RESELLER ", ""]) expect(isResellerRole(role)).toBe(false);
     expect(isAdminRole("RESELLER")).toBe(false);
+  });
+});
+
+describe("bloqueio de recarga na tela de usuários", () => {
+  it("cada linha tem o interruptor 'Bloquear recarga' refletindo o campo", () => {
+    const off = renderToStaticMarkup(<UserManager rows={[row("USER")]} currentAdminId="admin" />);
+    expect(off).toContain("<th>Recarga</th>");
+    expect(off).toMatch(/<input type="checkbox"\/>Bloquear recarga/);
+    const on = renderToStaticMarkup(<UserManager rows={[{ ...row("USER"), balanceTopupBlocked: true }]} currentAdminId="admin" />);
+    expect(on).toMatch(/<input type="checkbox" checked=""\/>Bloquear recarga/);
   });
 });

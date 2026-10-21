@@ -23,4 +23,7 @@ export const checkoutSchema = z.object({
   // Ausente = 1. O intervalo permitido por produto é conferido em createOrder.
   quantity: z.coerce.number().int().min(1).max(1000).optional(),
   paymentMethod: z.enum(["pix", "balance"]).default("pix"),
+  // Recarga "Outro valor" (centavos). Limites e inteiro conferidos em
+  // assertCheckoutPrice, com código próprio (INVALID_TOPUP_AMOUNT).
+  topupAmountCents: z.number().optional(),
 });

@@ -1,4 +1,4 @@
-import { AccountLedgerEntryType, Prisma } from "@prisma/client";
+import { AccountLedgerEntryType, CustomerTier, Prisma } from "@prisma/client";
 
 // Saldo pré-pago por conta. Regras invariantes deste módulo:
 // - AccountBalance.balanceCents é o saldo materializado; AccountLedgerEntry é
@@ -62,16 +62,29 @@ async function applyEntry(
 }
 
 // Crédito de recarga paga (Order via PIX). Idempotente por sourceOrderId: se o
-// lançamento já existir, devolve-o sem creditar de novo.
+// lançamento já existir, devolve-o sem creditar (nem promover) de novo.
+//
+// Na MESMA transação do crédito: ativa o saldo (sempre — o valor pago passa a
+// aparecer para o cliente) e promove a conta a PREMIUM_PLUS com uso de saldo
+// liberado, exceto com a recarga bloqueada pelo Admin
+// (User.balanceTopupBlocked), que impede só a promoção. Gastar continua
+// exigindo a permissão de compra com saldo (flag ou tier). Qualquer falha
+// desfaz crédito, ativação e promoção juntos. A linha do
+// User é travada ANTES da de AccountBalance (mesma ordem da rota do Admin, que
+// grava User e depois habilita o saldo), então o bloqueio lido aqui não corre
+// com uma alteração simultânea do Admin.
 export async function creditTopup(
   tx: Tx,
   input: { userId: string; orderId: string; amountCents: number; note?: string },
 ) {
   if (!Number.isInteger(input.amountCents) || input.amountCents < 1)
     throw new AccountBalanceError("INVALID_CREDIT_AMOUNT");
+  const users = await tx.$queryRaw<Array<{ balanceTopupBlocked: boolean }>>`
+    SELECT "balanceTopupBlocked" FROM "User" WHERE "id" = ${input.userId} FOR UPDATE`;
+  if (!users[0]) throw new AccountBalanceError("USER_NOT_FOUND");
   const locked = await lockAccountBalance(tx, input.userId);
   const existing = await tx.accountLedgerEntry.findUnique({ where: { sourceOrderId: input.orderId } });
-  if (existing) return { entry: existing, created: false as const };
+  if (existing) return { entry: existing, created: false as const, promoted: false };
   const entry = await applyEntry(tx, locked, {
     userId: input.userId,
     type: AccountLedgerEntryType.TOPUP,
@@ -79,7 +92,13 @@ export async function creditTopup(
     sourceOrderId: input.orderId,
     note: input.note,
   });
-  return { entry, created: true as const };
+  await tx.accountBalance.update({ where: { id: locked.id }, data: { enabled: true } });
+  if (users[0].balanceTopupBlocked) return { entry, created: true as const, promoted: false };
+  await tx.user.update({
+    where: { id: input.userId },
+    data: { customerTier: CustomerTier.PREMIUM_PLUS, canUseBalanceAsPayment: true },
+  });
+  return { entry, created: true as const, promoted: true };
 }
 
 // Débito de compra via API de revenda. Idempotente por (userId,

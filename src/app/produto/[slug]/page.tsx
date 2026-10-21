@@ -12,7 +12,8 @@ import { isOptimizableImage } from "@/lib/image-source";
 import { session } from "@/lib/auth";
 import { buildCheckoutIdentitySummary } from "@/lib/checkout-identity";
 import { isUnlockToolLicense } from "@/lib/unlocktool-license";
-import { balancePaymentOption, pixPaymentAllowed } from "@/lib/balance-payment";
+import { balancePaymentOption } from "@/lib/balance-payment";
+import { BALANCE_TOPUP_BLOCKED_MESSAGE, PIX_PRICE_UNAVAILABLE_MESSAGE } from "@/lib/commercial-pricing";
 
 export const dynamic = "force-dynamic";
 
@@ -53,13 +54,15 @@ export default async function ProductPage({ params, searchParams }: { params: Pr
             whatsapp: true,
             customerTier: true,
             canUseBalanceAsPayment: true,
+            balanceTopupBlocked: true,
             accountBalance: { select: { enabled: true, balanceCents: true } },
           },
         })
       : null,
   ]);
   if (!found) notFound();
-  const dto = productDto(found, viewer);
+  // O saldo decide o preço exibido ao PREMIUM_PLUS (Premium Plus só se cobrir).
+  const dto = productDto(found, viewer, account?.accountBalance ?? null);
   // PARTE 1/3/4: resumo mascarado da identidade para pular o formulário do
   // cliente já cadastrado — nunca envia CPF/e-mail/WhatsApp em texto puro
   // para o client, apenas o suficiente para exibir e decidir o que falta.
@@ -67,12 +70,19 @@ export default async function ProductPage({ params, searchParams }: { params: Pr
   // Fase 5: só o saldo disponível vai para o client, e só quando o cliente
   // pode pagar com saldo neste produto (ver src/lib/balance-payment.ts).
   const balancePayment = balancePaymentOption(account, found.type);
-  // PREMIUM_PLUS: sem PIX (exceto recarga) — o servidor também recusa.
-  const pixAllowed = pixPaymentAllowed(account, found.type);
   const variantPrices = dto.variants.flatMap((variant) => variant.priceCents === null ? [] : [variant.priceCents]);
   const displayPrice = variantPrices.length ? Math.min(...variantPrices) : dto.priceCents;
   const money = displayPrice === null ? null : new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(displayPrice / 100);
   const unlockTool = dto.slug === "unlocktool-6h";
+  // Recarga bloqueada pelo Admin: sem preço e sem pacote (o checkout também
+  // recusa com BALANCE_TOPUP_BLOCKED).
+  const topupBlocked = found.type === "BALANCE_TOPUP" && account?.balanceTopupBlocked === true;
+  // PREMIUM_PLUS sem saldo que cubra e sem preço Premium/Técnico ativo: não há
+  // como comprar (PIX recusado no servidor) — aviso em vez de preço.
+  const premiumPlusNoPrice = dto.priceVisible && displayPrice === null && dto.priceTier === "PREMIUM_PLUS";
+  const tierLabel =
+    dto.priceTier === "PREMIUM_PLUS" ? (dto.priceMode === "balance" ? "Preço Premium Plus · " : "")
+      : dto.priceTier === "PREMIUM" ? "Preço Premium · " : "";
   return <main><PublicHeader viewer={publicViewer(viewer)}/><section className="product-page wrap">
     <nav className="breadcrumbs"><Link href="/">Início</Link><span>›</span><Link href="/catalogo">Catálogo</Link><span>›</span><b>{dto.name}</b></nav>
     <div className="product-detail"><div className="product-detail-art">{dto.imageUrl?<Image src={dto.imageUrl} alt={dto.name} fill sizes="(max-width: 900px) 100vw, 500px" preload unoptimized={!isOptimizableImage(dto.imageUrl)}/>:<span>{dto.name.slice(0,3).toUpperCase()}</span>}</div>
@@ -80,8 +90,8 @@ export default async function ProductPage({ params, searchParams }: { params: Pr
         {unlockTool&&<ul className="product-guidance"><li>Produto digital com acesso temporário por 6 horas.</li><li>Liberação automática após a confirmação do pagamento e do fornecedor.</li><li>As credenciais ficam disponíveis com segurança em Meus Pedidos.</li><li>Não compartilhe as credenciais de acesso.</li></ul>}
         {dto.duration&&<div className="detail-line"><b>Modalidade</b><span>{dto.duration}</span></div>}
         <div className="detail-line"><b>Entrega</b><span>{dto.deliveryType==="ON_REQUEST"?"Sob consulta":dto.deliveryType==="AUTOMATIC"?"Automática":dto.deliveryType==="IMMEDIATE"?"Imediata":"Manual"}{dto.deliveryEstimate?` · ${dto.deliveryEstimate}`:""}</span></div>
-        <div className="detail-availability">✓ Disponível para compra</div>{money ? <strong className="detail-price">{dto.variants.length ? "A partir de " : ""}{dto.priceTier === "PREMIUM_PLUS" ? "Preço Premium Plus · " : dto.priceTier === "PREMIUM" ? "Preço Premium · " : ""}{money}</strong> : <strong className="detail-price">Preço exclusivo para cadastrados</strong>}
-        {dto.priceVisible && money ? <CheckoutPanel product={dto} identity={checkoutIdentity} balancePayment={balancePayment} pixAllowed={pixAllowed} initialVariantId={typeof requestedVariant === "string" ? requestedVariant : null}/> : <div className="login-price-gate"><p>Entre ou cadastre-se para ver o preço e contratar este serviço.</p><Link className="product-cta" href={`/login?next=${encodeURIComponent(`/produto/${dto.slug}`)}`}>Entrar</Link><Link href={`/cadastro?next=${encodeURIComponent(`/produto/${dto.slug}`)}`}>Criar conta</Link></div>}
+        {topupBlocked ? <p className="notice balance-disabled" role="status">{BALANCE_TOPUP_BLOCKED_MESSAGE}</p> : <><div className="detail-availability">✓ Disponível para compra</div>{money ? <strong className="detail-price">{dto.variants.length ? "A partir de " : ""}{tierLabel}{money}</strong> : premiumPlusNoPrice ? <p className="product-balance-shortfall" role="status">{PIX_PRICE_UNAVAILABLE_MESSAGE} <Link href="/minha-conta/saldo">Recarregar saldo</Link></p> : <strong className="detail-price">Preço exclusivo para cadastrados</strong>}
+        {premiumPlusNoPrice ? null : dto.priceVisible && money ? <CheckoutPanel product={dto} identity={checkoutIdentity} balancePayment={balancePayment} initialVariantId={typeof requestedVariant === "string" ? requestedVariant : null}/> : <div className="login-price-gate"><p>Entre ou cadastre-se para ver o preço e contratar este serviço.</p><Link className="product-cta" href={`/login?next=${encodeURIComponent(`/produto/${dto.slug}`)}`}>Entrar</Link><Link href={`/cadastro?next=${encodeURIComponent(`/produto/${dto.slug}`)}`}>Criar conta</Link></div>}</>}
         {dto.downloadUrl && <a className="product-cta product-download-link" href={dto.downloadUrl} target="_blank" rel="noopener noreferrer">{dto.downloadLabel || "Baixar ferramenta"}</a>}
         <small className="checkout-note">Pagamento processado em ambiente seguro. Confira as condições exibidas antes de concluir.</small>
       </div>
