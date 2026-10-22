@@ -7,11 +7,13 @@ export default function AdminImageUpload({
   value,
   onChange,
   label = "Imagem",
+  hint,
 }: {
   kind: "products" | "brands" | "banners";
   value: string;
   onChange: (value: string) => void;
   label?: string;
+  hint?: string;
 }) {
   const input = useRef<HTMLInputElement>(null),
     [busy, setBusy] = useState(false),
@@ -111,6 +113,7 @@ export default function AdminImageUpload({
       </div>
       <small>
         JPG, PNG ou WEBP. Máximo de 500 KB. A remoção é concluída ao salvar.
+        {hint && <> {hint}</>}
       </small>
       {error && <p className="form-message form-error">{error}</p>}
     </div>
