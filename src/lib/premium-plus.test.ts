@@ -12,6 +12,7 @@ const db = vi.hoisted(() => ({
   user: { findFirst: vi.fn(), findUnique: vi.fn(), upsert: vi.fn(), update: vi.fn() },
   accountBalance: { findUnique: vi.fn() },
   payment: { create: vi.fn() },
+  category: { findMany: vi.fn() },
 }));
 vi.mock("@/lib/prisma", () => ({ prisma: db }));
 vi.mock("@/lib/fulfillment-engine", () => ({ executeFulfillment: vi.fn(), safeErrorInfo: () => ({}) }));
@@ -342,5 +343,79 @@ describe("exibição do PREMIUM_PLUS: preço Plus só com saldo que cubra (DTO, 
     expect(page).toContain('dto.priceMode === "balance" ? "Preço Premium Plus · " : ""');
     expect(api).toContain("productDto(product, viewer, balance)");
     expect(card).toContain('product.priceMode==="balance"?"Preço Premium Plus · ":""');
+  });
+});
+
+describe("cartões da home e do catálogo: PREMIUM_PLUS vê o mesmo preço da página do produto", () => {
+  const listed = (id: string) => ({
+    id, slug: id, name: id, description: "", longDescription: null, type: "TOOL", deliveryType: "MANUAL",
+    deliveryEstimate: null, duration: null, imageUrl: null, downloadUrl: null, downloadLabel: null, status: "PUBLISHED",
+    available: true, minQuantity: 1, maxQuantity: 1, priceVisibility: "LOGIN_REQUIRED", category: null, brand: null,
+    providerProducts: [] as unknown[], variants: [] as unknown[],
+    priceCents: 3000, normalPriceCents: 2500, premiumPriceCents: 2000, premiumPlusPriceCents: 1700,
+  });
+  const popular = listed("mais-procurado");
+  const recent = listed("recente");
+  const viewerOf = (tier: CustomerTierValue) => ({ id: "u1", email: "c@x.com", name: "C", role: "CUSTOMER", customerTier: tier });
+  let currentViewer: ReturnType<typeof viewerOf> | null = null;
+
+  // Preço (priceCents) de cada ProductCard da árvore devolvida pela página.
+  const cardPrices = (node: unknown): Array<[string, number | null]> => {
+    if (Array.isArray(node)) return node.flatMap(cardPrices);
+    if (!node || typeof node !== "object" || !("props" in node)) return [];
+    const props = (node as { props: { product?: { slug: string; priceCents: number | null }; children?: unknown } }).props;
+    return props.product ? [[props.product.slug, props.product.priceCents]] : cardPrices(props.children);
+  };
+  const homeCards = async () => {
+    const { default: Home } = await import("@/app/page");
+    return cardPrices(await Home());
+  };
+  const catalogCards = async () => {
+    const { default: CatalogPage } = await import("@/app/catalogo/page");
+    return cardPrices(await CatalogPage({ searchParams: Promise.resolve({}) }));
+  };
+  // O que a página do produto exibe: productDto(found, viewer, account?.accountBalance ?? null).
+  const productPagePrice = (product: ReturnType<typeof listed>, balance: { enabled: boolean; balanceCents: number } | null) =>
+    productDto(product as never, currentViewer, balance).priceCents;
+
+  beforeEach(() => {
+    vi.resetModules();
+    vi.doMock("@/lib/auth", () => ({ session: async () => currentViewer }));
+    vi.doMock("@/lib/home-banner", () => ({ publicHomeBanners: async () => [] }));
+    vi.doMock("@/lib/catalog-search", () => ({
+      optionalHomeQuery: (_label: string, query: () => unknown) => query(),
+      popularPublicProducts: async () => ({ source: "sales", products: [popular] }),
+      recentPublicProducts: async () => [recent],
+      findPublicCatalog: async () => [popular, recent],
+    }));
+    db.category.findMany.mockReset().mockResolvedValue([]);
+    db.accountBalance.findUnique.mockReset();
+  });
+
+  it.each([
+    ["saldo cobre o Plus", { enabled: true, balanceCents: 1700 }, 1700],
+    ["saldo menor que o Plus", { enabled: true, balanceCents: 1699 }, 2000],
+    ["saldo desabilitado", { enabled: false, balanceCents: 99999 }, 2000],
+    ["sem saldo", null, 2000],
+  ])("%s: home e catálogo mostram o mesmo valor da página do produto", async (_label, balance, expected) => {
+    currentViewer = viewerOf("PREMIUM_PLUS");
+    db.accountBalance.findUnique.mockResolvedValue(balance);
+    const expectedCards = [[popular.slug, expected], [recent.slug, expected]];
+    expect(await homeCards()).toEqual(expectedCards);
+    expect(await catalogCards()).toEqual(expectedCards);
+    expect(productPagePrice(popular, balance)).toBe(expected);
+    expect(db.accountBalance.findUnique).toHaveBeenCalledWith({ where: { userId: "u1" }, select: { enabled: true, balanceCents: true } });
+  });
+
+  it.each([
+    ["visitante", null],
+    ["NORMAL", "NORMAL"],
+    ["PREMIUM", "PREMIUM"],
+  ] as const)("%s: cartões inalterados e nenhuma consulta de saldo", async (_label, tier) => {
+    currentViewer = tier ? viewerOf(tier) : null;
+    const expected = tier === "PREMIUM" ? 2000 : tier === "NORMAL" ? 2500 : null;
+    expect(await homeCards()).toEqual([[popular.slug, expected], [recent.slug, expected]]);
+    expect(await catalogCards()).toEqual([[popular.slug, expected], [recent.slug, expected]]);
+    expect(db.accountBalance.findUnique).not.toHaveBeenCalled();
   });
 });

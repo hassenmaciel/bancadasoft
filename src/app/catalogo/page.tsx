@@ -14,7 +14,10 @@ export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "Catálogo | BancadaSoft", description: "Ferramentas, licenças, aluguéis e serviços para assistência técnica mobile." };
 
 export default async function CatalogPage({searchParams}:{searchParams:Promise<Record<string,string|string[]|undefined>>}){
-  const viewer=await session();const productDto=(product:Parameters<typeof mapProductDto>[0])=>mapProductDto(product,viewer);
+  const viewer=await session();
+  // PREMIUM_PLUS: o saldo decide se o cartão mostra o preço Premium Plus (ver productDto).
+  const balance=viewer?.customerTier==="PREMIUM_PLUS"?await prisma.accountBalance.findUnique({where:{userId:viewer.id},select:{enabled:true,balanceCents:true}}):null;
+  const productDto=(product:Parameters<typeof mapProductDto>[0])=>mapProductDto(product,viewer,balance);
   const raw=await searchParams;const q=typeof raw.q==="string"?raw.q:"";const tipo=typeof raw.tipo==="string"?raw.tipo:"";const categoria=typeof raw.categoria==="string"?raw.categoria:"";const ordem=raw.ordem==="recentes"?"recent":raw.ordem==="nome"?"name":"priority";
   const popularOnly=raw.ordem==="populares";
   const products=popularOnly?(await popularPublicProducts(120)).products:await findPublicCatalog({query:q||undefined,type:parsePublicProductType(tipo),category:categoria||undefined,sort:ordem});
