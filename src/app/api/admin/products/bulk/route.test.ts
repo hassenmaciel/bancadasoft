@@ -1,10 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { requireAdmin, updateMany, auditCreate, transaction } = vi.hoisted(() => {
+const { requireAdmin, updateMany, findMany, auditCreate, transaction } = vi.hoisted(() => {
   const updateMany = vi.fn();
+  const findMany = vi.fn();
   const auditCreate = vi.fn();
-  const transaction = vi.fn(async (callback: (tx: unknown) => unknown) => callback({ product: { updateMany }, auditLog: { create: auditCreate } }));
-  return { requireAdmin: vi.fn(), updateMany, auditCreate, transaction };
+  const transaction = vi.fn(async (callback: (tx: unknown) => unknown) => callback({ product: { updateMany, findMany }, auditLog: { create: auditCreate } }));
+  return { requireAdmin: vi.fn(), updateMany, findMany, auditCreate, transaction };
 });
 vi.mock("@/lib/auth", () => ({ requireAdmin }));
 vi.mock("@/lib/prisma", () => ({ prisma: { $transaction: transaction } }));
@@ -34,5 +35,45 @@ describe("admin product bulk route", () => {
     expect(response.status).toBe(200);
     expect(updateMany).toHaveBeenCalledWith({ where: { id: { in: ["p1", "p2"] } }, data: { status: "PAUSED" } });
     expect(auditCreate).toHaveBeenCalledOnce();
+  });
+
+  describe("PUBLISH: bloqueio sem produto do fornecedor", () => {
+    const link = { active: true, mode: "REAL", technicalEligibility: "READY", provider: { id: "hu", code: "heartunlocks", active: true } };
+    const publish = () => PATCH(new Request("https://test/api/admin/products/bulk", { method: "PATCH", body: JSON.stringify({ ids: ["p1", "p2"], action: "PUBLISH" }) }));
+    beforeEach(() => { findMany.mockReset(); requireAdmin.mockResolvedValue({ id: "admin-1" }); updateMany.mockResolvedValue({ count: 2 }); });
+
+    it("não publica nenhum se um AUTOMATIC não tiver vínculo e diz qual", async () => {
+      findMany.mockResolvedValue([
+        { name: "TSM", deliveryType: "AUTOMATIC", variants: [], providerProducts: [link] },
+        { name: "Borneo 3 meses", deliveryType: "AUTOMATIC", variants: [], providerProducts: [] },
+      ]);
+      const response = await publish();
+      expect(response.status).toBe(422);
+      expect((await response.json()).error).toBe("Nenhum produto foi publicado. Falta o produto do fornecedor em: Borneo 3 meses.");
+      expect(updateMany).not.toHaveBeenCalled();
+      expect(auditCreate).not.toHaveBeenCalled();
+    });
+
+    it("produto com variantes mantém a regra atual na mensagem", async () => {
+      findMany.mockResolvedValue([{ name: "Griffin", deliveryType: "AUTOMATIC", variants: [{ active: false, publicationBlocked: false, priceCents: 1, normalPriceCents: 1 }], providerProducts: [] }]);
+      const response = await publish();
+      expect(response.status).toBe(422);
+      expect((await response.json()).error).toBe("Nenhum produto foi publicado. Falta uma variante ativa, liberada e com preço em: Griffin.");
+    });
+
+    it("publica quando todos têm vínculo ou variante válida", async () => {
+      findMany.mockResolvedValue([
+        { name: "TSM", deliveryType: "AUTOMATIC", variants: [], providerProducts: [link] },
+        { name: "Manual", deliveryType: "MANUAL", variants: [], providerProducts: [] },
+      ]);
+      const response = await publish();
+      expect(response.status).toBe(200);
+      expect(updateMany).toHaveBeenCalledWith({ where: { id: { in: ["p1", "p2"] } }, data: { status: "PUBLISHED" } });
+    });
+
+    it("PAUSE não consulta vínculos", async () => {
+      await PATCH(new Request("https://test/api/admin/products/bulk", { method: "PATCH", body: JSON.stringify({ ids: ["p1"], action: "PAUSE" }) }));
+      expect(findMany).not.toHaveBeenCalled();
+    });
   });
 });
