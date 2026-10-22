@@ -72,3 +72,42 @@ describe("PUT /api/admin/products/[id] — tipo Recarga de saldo", () => {
     expect((await response.json()).data.type).toBe("BALANCE_TOPUP");
   });
 });
+
+describe("PUT /api/admin/products/[id] — bloqueio de publicação sem produto do fornecedor", () => {
+  const link = { id: "pp1", productId: "p1", externalProductId: "2191", active: true, mode: "REAL", technicalEligibility: "READY", providerCostCents: 520, provider: { id: "hu", code: "heartunlocks", active: true } };
+  beforeEach(() => {
+    vi.clearAllMocks();
+    requireAdmin.mockResolvedValue({ id: "admin-1", role: "ADMIN" });
+    db.product.update.mockResolvedValue(stored(null));
+  });
+
+  it("recusa publicar AUTOMATIC sem vínculo, com mensagem clara e sem gravar", async () => {
+    db.product.findUnique.mockResolvedValue({ ...stored(null), variants: [], providerProducts: [] });
+    const response = await put({ ...body(null), status: "PUBLISHED" });
+    expect(response.status).toBe(422);
+    expect((await response.json()).error).toMatch(/^Falta o produto do fornecedor/);
+    expect(db.product.update).not.toHaveBeenCalled();
+  });
+
+  it("publica AUTOMATIC com exatamente um vínculo elegível", async () => {
+    db.product.findUnique.mockResolvedValue({ ...stored(null), variants: [], providerProducts: [link] });
+    expect((await put({ ...body(null), status: "PUBLISHED" })).status).toBe(200);
+  });
+
+  it("usa o tipo de entrega enviado: MANUAL sem vínculo publica", async () => {
+    db.product.findUnique.mockResolvedValue({ ...stored(null), variants: [], providerProducts: [] });
+    expect((await put({ ...body(null), deliveryType: "MANUAL", status: "PUBLISHED" })).status).toBe(200);
+  });
+
+  it("produto com variantes mantém a regra atual", async () => {
+    db.product.findUnique.mockResolvedValue({ ...stored(null), variants: [{ active: false, publicationBlocked: false, priceCents: 1000, normalPriceCents: 1000 }], providerProducts: [] });
+    const response = await put({ ...body(null), status: "PUBLISHED" });
+    expect(response.status).toBe(422);
+    expect((await response.json()).error).toBe("Configure ao menos uma variante ativa, liberada e com preço antes de publicar.");
+  });
+
+  it("salvar como rascunho sem vínculo continua permitido", async () => {
+    db.product.findUnique.mockResolvedValue({ ...stored(null), variants: [], providerProducts: [] });
+    expect((await put(body(null))).status).toBe(200);
+  });
+});

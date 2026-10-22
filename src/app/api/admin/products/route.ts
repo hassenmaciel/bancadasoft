@@ -3,6 +3,7 @@ import { requireAdmin } from "@/lib/auth";
 import { adminProductDto, productInputSchema } from "@/lib/admin-catalog";
 import { prisma } from "@/lib/prisma";
 import { audit } from "@/lib/audit";
+import { publicationError } from "@/lib/admin-provider-link";
 import { calculateProductPricing, loadPricingContext, pricingUpdateData } from "@/lib/pricing-service";
 
 const include = { category: true, brand: true, providerProducts: { include: { provider: true } }, variants: { include: { providerProduct: { include: { provider: true } } } } } as const;
@@ -23,6 +24,9 @@ export async function POST(request: Request) {
   catch { return NextResponse.json({ error: "Não autorizado." }, { status: 403 }); }
   const parsed = productInputSchema.safeParse(await request.json());
   if (!parsed.success) return NextResponse.json({ error: parsed.error.issues[0]?.message ?? "Dados inválidos." }, { status: 422 });
+  // Produto novo ainda não tem variante nem vínculo com o fornecedor.
+  const blocked = parsed.data.status === "PUBLISHED" && publicationError({ deliveryType: parsed.data.deliveryType });
+  if (blocked) return NextResponse.json({ error: blocked }, { status: 422 });
   const category = await prisma.category.findUnique({ where: { id: parsed.data.categoryId }, select: { id: true } });
   if (!category) return NextResponse.json({ error: "Categoria não encontrada." }, { status: 422 });
   const context = await loadPricingContext();

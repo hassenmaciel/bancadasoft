@@ -6,7 +6,7 @@ import { audit, safeChangeMetadata } from "@/lib/audit";
 import { productDeleteDecision } from "@/lib/admin-rules";
 import { removeAdminAsset } from "@/lib/admin-storage";
 import { calculateProductPricing, loadPricingContext, pricingUpdateData } from "@/lib/pricing-service";
-import { canPublishVariantProduct } from "@/lib/product-variants";
+import { publicationError } from "@/lib/admin-provider-link";
 type Context = { params: Promise<{ id: string }> };
 const include = {
   category: true,
@@ -41,17 +41,16 @@ export async function PUT(request: Request, context: Context) {
       { status: 422 },
     );
   const { id } = await context.params,
-    previous = await prisma.product.findUnique({ where: { id }, include: { variants: true } });
+    previous = await prisma.product.findUnique({ where: { id }, include: { variants: true, providerProducts: { include: { provider: true } } } });
   if (!previous)
     return NextResponse.json(
       { error: "Produto não encontrado." },
       { status: 404 },
     );
-  if (parsed.data.status === "PUBLISHED" && !canPublishVariantProduct(previous.variants))
-    return NextResponse.json(
-      { error: "Configure ao menos uma variante ativa, liberada e com preço antes de publicar." },
-      { status: 422 },
-    );
+  const blocked =
+    parsed.data.status === "PUBLISHED" &&
+    publicationError({ ...previous, deliveryType: parsed.data.deliveryType });
+  if (blocked) return NextResponse.json({ error: blocked }, { status: 422 });
   try {
     const pricingContext = await loadPricingContext();
     const input = {
