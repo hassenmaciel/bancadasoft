@@ -437,6 +437,7 @@ export default function ProductForm({
             value={image}
             onChange={setImage}
             label="Imagem do produto"
+            hint="Tamanho recomendado: 1600 x 830 px (proporção 1,93:1)."
           />
         </fieldset>
         {message && <p className="form-message">{message}</p>}
