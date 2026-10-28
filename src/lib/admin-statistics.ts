@@ -342,3 +342,156 @@ export async function getCustomerHistory(userId: string) {
     summarizeResellerSales(resellerSales).revenueCents;
   return { ...user, orders, resellerSales, countedCents };
 }
+
+// ---------------------------------------------------------------------------
+// Líquido e sobra (estimada). Mesmo recorte de getAdminStatistics. A taxa do
+// PIX vem do netValue gravado no webhook PAYMENT_RECEIVED (PaymentEvent.payload);
+// sem ele, a taxa configurada entra como estimativa. Saldo e revenda não têm
+// taxa. O custo usa ProviderOrder.costCents no câmbio configurado, sem o
+// exchangeBufferBps (que é só margem de segurança do cálculo de preço).
+
+export const ASAAS_PAYMENT_PROVIDER = "asaas";
+export const SANDBOX_FULFILLMENT_PROVIDER = "mock-sandbox";
+
+export type NetFeeConfig = {
+  exchangeRateMicros: number | null;
+  asaasFeeType: "FIXED" | "PERCENTAGE" | "COMBINED";
+  asaasFixedFeeCents: number;
+  asaasPercentBps: number;
+};
+export type NetOrder = {
+  id: string;
+  status: OrderStatus;
+  totalCents: number;
+  payment: { id: string; provider: string; amountCents: number } | null;
+  providerOrders: Array<{ status: string; costCents: number | null; currency: string; provider: { code: string } }>;
+};
+export type NetReviewReason = "SEM_CUSTO" | "FORNECEDOR_NAO_CONCLUIDO" | "MOCK_SANDBOX" | "SEM_CAMBIO" | "REVENDA_SEM_CUSTO";
+export type NetReviewItem = { id: string; kind: "order" | "reseller"; reason: NetReviewReason; totalCents: number };
+
+export function configuredAsaasFeeCents(amountCents: number, config: NetFeeConfig | null) {
+  if (!config) return 0;
+  const fixed = config.asaasFeeType === "PERCENTAGE" ? 0 : config.asaasFixedFeeCents;
+  const percent = config.asaasFeeType === "FIXED" ? 0 : Math.round((amountCents * config.asaasPercentBps) / 10_000);
+  return fixed + percent;
+}
+
+// Taxa de um pedido: só pagamento Asaas tem taxa; saldo (e qualquer outro) = 0.
+function orderFee(order: NetOrder, netValues: Map<string, number>, config: NetFeeConfig | null) {
+  const payment = order.payment;
+  if (!payment || payment.provider !== ASAAS_PAYMENT_PROVIDER) return { feeCents: 0, pix: false, estimated: false };
+  const net = netValues.get(payment.id);
+  if (net === undefined) return { feeCents: configuredAsaasFeeCents(payment.amountCents, config), pix: true, estimated: true };
+  return { feeCents: payment.amountCents - net, pix: true, estimated: false };
+}
+
+// Custo em BRL do pedido, ou o motivo de ficar fora do custo.
+function orderCost(order: NetOrder, rateMicros: number | null): { costCents: number } | { reason: NetReviewReason } {
+  const providerOrder = order.providerOrders[0];
+  if (!providerOrder || providerOrder.costCents === null) return { reason: "SEM_CUSTO" };
+  if (providerOrder.provider.code === SANDBOX_FULFILLMENT_PROVIDER) return { reason: "MOCK_SANDBOX" };
+  const delivered = order.status === OrderStatus.DELIVERED || order.status === OrderStatus.FULFILLED;
+  if (providerOrder.status === "FAILED" || providerOrder.status === "CANCELLED" || (delivered && providerOrder.status !== "COMPLETED"))
+    return { reason: "FORNECEDOR_NAO_CONCLUIDO" };
+  const currency = providerOrder.currency.toUpperCase();
+  if (currency === "BRL") return { costCents: providerOrder.costCents };
+  if (currency === "USD" && rateMicros && rateMicros > 0) return { costCents: Math.round((providerOrder.costCents * rateMicros) / 1_000_000) };
+  return { reason: "SEM_CAMBIO" };
+}
+
+export function summarizeNet(input: {
+  orders: NetOrder[];
+  topups: NetOrder[];
+  resellerSales: ResellerSale[];
+  netValues: Map<string, number>;
+  config: NetFeeConfig | null;
+}) {
+  const { netValues, config } = input;
+  const rateMicros = config?.exchangeRateMicros ?? null;
+  let grossCents = 0, feeCents = 0, costCents = 0, pixPayments = 0, estimatedFeeOrders = 0, costedOrders = 0;
+  const review: NetReviewItem[] = [];
+  for (const order of input.orders) {
+    grossCents += order.totalCents;
+    const fee = orderFee(order, netValues, config);
+    feeCents += fee.feeCents;
+    if (fee.pix) pixPayments++;
+    if (fee.estimated) estimatedFeeOrders++;
+    const cost = orderCost(order, rateMicros);
+    if ("costCents" in cost) {
+      costCents += cost.costCents;
+      costedOrders++;
+    } else review.push({ id: order.id, kind: "order", reason: cost.reason, totalCents: order.totalCents });
+  }
+  // Revenda: debitada do saldo (sem taxa) e sem ProviderOrder com custo.
+  for (const sale of input.resellerSales.filter((entry) => !entry.refunded)) {
+    grossCents += sale.amountCents;
+    review.push({ id: sale.entryId, kind: "reseller", reason: "REVENDA_SEM_CUSTO", totalCents: sale.amountCents });
+  }
+  const topups = { count: 0, grossCents: 0, feeCents: 0, estimated: 0 };
+  for (const order of input.topups) {
+    const fee = orderFee(order, netValues, config);
+    topups.count++;
+    topups.grossCents += order.totalCents;
+    topups.feeCents += fee.feeCents;
+    if (fee.estimated) topups.estimated++;
+  }
+  const netCents = grossCents - feeCents;
+  return {
+    grossCents,
+    asaasFeeCents: feeCents,
+    netCents,
+    costCents,
+    leftoverCents: netCents - costCents,
+    pixPayments,
+    estimatedFeeOrders,
+    costedOrders,
+    exchangeRateMicros: rateMicros,
+    topups: { ...topups, netCents: topups.grossCents - topups.feeCents },
+    review,
+  };
+}
+
+const netOrderSelect = {
+  id: true,
+  status: true,
+  totalCents: true,
+  payment: { select: { id: true, provider: true, amountCents: true } },
+  providerOrders: { select: { status: true, costCents: true, currency: true, provider: { select: { code: true } } } },
+} satisfies Prisma.OrderSelect;
+
+// Somente leitura e parametrizada: netValue (reais) do PAYMENT_RECEIVED mais
+// recente de cada pagamento, convertido para centavos.
+async function loadAsaasNetValues(paymentIds: string[]) {
+  if (!paymentIds.length) return new Map<string, number>();
+  const rows = await prisma.$queryRaw<Array<{ paymentId: string; netValue: string }>>`
+    SELECT DISTINCT ON (e."paymentId") e."paymentId" AS "paymentId", e.payload->'payment'->>'netValue' AS "netValue"
+    FROM "PaymentEvent" e
+    WHERE e."paymentId" = ANY(${paymentIds})
+      AND e.payload->>'event' = 'PAYMENT_RECEIVED'
+      AND e.payload->'payment'->>'netValue' IS NOT NULL
+    ORDER BY e."paymentId", e."createdAt" DESC`;
+  const values = new Map<string, number>();
+  for (const row of rows) {
+    const reais = Number(row.netValue);
+    if (Number.isFinite(reais)) values.set(row.paymentId, Math.round(reais * 100));
+  }
+  return values;
+}
+
+export async function getAdminNetSummary(period: StatsPeriod, now = new Date()) {
+  const start = periodStart(period, now);
+  const [orders, topups, resellerSales, config] = await Promise.all([
+    prisma.order.findMany({ where: buildStatsOrderWhere(start), select: netOrderSelect }),
+    prisma.order.findMany({ where: buildTopupOrderWhere(start), select: netOrderSelect }),
+    loadResellerSales(buildResellerPurchaseWhere(start)),
+    prisma.pricingConfiguration.findUnique({
+      where: { id: "default" },
+      select: { exchangeRateMicros: true, asaasFeeType: true, asaasFixedFeeCents: true, asaasPercentBps: true },
+    }),
+  ]);
+  const asaasPaymentIds = [...orders, ...topups].flatMap((order) =>
+    order.payment?.provider === ASAAS_PAYMENT_PROVIDER ? [order.payment.id] : [],
+  );
+  const netValues = await loadAsaasNetValues(asaasPaymentIds);
+  return summarizeNet({ orders, topups, resellerSales, netValues, config });
+}

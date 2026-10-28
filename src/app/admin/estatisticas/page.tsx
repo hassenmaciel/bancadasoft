@@ -4,11 +4,13 @@ import {
   RESELLER_UNKNOWN_PRODUCT_ID,
   STATS_PERIODS,
   STATS_PERIOD_LABELS,
+  getAdminNetSummary,
   getAdminStatistics,
   getCustomerBalances,
   parseBalanceSort,
   parseStatsPeriod,
   type CustomerRankRow,
+  type NetReviewReason,
   type ProductRankRow,
 } from "@/lib/admin-statistics";
 
@@ -16,6 +18,13 @@ export const dynamic = "force-dynamic";
 const money = (cents: number) =>
   new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(cents / 100);
 const customerHref = (id: string) => `/admin/estatisticas/clientes/${id}`;
+const REVIEW_REASON_LABELS: Record<NetReviewReason, string> = {
+  SEM_CUSTO: "Sem custo do fornecedor",
+  FORNECEDOR_NAO_CONCLUIDO: "Entregue sem conclusão no fornecedor (falha/processando)",
+  MOCK_SANDBOX: "Atendido pelo mock-sandbox",
+  SEM_CAMBIO: "Custo em moeda sem câmbio configurado",
+  REVENDA_SEM_CUSTO: "Venda da API de revenda (sem custo registrado)",
+};
 
 function CustomerTable({ title, rows }: { title: string; rows: CustomerRankRow[] }) {
   return (
@@ -70,7 +79,7 @@ export default async function StatisticsPage({ searchParams }: { searchParams: P
   const params = await searchParams;
   const period = parseStatsPeriod(params.periodo);
   const balanceSort = parseBalanceSort(params.saldo);
-  const [stats, balances] = await Promise.all([getAdminStatistics(period), getCustomerBalances(balanceSort)]);
+  const [stats, balances, net] = await Promise.all([getAdminStatistics(period), getCustomerBalances(balanceSort), getAdminNetSummary(period)]);
   const query = (next: { periodo?: string; saldo?: string }) =>
     `?${new URLSearchParams({ periodo: next.periodo ?? period, saldo: next.saldo ?? balanceSort })}`;
   const cards: Array<[string, string | number, string?]> = [
@@ -80,6 +89,17 @@ export default async function StatisticsPage({ searchParams }: { searchParams: P
     ["Loja / API de revenda", `${money(stats.store.revenueCents)} / ${money(stats.reseller.revenueCents)}`],
     ["Recargas de saldo", `${stats.topups.paidOrders} · ${money(stats.topups.revenueCents)}`, "Fora do faturamento: o saldo entra quando é usado."],
   ];
+  const rate = net.exchangeRateMicros ? `câmbio atual ${money(Math.round(net.exchangeRateMicros / 10_000))}` : "sem câmbio configurado";
+  const estimatedFees = net.estimatedFeeOrders ? ` · ${net.estimatedFeeOrders} pela taxa configurada (estimado)` : "";
+  const netCards: Array<[string, string, string]> = [
+    ["Taxas Asaas", money(net.asaasFeeCents), `${net.pixPayments} PIX · lido do webhook do Asaas${estimatedFees}. Saldo e revenda não têm taxa.`],
+    ["Líquido (após taxa)", money(net.netCents), "Faturamento bruto menos as taxas Asaas."],
+    ["Custo do fornecedor", money(net.costCents), `Estimado: ${net.costedOrders} pedido(s), ${rate}, sem a margem de câmbio.`],
+    ["Sobra real (estimada)", money(net.leftoverCents), `Líquido − custo. Não desconta as taxas de recarga (${money(net.topups.feeCents)}).`],
+  ];
+  const reviewCounts = Object.entries(
+    net.review.reduce<Record<string, number>>((acc, item) => ({ ...acc, [item.reason]: (acc[item.reason] ?? 0) + 1 }), {}),
+  ) as Array<[NetReviewReason, number]>;
   return (
     <>
       <header className="admin-heading">
@@ -96,6 +116,28 @@ export default async function StatisticsPage({ searchParams }: { searchParams: P
       </nav>
       <section className="metric-grid">
         {cards.map(([label, value, hint]) => <article className="metric-card" key={label}><span>{label}</span><strong>{value}</strong>{hint && <small className="cell-subtitle">{hint}</small>}</article>)}
+      </section>
+      <section className="admin-section">
+        <div className="section-title"><h2>Líquido e sobra (estimado)</h2></div>
+        <section className="metric-grid">
+          {netCards.map(([label, value, hint]) => <article className="metric-card" key={label}><span>{label}</span><strong>{value}</strong><small className="cell-subtitle">{hint}</small></article>)}
+        </section>
+        <p className="stats-note">
+          Taxas de recarga: {net.topups.count} recarga(s) · bruto {money(net.topups.grossCents)} · taxa {money(net.topups.feeCents)} · líquido {money(net.topups.netCents)}
+          {net.topups.estimated ? ` (${net.topups.estimated} pela taxa configurada)` : ""}.
+        </p>
+        <p className="stats-note">
+          Para revisar (fora do custo): {net.review.length}
+          {reviewCounts.map(([reason, count]) => ` · ${REVIEW_REASON_LABELS[reason]}: ${count}`)}
+          {net.review.some((item) => item.kind === "order") && (
+            <>
+              {" — "}
+              {net.review.filter((item) => item.kind === "order").map((item, index) => (
+                <span key={item.id}>{index > 0 && ", "}<Link href={`/admin/pedidos/${item.id}`}>#{item.id.slice(-8).toUpperCase()}</Link></span>
+              ))}
+            </>
+          )}
+        </p>
       </section>
       <section className="admin-section">
         <div className="section-title"><h2>Pedidos por status</h2></div>

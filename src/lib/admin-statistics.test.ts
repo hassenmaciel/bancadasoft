@@ -11,6 +11,8 @@ import {
   buildStatsOrderWhere,
   buildStatusBreakdownWhere,
   buildTopupOrderWhere,
+  configuredAsaasFeeCents,
+  getAdminNetSummary,
   getAdminStatistics,
   getCustomerBalances,
   getCustomerHistory,
@@ -25,8 +27,12 @@ import {
   refundReferencesFor,
   resellerSoldItems,
   statusBreakdown,
+  summarizeNet,
   summarizeResellerSales,
   summarizeTotals,
+  type NetFeeConfig,
+  type NetOrder,
+  type ResellerSale,
 } from "./admin-statistics";
 
 const now = new Date("2026-10-18T12:00:00Z");
@@ -308,5 +314,106 @@ describe("getCustomerHistory", () => {
   it("cliente inexistente devolve null", async () => {
     prismaMock.current = { user: { findUnique: vi.fn(async () => null) }, accountLedgerEntry: { findMany: vi.fn(async () => []) } };
     expect(await getCustomerHistory("x")).toBeNull();
+  });
+});
+
+describe("líquido e sobra (estimada)", () => {
+  const config: NetFeeConfig = { exchangeRateMicros: 5_500_000, asaasFeeType: "FIXED", asaasFixedFeeCents: 99, asaasPercentBps: 0 };
+  const done = (costCents: number | null, currency = "USD", code = "heartunlocks", status = "COMPLETED") => [{ status, costCents, currency, provider: { code } }];
+  const order = (id: string, provider: string, totalCents: number, providerOrders: NetOrder["providerOrders"] = done(1000), status: NetOrder["status"] = "DELIVERED"): NetOrder => ({
+    id, status, totalCents, payment: { id: `pay-${id}`, provider, amountCents: totalCents }, providerOrders,
+  });
+  const sale = (entryId: string, amountCents: number, refunded = false): ResellerSale => ({
+    entryId, userId: "u1", amountCents, externalReference: `ref-${entryId}`, createdAt: now, refunded, productId: "p", productName: "Ticket",
+  });
+  const summarize = (input: Partial<Parameters<typeof summarizeNet>[0]>) =>
+    summarizeNet({ orders: [], topups: [], resellerSales: [], netValues: new Map(), config, ...input });
+
+  it("PIX com netValue: taxa = bruto − líquido do webhook", () => {
+    const data = summarize({ orders: [order("a", "asaas", 2900, done(500))], netValues: new Map([["pay-a", 2801]]) });
+    expect(data).toMatchObject({ grossCents: 2900, asaasFeeCents: 99, netCents: 2801, pixPayments: 1, estimatedFeeOrders: 0 });
+  });
+
+  it("PIX sem netValue cai na taxa configurada e conta como estimado", () => {
+    const data = summarize({ orders: [order("a", "asaas", 2000, done(500))] });
+    expect(data).toMatchObject({ asaasFeeCents: 99, netCents: 1901, estimatedFeeOrders: 1 });
+    expect(configuredAsaasFeeCents(10_000, { ...config, asaasFeeType: "PERCENTAGE", asaasPercentBps: 199 })).toBe(199);
+    expect(configuredAsaasFeeCents(10_000, { ...config, asaasFeeType: "COMBINED", asaasPercentBps: 100 })).toBe(199);
+    expect(configuredAsaasFeeCents(10_000, null)).toBe(0);
+  });
+
+  it("saldo e revenda não têm taxa; revenda estornada fica fora", () => {
+    const data = summarize({ orders: [order("b", "balance", 3000, done(500))], resellerSales: [sale("r1", 2500), sale("r2", 1000, true)] });
+    expect(data).toMatchObject({ grossCents: 5500, asaasFeeCents: 0, netCents: 5500, pixPayments: 0 });
+    expect(data.review).toEqual([{ id: "r1", kind: "reseller", reason: "REVENDA_SEM_CUSTO", totalCents: 2500 }]);
+  });
+
+  it("recarga Asaas vira linha à parte e não entra no líquido nem na sobra", () => {
+    const data = summarize({ topups: [order("t", "asaas", 3000, done(null, "BRL", "internal-balance"))], netValues: new Map([["pay-t", 2901]]) });
+    expect(data.topups).toEqual({ count: 1, grossCents: 3000, feeCents: 99, estimated: 0, netCents: 2901 });
+    expect(data).toMatchObject({ grossCents: 0, asaasFeeCents: 0, netCents: 0, leftoverCents: 0, review: [] });
+  });
+
+  it("custo em USD pelo câmbio configurado, sem buffer; BRL direto; sobra = líquido − custo", () => {
+    const data = summarize({
+      orders: [order("u", "asaas", 2900, done(150)), order("r", "balance", 2000, done(800, "BRL"))],
+      netValues: new Map([["pay-u", 2801]]),
+    });
+    expect(data).toMatchObject({ costCents: 825 + 800, costedOrders: 2, netCents: 4801, leftoverCents: 4801 - 1625, exchangeRateMicros: 5_500_000 });
+  });
+
+  it("sem custo, fornecedor não concluído em pedido entregue, mock-sandbox e USD sem câmbio vão para revisar", () => {
+    const data = summarizeNet({
+      orders: [
+        order("semcusto", "asaas", 1000, []),
+        order("nulo", "asaas", 1000, done(null)),
+        order("falhou", "asaas", 1000, done(300, "USD", "heartunlocks", "FAILED")),
+        order("parado", "asaas", 1000, done(300, "USD", "heartunlocks", "PROCESSING")),
+        order("andamento", "asaas", 1000, done(100, "USD", "heartunlocks", "PROCESSING"), "PROCESSING"),
+        order("sandbox", "asaas", 1000, done(1000, "BRL", "mock-sandbox")),
+        order("semcambio", "balance", 1000, done(100)),
+      ],
+      topups: [], resellerSales: [], netValues: new Map(), config: { ...config, exchangeRateMicros: null },
+    });
+    expect(data.review.map((item) => [item.id, item.reason])).toEqual([
+      ["semcusto", "SEM_CUSTO"], ["nulo", "SEM_CUSTO"], ["falhou", "FORNECEDOR_NAO_CONCLUIDO"], ["parado", "FORNECEDOR_NAO_CONCLUIDO"],
+      ["andamento", "SEM_CAMBIO"], ["sandbox", "MOCK_SANDBOX"], ["semcambio", "SEM_CAMBIO"],
+    ]);
+    expect(data).toMatchObject({ costCents: 0, costedOrders: 0, grossCents: 7000 });
+  });
+
+  it("getAdminNetSummary usa o recorte das estatísticas (sem mock/reembolso/recarga) e SQL parametrizado", async () => {
+    const start = periodStart("30", now);
+    const findMany = vi.fn(async ({ where }: { where: unknown }) =>
+      JSON.stringify(where) === JSON.stringify(buildTopupOrderWhere(start))
+        ? [order("t", "asaas", 3000, done(null, "BRL", "internal-balance"))]
+        : [order("a", "asaas", 2900, done(150)), order("b", "balance", 2000, done(150))]);
+    const queryRaw = vi.fn(async () => [{ paymentId: "pay-a", netValue: "28.01" }, { paymentId: "pay-t", netValue: "29.01" }]);
+    prismaMock.current = {
+      order: { findMany },
+      accountLedgerEntry: { findMany: vi.fn(async () => []) },
+      pricingConfiguration: { findUnique: vi.fn(async () => config) },
+      $queryRaw: queryRaw as unknown as Record<string, unknown>,
+    };
+    const data = await getAdminNetSummary("30", now);
+    expect(findMany).toHaveBeenCalledWith(expect.objectContaining({ where: buildStatsOrderWhere(start) }));
+    expect(findMany).toHaveBeenCalledWith(expect.objectContaining({ where: buildTopupOrderWhere(start) }));
+    const [strings, ...values] = queryRaw.mock.calls[0] as unknown as [TemplateStringsArray, ...unknown[]];
+    expect(values).toEqual([["pay-a", "pay-t"]]);
+    expect(strings.join("?")).not.toContain("pay-a");
+    expect(strings.join("?")).toContain("PAYMENT_RECEIVED");
+    expect(data).toMatchObject({ grossCents: 4900, asaasFeeCents: 99, netCents: 4801, costCents: 825 * 2, topups: { feeCents: 99, netCents: 2901 } });
+  });
+
+  it("não consulta netValue quando não há pagamento Asaas", async () => {
+    const queryRaw = vi.fn();
+    prismaMock.current = {
+      order: { findMany: vi.fn(async () => []) },
+      accountLedgerEntry: { findMany: vi.fn(async () => []) },
+      pricingConfiguration: { findUnique: vi.fn(async () => null) },
+      $queryRaw: queryRaw as unknown as Record<string, unknown>,
+    };
+    expect(await getAdminNetSummary("all", now)).toMatchObject({ grossCents: 0, netCents: 0, exchangeRateMicros: null });
+    expect(queryRaw).not.toHaveBeenCalled();
   });
 });
