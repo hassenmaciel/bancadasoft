@@ -3,5 +3,6 @@ import "./globals.css";
 import "./catalog.css";
 import "./checkout.css";
 import "./guest-delivery.css";
+import VercelAnalytics from "@/components/vercel-analytics";
 export const metadata: Metadata = { title: "BancadaSoft | Ferramentas para técnicos", description: "Ferramentas, licenças, aluguéis e serviços para assistência técnica mobile.", robots:{index:true,follow:true} };
-export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) { return <html lang="pt-BR"><body>{children}</body></html>; }
+export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) { return <html lang="pt-BR"><body>{children}<VercelAnalytics /></body></html>; }
