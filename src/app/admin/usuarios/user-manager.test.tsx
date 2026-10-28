@@ -16,6 +16,7 @@ const row = (role: string) => ({
   balanceTopupBlocked: false,
   active: true,
   createdAt: "2026-09-25T12:00:00.000Z",
+  hasWhatsapp: true,
   orderCount: 0,
   balance: null,
   resellerKeys: [],
@@ -61,5 +62,20 @@ describe("bloqueio de recarga na tela de usuários", () => {
     expect(off).toMatch(/<input type="checkbox"\/>Bloquear recarga/);
     const on = renderToStaticMarkup(<UserManager rows={[{ ...row("USER"), balanceTopupBlocked: true }]} currentAdminId="admin" />);
     expect(on).toMatch(/<input type="checkbox" checked=""\/>Bloquear recarga/);
+  });
+});
+
+describe("botão de WhatsApp na lista de usuários", () => {
+  const whatsappButton = (html: string) => html.match(/<button type="button"[^>]*>(WhatsApp|Sem WhatsApp)<\/button>/)?.[0] ?? "";
+
+  it("fica abaixo do e-mail e habilitado quando há número", () => {
+    const html = renderToStaticMarkup(<UserManager rows={[row("USER")]} currentAdminId="admin" />);
+    expect(html).toMatch(/user@example\.test<\/small><div class="inline-actions"><button type="button">WhatsApp<\/button>/);
+    expect(html).not.toContain("<th>Contato</th>");
+  });
+
+  it("fica desabilitado com 'Sem WhatsApp' quando não há número", () => {
+    const html = renderToStaticMarkup(<UserManager rows={[{ ...row("USER"), hasWhatsapp: false }]} currentAdminId="admin" />);
+    expect(whatsappButton(html)).toBe('<button type="button" disabled="">Sem WhatsApp</button>');
   });
 });

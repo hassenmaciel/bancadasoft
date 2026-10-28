@@ -1,5 +1,5 @@
 "use client";
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import AdminConfirmDialog from "@/components/admin-confirm-dialog";
 import ResellerKeysDialog, { type ResellerKeyRow } from "./reseller-keys-dialog";
@@ -14,6 +14,8 @@ type Row = {
   balanceTopupBlocked: boolean;
   active: boolean;
   createdAt: string;
+  // Só o indicador: número e CPF ficam fora do HTML da lista (ver /contact).
+  hasWhatsapp: boolean;
   orderCount: number;
   // null = linha de AccountBalance ainda não criada (equivale a saldo 0, desabilitado).
   balance: { enabled: boolean; balanceCents: number } | null;
@@ -21,6 +23,75 @@ type Row = {
 };
 const money = (cents: number) =>
   new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(cents / 100);
+const date = (iso: string) => new Intl.DateTimeFormat("pt-BR", { dateStyle: "short", timeStyle: "short" }).format(new Date(iso));
+type Contact = {
+  whatsappLink: string | null;
+  cpfCnpj: string | null;
+  createdAt: string;
+  orderCount: number;
+  lastOrderAt: string | null;
+  balance: { enabled: boolean; balanceCents: number } | null;
+};
+// Cada chamada grava USER_CONTACT_VIEWED na auditoria.
+async function fetchContact(userId: string): Promise<Contact> {
+  const response = await fetch(`/api/admin/users/${userId}/contact`, { method: "POST" }),
+    body = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(body.error ?? "Não foi possível carregar os dados do cadastro.");
+  return body.data;
+}
+function RegistrationDetails({ userId }: { userId: string }) {
+  const [state, setState] = useState<{ contact?: Contact; error?: string }>({});
+  useEffect(() => {
+    let alive = true;
+    fetchContact(userId).then(
+      (contact) => alive && setState({ contact }),
+      (error: Error) => alive && setState({ error: error.message }),
+    );
+    return () => {
+      alive = false;
+    };
+  }, [userId]);
+  const { contact, error } = state;
+  return (
+    <section>
+      <h2>Dados do cadastro</h2>
+      {error ? (
+        <p className="form-message form-error">{error}</p>
+      ) : !contact ? (
+        <p className="security-note">Carregando…</p>
+      ) : (
+        <dl>
+          <dt>WhatsApp</dt>
+          <dd>
+            {contact.whatsappLink ? (
+              <a href={contact.whatsappLink} target="_blank" rel="noopener noreferrer">
+                Abrir WhatsApp
+              </a>
+            ) : (
+              <button type="button" disabled>
+                Sem WhatsApp
+              </button>
+            )}
+          </dd>
+          <dt>CPF</dt>
+          <dd>{contact.cpfCnpj ?? "Não informado"}</dd>
+          <dt>Cadastro</dt>
+          <dd>{date(contact.createdAt)}</dd>
+          <dt>Pedidos</dt>
+          <dd>{contact.orderCount}</dd>
+          <dt>Último pedido</dt>
+          <dd>{contact.lastOrderAt ? date(contact.lastOrderAt) : "Nenhum"}</dd>
+          <dt>Saldo</dt>
+          <dd>
+            {contact.balance
+              ? `${money(contact.balance.balanceCents)}${contact.balance.enabled ? "" : " (desabilitado)"}`
+              : "Sem saldo"}
+          </dd>
+        </dl>
+      )}
+    </section>
+  );
+}
 export default function UserManager({
   rows,
   currentAdminId,
@@ -126,6 +197,21 @@ export default function UserManager({
       if (row.id === currentAdminId) router.push("/login");
     }
   }
+  async function openWhatsapp(row: Row) {
+    // A aba abre no próprio clique (depois do await o navegador bloquearia o
+    // pop-up) e só navega quando a rota devolve o link; opener zerado = noopener.
+    const tab = window.open("about:blank", "_blank");
+    if (tab) tab.opener = null;
+    try {
+      const { whatsappLink } = await fetchContact(row.id);
+      if (whatsappLink && tab) return tab.location.replace(whatsappLink);
+      tab?.close();
+      setMessage(whatsappLink ? "O navegador bloqueou a nova aba do WhatsApp." : "WhatsApp do cadastro ausente ou inválido.");
+    } catch (error) {
+      tab?.close();
+      setMessage((error as Error).message);
+    }
+  }
   async function purge(confirmEmail: string) {
     if (!purging) return;
     setBusy(true);
@@ -226,6 +312,11 @@ export default function UserManager({
                   <td>
                     {row.name}
                     <small className="cell-subtitle">{row.email}</small>
+                    <div className="inline-actions">
+                      <button type="button" disabled={!row.hasWhatsapp} onClick={() => void openWhatsapp(row)}>
+                        {row.hasWhatsapp ? "WhatsApp" : "Sem WhatsApp"}
+                      </button>
+                    </div>
                   </td>
                   <td>
                     <select
@@ -377,6 +468,7 @@ export default function UserManager({
                 </button>
               </div>
             </form>
+            <RegistrationDetails key={editing.id} userId={editing.id} />
             <form
               onSubmit={(event) => {
                 event.preventDefault();
