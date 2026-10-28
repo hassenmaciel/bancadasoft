@@ -18,6 +18,7 @@ export default async function UsersPage({ searchParams }: { searchParams: Promis
       balanceTopupBlocked: true,
       active: true,
       createdAt: true,
+      whatsapp: true,
       _count: { select: { orders: true } },
       accountBalance: { select: { enabled: true, balanceCents: true } },
       resellerApiKeys: {
@@ -73,6 +74,8 @@ export default async function UsersPage({ searchParams }: { searchParams: Promis
           balanceTopupBlocked: user.balanceTopupBlocked,
           active: user.active,
           createdAt: user.createdAt.toISOString(),
+          // Só o booleano vai para o client: número e CPF vêm da rota /contact, auditada.
+          hasWhatsapp: Boolean(user.whatsapp),
           orderCount: user._count.orders,
           balance: user.accountBalance,
           resellerKeys: user.resellerApiKeys.map((key) => ({
