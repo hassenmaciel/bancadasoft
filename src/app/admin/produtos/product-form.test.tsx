@@ -74,3 +74,59 @@ describe("Tipo Recarga de saldo no formulário de produto", () => {
     expect(productInputSchema.parse({ ...payload(null), type: "BALANCE_TOPUP" }).type).toBe("BALANCE_TOPUP");
   });
 });
+
+describe("Quantidade por pedido e confirmação sem texto no formulário de produto", () => {
+  const input = (html: string, name: string) => html.match(new RegExp(`<input[^>]*name="${name}"[^>]*>`))?.[0] ?? "";
+
+  it("carrega os valores atuais do produto (Phoenix 5/100/marcado)", () => {
+    const html = renderToStaticMarkup(<ProductForm product={adminProductDto({ ...source(null), type: "CREDIT", minQuantity: 5, maxQuantity: 100, acceptsSuccessWithoutText: true })} categories={[category]} brands={[]} />);
+    expect(input(html, "minQuantity")).toContain('value="5"');
+    expect(input(html, "maxQuantity")).toContain('value="100"');
+    expect(input(html, "minQuantity")).toContain('max="100"');
+    expect(input(html, "acceptsSuccessWithoutText")).toContain('checked=""');
+    expect(html).toContain("Aceitar confirmação do fornecedor sem texto (créditos)");
+    expect(html).toContain("&#x27;success&#x27; sem texto conta como entregue e gera nota de revisão manual.");
+    expect(html).toContain("Máximo 100.");
+  });
+
+  it("produto novo: 1, 1 e desmarcado", () => {
+    const html = renderToStaticMarkup(<ProductForm categories={[category]} brands={[]} />);
+    expect(input(html, "minQuantity")).toContain('value="1"');
+    expect(input(html, "maxQuantity")).toContain('value="1"');
+    expect(input(html, "acceptsSuccessWithoutText")).not.toContain("checked");
+  });
+
+  it("o DTO do Admin carrega os três campos", () => {
+    expect(adminProductDto({ ...source(null), minQuantity: 5, maxQuantity: 100, acceptsSuccessWithoutText: true })).toMatchObject({ minQuantity: 5, maxQuantity: 100, acceptsSuccessWithoutText: true });
+  });
+
+  it("schema: campos ausentes não aparecem no resultado (não alteram o produto)", () => {
+    const parsed = productInputSchema.parse(payload(null));
+    expect(parsed).not.toHaveProperty("minQuantity");
+    expect(parsed).not.toHaveProperty("maxQuantity");
+    expect(parsed).not.toHaveProperty("acceptsSuccessWithoutText");
+  });
+
+  it("schema: aceita a faixa 1..100 com máximo >= mínimo", () => {
+    expect(productInputSchema.parse({ ...payload(null), minQuantity: 5, maxQuantity: 100, acceptsSuccessWithoutText: true })).toMatchObject({ minQuantity: 5, maxQuantity: 100, acceptsSuccessWithoutText: true });
+    expect(productInputSchema.parse({ ...payload(null), minQuantity: 1, maxQuantity: 1, acceptsSuccessWithoutText: false })).toMatchObject({ minQuantity: 1, maxQuantity: 1, acceptsSuccessWithoutText: false });
+    expect(productInputSchema.parse({ ...payload(null), minQuantity: 7, maxQuantity: 7 })).toMatchObject({ minQuantity: 7, maxQuantity: 7 });
+  });
+
+  it.each([
+    ["mínimo 0", { minQuantity: 0, maxQuantity: 1 }, "A quantidade mínima é 1."],
+    ["máximo 101 (teto do Heart)", { minQuantity: 1, maxQuantity: 101 }, "A quantidade máxima é 100."],
+    ["fração", { minQuantity: 1.5, maxQuantity: 2 }, "A quantidade deve ser um número inteiro."],
+    ["máximo < mínimo", { minQuantity: 10, maxQuantity: 5 }, "A quantidade máxima deve ser maior ou igual à mínima."],
+    ["só o mínimo", { minQuantity: 5 }, "Informe a quantidade mínima e a máxima juntas."],
+    ["só o máximo", { maxQuantity: 5 }, "Informe a quantidade mínima e a máxima juntas."],
+  ])("schema recusa %s com mensagem em português", (_label, fields, message) => {
+    const result = productInputSchema.safeParse({ ...payload(null), ...fields });
+    expect(result.success).toBe(false);
+    expect(result.error?.issues[0]?.message).toBe(message);
+  });
+
+  it("schema recusa acceptsSuccessWithoutText não booleano", () => {
+    expect(productInputSchema.safeParse({ ...payload(null), acceptsSuccessWithoutText: "on" }).success).toBe(false);
+  });
+});

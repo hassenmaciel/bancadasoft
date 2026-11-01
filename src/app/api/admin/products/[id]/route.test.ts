@@ -14,6 +14,7 @@ vi.mock("@/lib/pricing-service", () => ({
   pricingUpdateData: vi.fn(() => ({})),
 }));
 import { PUT } from "./route";
+import { audit, safeChangeMetadata } from "@/lib/audit";
 
 const now = new Date("2026-09-25T12:00:00Z");
 const stored = (resellerPriceCents: number | null) => ({
@@ -109,5 +110,59 @@ describe("PUT /api/admin/products/[id] — bloqueio de publicação sem produto 
   it("salvar como rascunho sem vínculo continua permitido", async () => {
     db.product.findUnique.mockResolvedValue({ ...stored(null), variants: [], providerProducts: [] });
     expect((await put(body(null))).status).toBe(200);
+  });
+});
+
+describe("PUT /api/admin/products/[id] — quantidade por pedido e confirmação sem texto", () => {
+  // Phoenix como está no banco: 5/100 e aceita "success" sem texto.
+  const phoenix = { ...stored(null), type: "CREDIT", minQuantity: 5, maxQuantity: 100, acceptsSuccessWithoutText: true };
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    requireAdmin.mockResolvedValue({ id: "admin-1", role: "ADMIN" });
+    const actual = await vi.importActual<typeof import("@/lib/audit")>("@/lib/audit");
+    vi.mocked(safeChangeMetadata).mockImplementation(actual.safeChangeMetadata);
+  });
+
+  it("PUT sem os campos não os envia ao banco: Phoenix continua 5/100/true", async () => {
+    db.product.findUnique.mockResolvedValue({ ...phoenix, variants: [] });
+    db.product.update.mockResolvedValue(phoenix);
+    const response = await put({ ...body(null), type: "CREDIT" });
+    expect(response.status).toBe(200);
+    const data = db.product.update.mock.calls[0][0].data;
+    expect(data).not.toHaveProperty("minQuantity");
+    expect(data).not.toHaveProperty("maxQuantity");
+    expect(data).not.toHaveProperty("acceptsSuccessWithoutText");
+    expect((await response.json()).data).toMatchObject({ minQuantity: 5, maxQuantity: 100, acceptsSuccessWithoutText: true });
+    const metadata = vi.mocked(audit).mock.calls[0][4] as Record<string, unknown>;
+    expect(metadata).not.toHaveProperty("minQuantity");
+    expect(metadata).not.toHaveProperty("maxQuantity");
+    expect(metadata).not.toHaveProperty("acceptsSuccessWithoutText");
+  });
+
+  it("PUT com os campos grava e audita o antes/depois", async () => {
+    const before = { ...stored(null), minQuantity: 1, maxQuantity: 1, acceptsSuccessWithoutText: false };
+    const after = { ...before, minQuantity: 2, maxQuantity: 50, acceptsSuccessWithoutText: true };
+    db.product.findUnique.mockResolvedValue({ ...before, variants: [] });
+    db.product.update.mockResolvedValue(after);
+    const response = await put({ ...body(null), minQuantity: 2, maxQuantity: 50, acceptsSuccessWithoutText: true });
+    expect(response.status).toBe(200);
+    expect(db.product.update.mock.calls[0][0].data).toMatchObject({ minQuantity: 2, maxQuantity: 50, acceptsSuccessWithoutText: true });
+    expect(audit).toHaveBeenCalledWith("admin-1", "PRODUCT_UPDATED", "Product", "p1", expect.objectContaining({
+      minQuantity: { before: 1, after: 2 },
+      maxQuantity: { before: 1, after: 50 },
+      acceptsSuccessWithoutText: { before: false, after: true },
+    }));
+  });
+
+  it.each([
+    ["máximo 101", { minQuantity: 1, maxQuantity: 101 }, "A quantidade máxima é 100."],
+    ["máximo menor que o mínimo", { minQuantity: 10, maxQuantity: 5 }, "A quantidade máxima deve ser maior ou igual à mínima."],
+    ["só o mínimo", { minQuantity: 5 }, "Informe a quantidade mínima e a máxima juntas."],
+  ])("recusa %s sem gravar", async (_label, fields, message) => {
+    db.product.findUnique.mockResolvedValue({ ...phoenix, variants: [] });
+    const response = await put({ ...body(null), ...fields });
+    expect(response.status).toBe(422);
+    expect((await response.json()).error).toBe(message);
+    expect(db.product.update).not.toHaveBeenCalled();
   });
 });
