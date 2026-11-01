@@ -41,6 +41,20 @@ describe("provider product automation", () => {
     expect(schema[0]).toMatchObject({ key: "serial", label: "Serial", providerFieldName: "Serial " });
     expect(validateDynamicFieldValues(schema, { serial: "DX3FQCY40F0X" })).toEqual({ "Serial ": "DX3FQCY40F0X" });
   });
+  // Contrato de envio dos produtos Fenix Tool Pro e Moto M Tool (fieldSchema do
+  // banco): o valor sai sob providerFieldName, independente do rótulo exibido.
+  it("sends Fenix user, Moto M HWID + Quantity and Moto M EMAIL under providerFieldName", () => {
+    const fenix = dynamicFieldSchema({ requiredFields: [{ name: "user" }] });
+    expect(fenix).toMatchObject([{ key: "username", type: "username", providerFieldName: "user" }]);
+    expect(validateDynamicFieldValues(fenix, { username: "tecnico01" })).toEqual({ user: "tecnico01" });
+    const activation = dynamicFieldSchema({ requiredFields: [{ name: "Quantity" }, { name: "HWID" }] });
+    expect(activation.find((field) => field.key === "hwid")).toMatchObject({ type: "text", providerFieldName: "HWID" });
+    expect(validateDynamicFieldValues(activation, { hwid: "ABC-123-XYZ" })).toEqual({ Quantity: 1, HWID: "ABC-123-XYZ" });
+    const renew = dynamicFieldSchema({ requiredFields: [{ name: "EMAIL" }] });
+    expect(renew).toMatchObject([{ key: "email", type: "email", providerFieldName: "EMAIL" }]);
+    expect(validateDynamicFieldValues(renew, { email: "conta@motom.com" })).toEqual({ EMAIL: "conta@motom.com" });
+    expect(() => validateDynamicFieldValues(renew, { email: "nao-e-email" })).toThrow("PROVIDER_FIELD_INVALID:email");
+  });
   it("keeps incomplete contracts under manual review", () => {
     expect(classifyProviderProduct({ providerCode: "heartunlocks", label: "Unknown", providerCostCents: null, metadata: {} })).toMatchObject({ automationClass: "MANUAL_REVIEW", technicalEligibility: "REVIEW" });
   });
