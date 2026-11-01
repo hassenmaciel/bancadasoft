@@ -58,6 +58,18 @@ const BRAND_FIELD_COPY: {
     },
   },
   {
+    // Créditos Moto M (marca + tipo CREDIT): antes da regra geral da marca, que
+    // segue valendo para a renovação e para o hwid.
+    applies: (product) => brandIs("Moto M Tool")(product) && product?.type === "CREDIT",
+    fields: {
+      email: {
+        label: "E-mail da conta Moto M",
+        placeholder: "E-mail da sua conta Moto M Tool",
+        help: "Informe o e-mail da conta Moto M que receberá os créditos. Não é o e-mail de contato da compra.",
+      },
+    },
+  },
+  {
     applies: brandIs("Moto M Tool"),
     fields: {
       hwid: {
