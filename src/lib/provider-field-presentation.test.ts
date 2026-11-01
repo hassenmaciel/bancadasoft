@@ -158,3 +158,82 @@ describe("providerFieldPresentation: regressão dos produtos atuais", () => {
     expect(providerFieldPresentation(product, field)).toEqual(expected);
   });
 });
+
+// Créditos Moto M: regra marca + tipo CREDIT, só para a key email.
+describe("providerFieldPresentation: créditos Moto M Tool (CREDIT)", () => {
+  const motoMCredit = { brand: { name: "Moto M Tool" }, type: "CREDIT" };
+  const motoMLicense = { brand: { name: "Moto M Tool" }, type: "LICENSE" };
+  const renewalEmail = {
+    label: "E-mail da conta Moto M",
+    placeholder: "E-mail da sua conta Moto M Tool",
+    help: "Informe o e-mail da conta Moto M que será renovada. Não é o e-mail de contato da compra.",
+    autoComplete: "off",
+  };
+  const hwidCopy = {
+    label: "HWID do Moto M Tool",
+    placeholder: "Cole aqui o HWID",
+    help: "Você encontra o HWID dentro do próprio Moto M Tool.",
+    autoComplete: "off",
+  };
+
+  it("Moto M + CREDIT + email: texto de créditos", () => {
+    expect(providerFieldPresentation(motoMCredit, motoEmail)).toEqual({
+      label: "E-mail da conta Moto M",
+      placeholder: "E-mail da sua conta Moto M Tool",
+      help: "Informe o e-mail da conta Moto M que receberá os créditos. Não é o e-mail de contato da compra.",
+      autoComplete: "off",
+    });
+  });
+
+  it.each([
+    ["LICENSE", motoMLicense],
+    ["sem tipo", { brand: { name: "Moto M Tool" } }],
+    ["tipo nulo", { brand: { name: "Moto M Tool" }, type: null }],
+  ])("Moto M + %s + email: continua com o texto de renovação", (_label, product) => {
+    expect(providerFieldPresentation(product, motoEmail)).toEqual(renewalEmail);
+  });
+
+  it("Moto M + CREDIT + hwid: segue a regra de hwid da marca", () => {
+    expect(providerFieldPresentation(motoMCredit, motoHwid)).toEqual(hwidCopy);
+    expect(providerFieldPresentation(motoMLicense, motoHwid)).toEqual(hwidCopy);
+  });
+
+  it("Moto M + CREDIT + username: continua cru", () => {
+    expect(providerFieldPresentation(motoMCredit, username)).toEqual({ label: "Username", placeholder: "Informe Username" });
+  });
+
+  it.each([
+    ["Phoenix (CREDIT) / email", phoenix, email, {
+      label: "E-mail da conta Phoenix",
+      placeholder: "E-mail da sua conta Phoenix",
+      help: "E-mail cadastrado na sua conta Phoenix ServiceTool. Não é o e-mail de contato.",
+      autoComplete: "off",
+    }],
+    ["Phoenix tipo CREDIT real / email", { brand: { name: "Phoenix ServiceTool" }, type: "CREDIT" }, email, {
+      label: "E-mail da conta Phoenix",
+      placeholder: "E-mail da sua conta Phoenix",
+      help: "E-mail cadastrado na sua conta Phoenix ServiceTool. Não é o e-mail de contato.",
+      autoComplete: "off",
+    }],
+    ["Fenix / username", fenix, fenixUser, {
+      label: "Usuário do Fenix Tool Pro",
+      placeholder: "Seu usuário do Fenix Tool Pro",
+      help: "Você encontra o usuário dentro do próprio Fenix Tool Pro. Não é o e-mail de contato.",
+      autoComplete: "off",
+    }],
+    ["Fenix CREDIT / email", { brand: { name: "Fenix Tool Pro" }, type: "CREDIT" }, email, { label: "Email", placeholder: "Informe Email" }],
+    ["UnlockTool LICENSE / email", unlockToolLicense, email, {
+      label: "E-mail da conta UnlockTool",
+      placeholder: "E-mail da sua conta UnlockTool",
+      help: "E-mail cadastrado na sua conta UnlockTool. Não é o e-mail de contato.",
+      autoComplete: "off",
+    }],
+    ["UnlockTool RENTAL / email", { brand: { name: "UnlockTool" }, type: "RENTAL" }, email, { label: "Email", placeholder: "Informe Email" }],
+    ["FRPFILE / ECID", { brand: { name: "FRPFILE" }, type: "IMEI_SN" }, { key: "ecid", label: "ECID", placeholder: "Informe ECID" }, { label: "ECID", placeholder: "Informe ECID" }],
+    ["outra marca CREDIT / email", { brand: { name: "SamsungTool" }, type: "CREDIT" }, motoEmail, { label: "EMAIL", placeholder: "Informe EMAIL" }],
+    ["marca nula CREDIT / email", { brand: null, type: "CREDIT" }, motoEmail, { label: "EMAIL", placeholder: "Informe EMAIL" }],
+    ["produto nulo / email", null, motoEmail, { label: "EMAIL", placeholder: "Informe EMAIL" }],
+  ])("regressão: %s", (_label, product, field, expected) => {
+    expect(providerFieldPresentation(product, field)).toEqual(expected);
+  });
+});
