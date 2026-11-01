@@ -1,7 +1,16 @@
 import { DeliveryType, PriceVisibility, PricingMode, ProductStatus, ProductType, type Brand, type Category, type Product } from "@prisma/client";
 import { z } from "zod";
 import { isProductionProviderCode } from "./providers/selection";
+import { HEARTUNLOCKS_MAX_ORDER_QUANTITY } from "./providers/heartunlocks";
 import type { PricingResult } from "./pricing";
+
+// Quantidade por pedido: opcional e SEM default, para um PUT que não envie os
+// campos não alterar o produto (ex.: Phoenix 5/100). Teto = limite do Heart.
+const orderQuantity = z
+  .number({ error: "Informe a quantidade como número inteiro." })
+  .int("A quantidade deve ser um número inteiro.")
+  .min(1, "A quantidade mínima é 1.")
+  .max(HEARTUNLOCKS_MAX_ORDER_QUANTITY, `A quantidade máxima é ${HEARTUNLOCKS_MAX_ORDER_QUANTITY}.`);
 
 const optionalUrl = z.union([z.string().url("Informe uma URL válida."), z.literal("")]).transform((value) => value || null);
 
@@ -50,12 +59,20 @@ export const productInputSchema = z.object({
   downloadLabel: z.string().trim().max(60).nullable().optional().transform((value) => value || null),
   status: z.nativeEnum(ProductStatus),
   available: z.boolean().default(true),
+  minQuantity: orderQuantity.optional(),
+  maxQuantity: orderQuantity.optional(),
+  acceptsSuccessWithoutText: z.boolean().optional(),
 }).transform((value) => ({
   ...value,
   manualPriceCents: value.pricingMode === PricingMode.MANUAL ? value.manualPriceCents ?? value.priceCents : null,
 })).superRefine((value, context) => {
   if (value.pricingMode === PricingMode.MANUAL && !value.manualPriceCents) {
     context.addIssue({ code: "custom", path: ["manualPriceCents"], message: "Informe o preço manual." });
+  }
+  if ((value.minQuantity === undefined) !== (value.maxQuantity === undefined)) {
+    context.addIssue({ code: "custom", path: ["maxQuantity"], message: "Informe a quantidade mínima e a máxima juntas." });
+  } else if (value.minQuantity !== undefined && value.maxQuantity !== undefined && value.maxQuantity < value.minQuantity) {
+    context.addIssue({ code: "custom", path: ["maxQuantity"], message: "A quantidade máxima deve ser maior ou igual à mínima." });
   }
 });
 
@@ -108,7 +125,7 @@ export type AdminVariantDTO = {
   };
 };
 
-export type AdminProductDTO = Pick<Product, "id" | "slug" | "name" | "description" | "longDescription" | "type" | "deliveryType" | "deliveryEstimate" | "searchTerms" | "duration" | "priceCents" | "priceVisibility" | "normalPriceCents" | "premiumPriceCents" | "premiumPlusPriceCents" | "resellerPriceCents" | "costCents" | "pricingMode" | "manualPriceCents" | "suggestedPriceCents" | "pricingStatus" | "featured" | "sortOrder" | "status" | "available" | "imageUrl" | "downloadUrl" | "downloadLabel"> & {
+export type AdminProductDTO = Pick<Product, "id" | "slug" | "name" | "description" | "longDescription" | "type" | "deliveryType" | "deliveryEstimate" | "searchTerms" | "duration" | "priceCents" | "priceVisibility" | "normalPriceCents" | "premiumPriceCents" | "premiumPlusPriceCents" | "resellerPriceCents" | "costCents" | "pricingMode" | "manualPriceCents" | "suggestedPriceCents" | "pricingStatus" | "featured" | "sortOrder" | "status" | "available" | "imageUrl" | "downloadUrl" | "downloadLabel" | "minQuantity" | "maxQuantity" | "acceptsSuccessWithoutText"> & {
   category: Pick<Category, "id" | "name" | "slug">;
   brand: Pick<Brand, "id" | "name" | "slug"> | null;
   updatedAt: string;
@@ -138,6 +155,8 @@ export const adminProductDto = (product: AdminProductSource, pricing: PricingRes
   featured: product.featured, sortOrder: product.sortOrder,
   status: product.status, available: product.available, imageUrl: product.imageUrl,
   downloadUrl: product.downloadUrl, downloadLabel: product.downloadLabel,
+  minQuantity: product.minQuantity, maxQuantity: product.maxQuantity,
+  acceptsSuccessWithoutText: product.acceptsSuccessWithoutText,
   category: { id: product.category.id, name: product.category.name, slug: product.category.slug },
   brand: product.brand ? { id: product.brand.id, name: product.brand.name, slug: product.brand.slug } : null,
   updatedAt: product.updatedAt.toISOString(),

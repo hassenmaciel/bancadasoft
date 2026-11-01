@@ -104,6 +104,10 @@ export default function ProductForm({
       available: f.get("available") === "on",
       featured: f.get("featured") === "on",
       sortOrder: Number(f.get("sortOrder")),
+      // Sempre enviados juntos; o servidor valida 1..100 e máximo >= mínimo.
+      minQuantity: Number(f.get("minQuantity")),
+      maxQuantity: Number(f.get("maxQuantity")),
+      acceptsSuccessWithoutText: f.get("acceptsSuccessWithoutText") === "on",
     };
     const response = await fetch(
       product ? `/api/admin/products/${product.id}` : "/api/admin/products",
@@ -405,6 +409,48 @@ export default function ProductForm({
               Destaque editorial
             </label>
           </div>
+        </fieldset>
+        <fieldset>
+          <legend>Quantidade e confirmação</legend>
+          <div className="form-grid">
+            <label>
+              Quantidade mínima por pedido
+              <input
+                name="minQuantity"
+                type="number"
+                min="1"
+                max="100"
+                step="1"
+                defaultValue={product?.minQuantity ?? 1}
+                required
+              />
+              <small>Máximo 100.</small>
+            </label>
+            <label>
+              Quantidade máxima por pedido
+              <input
+                name="maxQuantity"
+                type="number"
+                min="1"
+                max="100"
+                step="1"
+                defaultValue={product?.maxQuantity ?? 1}
+                required
+              />
+              <small>Máximo 100.</small>
+            </label>
+          </div>
+          <label className="check-field">
+            <input
+              name="acceptsSuccessWithoutText"
+              type="checkbox"
+              defaultChecked={product?.acceptsSuccessWithoutText ?? false}
+            />{" "}
+            Aceitar confirmação do fornecedor sem texto (créditos)
+          </label>
+          <small className="price-warning" role="note">
+            &apos;success&apos; sem texto conta como entregue e gera nota de revisão manual.
+          </small>
         </fieldset>
         <fieldset>
           <legend>Download</legend>
