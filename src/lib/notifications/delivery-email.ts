@@ -55,13 +55,40 @@ function licenseEmailContent(
     text: `Olá, ${notice.customerName}.\n\nSua licença ${notice.productName} foi ativada/renovada na conta UnlockTool informada no pedido.\n\n${accountText}Pedido: ${notice.orderNumber}\n\nVeja os detalhes do pedido com segurança:\n${notice.secureUrl}\n\nPor segurança, não compartilhe este link.\n\nBancadaSoft\nEncontrou. Pagou. Liberou.`,
   };
 }
+// Créditos confirmados sem retorno textual (confirmation-delivery.ts): a mesma
+// frase gravada em instructions (quantidade + conta, quando houver), sem
+// máscara e sempre escapada no HTML. Só com o marcador confirmation === true.
+export type CreditConfirmationNotice = { instructions: string };
+export function creditConfirmationNotice(delivery: unknown): CreditConfirmationNotice | null {
+  if (!delivery || typeof delivery !== "object" || Array.isArray(delivery)) return null;
+  const record = delivery as Record<string, unknown>;
+  const instructions = typeof record.instructions === "string" ? record.instructions.trim() : "";
+  return record.confirmation === true && instructions ? { instructions } : null;
+}
+function creditConfirmationEmailContent(
+  notice: DeliveryNotice & { customerName: string },
+  confirmation: CreditConfirmationNotice,
+): DeliveryEmailContent {
+  const subject = `BancadaSoft — Créditos de ${notice.productName} confirmados`;
+  const name = escapeHtml(notice.customerName);
+  const number = escapeHtml(notice.orderNumber);
+  const instructions = escapeHtml(confirmation.instructions);
+  const url = escapeHtml(notice.secureUrl);
+  return {
+    subject,
+    html: `<div style="font-family:Arial,sans-serif;color:#10213b;max-width:600px;margin:auto"><h1 style="color:#0878f9">BancadaSoft</h1><p>Olá, ${name}.</p><p>${instructions}</p><p><strong>Pedido:</strong> ${number}</p><p><a href="${url}" style="display:inline-block;background:#0878f9;color:#fff;padding:12px 20px;border-radius:8px;text-decoration:none;font-weight:bold">VER DETALHES DO PEDIDO</a></p><p>Por segurança, não compartilhe este link.</p><p>BancadaSoft<br>Encontrou. Pagou. Liberou.</p></div>`,
+    text: `Olá, ${notice.customerName}.\n\n${confirmation.instructions}\n\nPedido: ${notice.orderNumber}\n\nVeja os detalhes do pedido com segurança:\n${notice.secureUrl}\n\nPor segurança, não compartilhe este link.\n\nBancadaSoft\nEncontrou. Pagou. Liberou.`,
+  };
+}
 export function deliveryEmailContent(
   notice: DeliveryNotice & {
     customerName: string;
     licenseActivation?: LicenseActivationNotice;
+    creditConfirmation?: CreditConfirmationNotice;
   },
 ): DeliveryEmailContent {
   if (notice.licenseActivation) return licenseEmailContent(notice, notice.licenseActivation);
+  if (notice.creditConfirmation) return creditConfirmationEmailContent(notice, notice.creditConfirmation);
   const subject = `BancadaSoft — Seu acesso ${notice.productName} foi liberado`;
   const name = escapeHtml(notice.customerName);
   const number = escapeHtml(notice.orderNumber);
@@ -102,6 +129,7 @@ async function deliverToClaimedNotification(
       product: { name: string; type?: string; brand?: { name: string } | null };
       providerFields?: unknown;
     }>;
+    fulfillment?: { delivery: unknown } | null;
   },
   notificationId: string,
   recipient: string,
@@ -137,19 +165,23 @@ async function deliverToClaimedNotification(
         select: { domain: true },
       })
     )?.domain ?? "www.bancadasoft.com.br";
+  const license = isUnlockToolLicense(order.items[0]?.product);
+  // Detecção pelo marcador gravado na entrega, nunca por acceptsSuccessWithoutText.
+  const creditConfirmation = license ? null : creditConfirmationNotice(order.fulfillment?.delivery);
   const notice = {
     customerName: order.customer.name,
     orderNumber: order.publicToken.slice(0, 8).toUpperCase(),
     productName: order.items[0]?.product.name ?? "UnlockTool 6 horas",
     recipientEmail: recipient,
     secureUrl: secureDeliveryUrl(`https://${domain}`, order.id, token),
-    ...(isUnlockToolLicense(order.items[0]?.product)
+    ...(license
       ? {
           licenseActivation: {
             username: licenseAccountUsername(order.items[0]?.providerFields),
           },
         }
       : {}),
+    ...(creditConfirmation ? { creditConfirmation } : {}),
   };
   const content = deliveryEmailContent(notice);
   const transport =

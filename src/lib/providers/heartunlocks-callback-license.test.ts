@@ -221,6 +221,8 @@ describe("callback HeartUnlocks: success sem retorno textual", () => {
         deliveryType: "TEXT",
         title: "Phoenix Service Tool",
         instructions: "O fornecedor confirmou a adição de 5 créditos na conta informada no pedido.",
+        // Marcador do e-mail de confirmação de créditos (delivery-email.ts).
+        confirmation: true,
       });
       expect(orderEvents()).toEqual([
         { status: "FULFILLED", note: "Liberação concluída pelo fornecedor." },
