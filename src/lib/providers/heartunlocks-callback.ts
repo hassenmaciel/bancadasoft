@@ -17,6 +17,7 @@ import {
   CONFIRMATION_SUCCESS_MANUAL_REVIEW_NOTE,
   confirmationDelivery,
 } from "../confirmation-delivery";
+import { orderItemEchoSelect } from "../customer-field-echo";
 
 export type HeartUnlocksCallback = {
   reference_id: string;
@@ -199,6 +200,8 @@ export async function processHeartUnlocksCallback(input: HeartUnlocksCallback) {
                     take: 1,
                     select: {
                       quantity: true,
+                      // Prova de entrega dos créditos: conta e Quantity enviados.
+                      ...orderItemEchoSelect,
                       product: {
                         select: {
                           name: true,
@@ -287,7 +290,11 @@ export async function processHeartUnlocksCallback(input: HeartUnlocksCallback) {
               current,
               input,
               eventKey,
-              confirmationDelivery(callbackProduct, current.order.items[0]?.quantity),
+              confirmationDelivery(
+                callbackProduct,
+                current.order.items[0]?.quantity,
+                current.order.items[0],
+              ),
               CONFIRMATION_SUCCESS_MANUAL_REVIEW_NOTE,
             );
           if (normalized === "success") {
