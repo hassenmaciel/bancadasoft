@@ -105,7 +105,7 @@ describe("recuperação do pedido entregue continua funcionando", () => {
 
   it("o painel não altera o código de restauração nem o prazo: nenhuma constante de prazo local foi adicionada", () => {
     const source = readFileSync(path.resolve(__dirname, "../components/checkout-panel.tsx"), "utf8");
-    expect(source).toContain("isRecoverableCheckoutOrder(payload.data)");
+    expect(source).toContain("shouldRestoreOrder({");
     expect(source).not.toMatch(/TTL|maxAge|Date\.now\(\)\s*-/);
   });
 });

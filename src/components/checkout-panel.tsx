@@ -15,6 +15,7 @@ import {
   isFailedCheckoutOrder,
   isRecoverableCheckoutOrder,
 } from "@/lib/order-polling";
+import { deliveredAtFromEvents, restoreNow, shouldRestoreOrder } from "@/lib/checkout-restore";
 import CredentialDelivery from "@/components/credential-delivery";
 import LicenseAccountConfirmation from "@/components/license-account-confirmation";
 import {
@@ -104,6 +105,8 @@ export default function CheckoutPanel({
     () => clearStoredCheckout(localStorage, storageKey),
     [storageKey],
   );
+  // Cliente logado nunca vê entrega antiga reabrir aqui (tem "Meus pedidos").
+  const viewerLoggedIn = identity !== null;
   const paid = order?.payment?.status === "PAID";
   const delivered = order?.status === "DELIVERED" && !!delivery;
   // PARTE 5: pequena janela em que o pedido já está DELIVERED no backend mas
@@ -227,8 +230,16 @@ export default function CheckoutPanel({
         // recovery explícito (link/e-mail) faz isso. DELIVERED é diferente: é
         // terminal para fins de polling, mas continua recuperável — o cliente
         // que volta à página do produto deve ver a entrega já pronta, não o
-        // formulário de compra de novo.
-        if (!isRecoverableCheckoutOrder(payload.data)) {
+        // formulário de compra de novo — mas só para visitante e numa janela
+        // curta após a entrega (ver src/lib/checkout-restore.ts). Esquecer
+        // apaga só checkout:<productId>; o token delivery:<orderId> fica.
+        const decision = shouldRestoreOrder({
+          order: payload.data,
+          deliveredAt: deliveredAtFromEvents(payload.data.events),
+          now: restoreNow(payload.data),
+          viewerLoggedIn,
+        });
+        if (decision === "forget") {
           clearActiveCheckout();
           return;
         }
@@ -257,7 +268,7 @@ export default function CheckoutPanel({
     return () => {
       active = false;
     };
-  }, [storageKey, clearActiveCheckout]);
+  }, [storageKey, clearActiveCheckout, viewerLoggedIn]);
   // fetchOrder lê sempre o order/token mais recentes via ref: o efeito abaixo
   // depende só de order?.id, não do objeto inteiro, para que o poller NÃO seja
   // recriado (e seu cronômetro de timeout reiniciado) a cada atualização.
@@ -495,6 +506,21 @@ export default function CheckoutPanel({
     // fato um pedido não recuperável (um token pré-pedido ainda sem Order
     // associada, salvo antes do POST /api/checkout, continua preservado para
     // a idempotência de retry).
+    // Pedido DELIVERED fora da janela de reabertura (cliente logado, ou
+    // visitante depois da janela): fechar equivale a "Fazer nova compra".
+    if (
+      order?.status === "DELIVERED" &&
+      shouldRestoreOrder({
+        order,
+        deliveredAt: deliveredAtFromEvents(order.events),
+        now: restoreNow(order),
+        viewerLoggedIn,
+      }) === "forget"
+    ) {
+      startNewPurchase();
+      setOpen(false);
+      return;
+    }
     const recoverable = order ? isRecoverableCheckoutOrder(order) : false;
     if (order && !recoverable) clearActiveCheckout();
     if (!recoverable) {
